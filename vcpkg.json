@@ -1,11 +1,16 @@
 {
-  "name": "openms",
-  "version-string": "3.6.0",
+  "name": "openms-core",
+  "version-string": "4.0.0",
   "dependencies": [
     {
       "name": "arrow",
       "default-features": false,
-      "features": ["compute", "dataset", "filesystem", "json", "parquet", "s3"]
+      "features": [
+        "compute",
+        "dataset",
+        "filesystem",
+        "parquet"
+      ]
     },
     "boost-accumulators",
     "boost-algorithm",
@@ -17,7 +22,6 @@
     "boost-config",
     "boost-container",
     "boost-container-hash",
-    "boost-date-time",
     "boost-dynamic-bitset",
     "boost-foreach",
     "boost-function",
@@ -25,7 +29,6 @@
     "boost-headers",
     "boost-heap",
     "boost-interprocess",
-    "boost-iostreams",
     "boost-iterator",
     "boost-lexical-cast",
     "boost-math",
@@ -56,14 +59,21 @@
     "xerces-c",
     "zlib"
   ],
-  "overrides": [{ "name": "openssl", "version": "3.0.8" }],
+  "overrides": [
+    {
+      "name": "openssl",
+      "version": "3.0.8"
+    }
+  ],
   "features": {
     "hdf5": {
       "description": "HDF5 C and C++ libraries for builds configured with -DWITH_HDF5=ON.",
       "dependencies": [
         {
           "name": "hdf5",
-          "features": ["cpp"]
+          "features": [
+            "cpp"
+          ]
         }
       ]
     },
@@ -157,7 +167,9 @@
     },
     "lp-highs": {
       "description": "Select highs as linear programming solver backend via -DLP_SOLVER=HIGHS.",
-      "dependencies": ["highs"]
+      "dependencies": [
+        "highs"
+      ]
     }
   }
 }

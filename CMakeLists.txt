@@ -7,7 +7,7 @@
 # --------------------------------------------------------------------------
 
 
-cmake_minimum_required(VERSION 3.21 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.24 FATAL_ERROR)
 
 # The vcpkg toolchain must be selected before project() initializes compilers.
 # Existing system/contrib dependency discovery remains the default.
@@ -34,21 +34,6 @@ if(NOT multiConfig AND NOT DEFINED CMAKE_BUILD_TYPE)
 endif()
 
 project("OpenMSCoreSDK" LANGUAGES CXX)
-
-#------------------------------------------------------------------------------
-# General CMake definitions & helper
-#------------------------------------------------------------------------------
-SET(CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS true)
-#------------------------------------------------------------------------------
-## CMake sanity check: sometimes CMAKE_SIZEOF_VOID_P just vanishes when
-## updating CMake.
-if (NOT CMAKE_SIZEOF_VOID_P)
-	message(FATAL_ERROR "'CMAKE_SIZEOF_VOID_P' is undefined. Thus you should"
-                      " delete CMakeFiles (the directory) and the"
-                      " CMakeCache.txt and rerun CMake again! This is some"
-                      " weird CMake bug that seems to appear when updating the"
-                      " CMake version.")
-endif()
 
 #------------------------------------------------------------------------------
 # Enable testing with CTest
@@ -194,10 +179,6 @@ endif()
 
 #------------------------------------------------------------------------------
 # Extend module path with our modules
-# (create an empty list if CMAKE_MODULE_PATH does not exist)
-if(NOT CMAKE_MODULE_PATH)
-	set(CMAKE_MODULE_PATH)
-endif()
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/Modules")
 
 #------------------------------------------------------------------------------
@@ -351,18 +332,6 @@ if(OPENMS_COVERAGE)
 endif()
 
 #------------------------------------------------------------------------------
-# Enable usage statistics
-#------------------------------------------------------------------------------
-option(ENABLE_UPDATE_CHECK "Enable update check." ON)
-if(ENABLE_UPDATE_CHECK)
-  message(STATUS "Collection of usage statistics and update notifications enabled.")
-  message(STATUS "  If you don't want this information to be transmitted to our update sever, you can:")
-  message(STATUS "    - Switch the build variable ENABLE_UPDATE_CHECK to OFF to remove the functionality at build time.")
-  message(STATUS "    - Set the environment variable OPENMS_DISABLE_UPDATE_CHECK to disable the functionality at runtime.")
-endif()
-
-
-#------------------------------------------------------------------------------
 # Enable AddressSanitizer
 #------------------------------------------------------------------------------
 option(ADDRESS_SANITIZER "Enable AddressSanitizer mode (quite slow)." OFF)
@@ -391,8 +360,6 @@ endif()
 #------------------------------------------------------------------------------
 # CMake Utitlities
 #------------------------------------------------------------------------------
-# include some OpenMS specific macros
-include (${PROJECT_SOURCE_DIR}/cmake/build_system_macros.cmake)
 # .. and some to ease the installation process
 include (${PROJECT_SOURCE_DIR}/cmake/install_macros.cmake)
 # .. and some to ease the installation process
@@ -406,10 +373,8 @@ include (${PROJECT_SOURCE_DIR}/cmake/export_macros.cmake)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${OPENMS_HOST_BINARY_DIRECTORY}/lib")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${OPENMS_HOST_BINARY_DIRECTORY}/bin")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${OPENMS_HOST_BINARY_DIRECTORY}/lib")
-# Some alternative variable names for internal use
-set(OPENMS_BINARY_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+# Runtime data in the source tree is used by development builds.
 set(OPENMS_SHARE_DIR "${PROJECT_SOURCE_DIR}/share/OpenMS")
-set(OPENMS_WIN32_DLL_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 
 #------------------------------------------------------------------------------
 # define installation subdirectories to allow for custom installations
@@ -443,18 +408,10 @@ if(UNIX)
 endif()
 
 #------------------------------------------------------------------------------
-# lib naming when building with msvc & convenience location of build.bat
-# TODO only for msvc or generally on Windows?
-if (MSVC)
-	## use OpenMSd.dll etc. in debug mode
-    if(NOT DEFINED CMAKE_DEBUG_POSTFIX)
-        set(CMAKE_DEBUG_POSTFIX "d")
-    endif()
-    if(NOT ("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}"))
-        file(COPY "${PROJECT_SOURCE_DIR}/tools/build.bat" DESTINATION "${PROJECT_BINARY_DIR}")
-    endif()
+# Use OpenMSd.dll in Debug builds on Windows.
+if(MSVC AND NOT DEFINED CMAKE_DEBUG_POSTFIX)
+  set(CMAKE_DEBUG_POSTFIX "d")
 endif()
-
 
 # Find core dependencies here, so all projects have access to the same variables and
 # do not have to re-search for the core components

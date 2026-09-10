@@ -73,7 +73,7 @@ add_subdirectory(thirdparty/percolator)
 ## config.h includes <boost/current_function.hpp> (via Macros.h), so consumers
 ## (e.g. pyOpenMS) need Boost's include dir. Only the header-only target is
 ## public — it propagates include dirs. Regex is also PUBLIC because installed
-## headers expose regex types. Date/time and iostreams remain PRIVATE.
+## headers expose regex types.
 set(OPENMS_DEP_LIBRARIES
   CURL::libcurl
   Boost::boost
@@ -92,8 +92,6 @@ set(OPENMS_DEP_PRIVATE_LIBRARIES
   $<$<BOOL:${WITH_HDF5}>:HDF5::HDF5>
   ${LPTARGET}
   BZip2::BZip2
-  Boost::date_time
-  Boost::iostreams
   Evergreen
   GTE
   LibSVM::LibSVM

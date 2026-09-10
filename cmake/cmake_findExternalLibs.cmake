@@ -19,12 +19,16 @@
 #   * never mix Release/Debug versions of libraries. Leads to strange segfaults,
 #     stack corruption etc, due to different runtime libs ...
 # compiler-wise: use the same compiler for contrib and OpenMS!
+include(OpenMSDependencyDefaults)
 find_package(XercesC REQUIRED)
 
 #------------------------------------------------------------------------------
 # BOOST
-set(OpenMS_BOOST_COMPONENTS date_time regex CACHE INTERNAL "Boost components for core lib")
-find_boost(iostreams ${OpenMS_BOOST_COMPONENTS})
+set(Boost_USE_STATIC_LIBS ${BOOST_USE_STATIC})
+set(Boost_USE_MULTITHREADED ON)
+set(Boost_USE_STATIC_RUNTIME OFF)
+add_compile_definitions(BOOST_ALL_NO_LIB)
+find_package(Boost 1.81.0 REQUIRED CONFIG COMPONENTS regex)
 
 if(Boost_FOUND)
   message(STATUS "Found Boost version ${Boost_MAJOR_VERSION}.${Boost_MINOR_VERSION}.${Boost_SUBMINOR_VERSION}" )
@@ -32,29 +36,6 @@ if(Boost_FOUND)
   set(CF_OPENMS_BOOST_VERSION_MINOR ${Boost_MINOR_VERSION})
   set(CF_OPENMS_BOOST_VERSION_SUBMINOR ${Boost_SUBMINOR_VERSION})
   set(CF_OPENMS_BOOST_VERSION ${Boost_VERSION})
-
-  get_target_property(location Boost::iostreams LOCATION)
-  get_target_property(target_type Boost::iostreams TYPE)
-  if (target_type STREQUAL "STATIC_LIBRARY" AND location MATCHES "^/usr/local/")
-    message(WARNING "Statically linked Boost from system installations like brew, are not fully supported yet.
-Either use '-DBOOST_USE_STATIC=OFF' to use the shared library or build boost with our contrib. Nonetheless,
-we are going to try to continue building.")
-    get_target_property(libs Boost::iostreams INTERFACE_LINK_LIBRARIES)
-    # If boost from brew, replace simple "link flags" like "-lzstd" with
-    # find_package calls and their resulting imported targets
-    # since boost CMake does not expose this transitive dependency as targets!
-    # see https://github.com/boostorg/boost_install/issues/64
-    foreach (lib ${libs})
-      if (lib MATCHES "zstd")
-        find_package(zstd)
-      elseif (lib MATCHES "lzma")
-        find_package(LibLZMA)
-      endif()
-    endforeach ()
-    ##
-    set_target_properties(Boost::iostreams
-          PROPERTIES INTERFACE_LINK_LIBRARIES "BZip2::BZip2;ZLIB::ZLIB;zstd::libzstd_shared;LibLZMA::LibLZMA")
-  endif()
 
   get_target_property(location Boost::regex LOCATION)
   get_target_property(target_type Boost::regex TYPE)

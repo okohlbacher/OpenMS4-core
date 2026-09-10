@@ -1,3 +1,10 @@
+OpenMS 4 Core SDK build and delivery
+-----------------------------------
+- Remove unused suite packaging/build scripts and Boost date_time/iostreams linkage.
+- Replace custom unity generation with native CMake and retain two Core presets.
+- Prefer native curl libraries on macOS and fix relocated Windows SDK acceptance.
+- Add native platform CI and tested SDK archive delivery for experimental release tags.
+
 Core compiler warning cleanup (2026-09-10)
 ------------------------------------------
 - Propagate Arrow append/finalization errors with column diagnostics; retain nullable results and empty-table output.

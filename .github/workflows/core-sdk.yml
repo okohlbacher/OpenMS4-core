@@ -1,0 +1,111 @@
+name: Core SDK
+
+on:
+  push:
+    branches: ['**']
+    tags: ['core-v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-sdk-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  native:
+    name: ${{ matrix.platform }} / Release
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-24.04
+            compiler: gcc_linux-64=14 gxx_linux-64=14
+            jobs: 4
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+            compiler: gcc_linux-aarch64=14 gxx_linux-aarch64=14
+            jobs: 4
+          - platform: macos-arm64
+            runner: macos-15
+            compiler: llvm-openmp
+            jobs: 2
+          - platform: macos-x64
+            runner: macos-15-intel
+            compiler: llvm-openmp
+            jobs: 4
+          - platform: windows-x64
+            runner: windows-2022
+            compiler: ''
+            jobs: 4
+    env:
+      PYTHONUTF8: '1'
+      OMP_NUM_THREADS: '1'
+      OPENMS_RUN_SLOW_TESTS: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: mamba-org/setup-micromamba@f457c30a868e4760d3a6fcea5f25dc655b8edf39 # v3
+        with:
+          environment-file: tools/ci/environment.yml
+          micromamba-version: 2.9.0-0
+          create-args: ${{ matrix.compiler }}
+          init-shell: none
+          generate-run-shell: false
+          cache-environment: true
+          cache-environment-key: core-${{ matrix.platform }}
+      - name: Build, test, install, and accept the extracted SDK
+        run: >-
+          micromamba run -n core-ci python tools/ci/run.py
+          --platform ${{ matrix.platform }} --jobs ${{ matrix.jobs }}
+          --work-dir "${{ runner.temp }}/core-sdk"
+      - name: Upload tested SDK
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: sdk-${{ matrix.platform }}
+          path: ${{ runner.temp }}/core-sdk/dist/*
+          if-no-files-found: error
+          compression-level: 0
+      - name: Upload logs and test reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: results-${{ matrix.platform }}
+          path: |
+            ${{ runner.temp }}/core-sdk/results/
+            ${{ runner.temp }}/core-sdk/acceptance/*.log
+            ${{ runner.temp }}/core-sdk/acceptance/results.json
+            ${{ runner.temp }}/core-sdk/build/Testing/Temporary/LastTest.log
+            ${{ runner.temp }}/core-sdk/build/CMakeFiles/CMakeConfigureLog.yaml
+          if-no-files-found: warn
+
+  publish:
+    name: Publish tested SDK archives
+    if: startsWith(github.ref, 'refs/tags/core-v')
+    needs: native
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: sdk-*
+          merge-multiple: true
+          path: dist
+      - name: Verify and publish immutable prerelease assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cd dist
+          sha256sum --check --strict ./*.sha256
+          gh release create "$RELEASE_TAG" ./*.tar.gz ./*.sha256 \
+            --verify-tag --prerelease --title "Core SDK $RELEASE_TAG" \
+            --notes "Native Release SDKs for Linux x64/arm64, macOS x64/arm64, and Windows x64. Every archive passed the full enabled scientific test suite and installed/relocated consumer tests after extraction. Recreate its matching conda-forge dependencies from the included dependencies.txt; dependencies are not bundled. Optional native readers and downloaded models are disabled in this portable build."

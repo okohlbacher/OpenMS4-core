@@ -68,4 +68,6 @@ macro(openms_export_targets )
                cmake)
 
   # Consumers deliberately use an installed SDK, never a user package registry entry.
+  install(FILES "${OPENMS_HOST_DIRECTORY}/LICENSE" "${OPENMS_HOST_DIRECTORY}/README.md"
+    DESTINATION "${INSTALL_DOC_DIR}/OpenMS-core" COMPONENT cmake)
 endmacro()

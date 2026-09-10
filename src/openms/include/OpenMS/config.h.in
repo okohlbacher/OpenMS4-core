@@ -125,8 +125,6 @@ static constexpr cstr past_last_slash(cstr str)
 #cmakedefine OPENMS_HAS_KILL
 #cmakedefine OPENMS_HAS_SYSCONF
 
-#cmakedefine ENABLE_UPDATE_CHECK
-
 
 // library versions
 #define OPENMS_LIBSVM_VERSION @CF_OPENMS_LIBSVM_VERSION@

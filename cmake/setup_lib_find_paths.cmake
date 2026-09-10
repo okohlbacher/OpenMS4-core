@@ -32,7 +32,3 @@ else()
     list(REMOVE_ITEM CMAKE_PREFIX_PATH "") # Remove empty entries
   endif()
 endif()
-
-#------------------------------------------------------------------------------
-# Ensure Qt includes it's libs as SYSTEM
-set(QT_INCLUDE_DIRS_NO_SYSTEM Off)

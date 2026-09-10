@@ -18,7 +18,6 @@ set(OPENMS_EXPORT_SET "OpenMSTargets")
 # @param lib_target_name The target name of the library that should be installed
 macro(install_library lib_target_name)
     install(TARGETS ${lib_target_name}
-      RUNTIME_DEPENDENCY_SET OPENMS_DEPS
       EXPORT ${OPENMS_EXPORT_SET}
       LIBRARY DESTINATION ${INSTALL_LIB_DIR} COMPONENT library
       ARCHIVE DESTINATION ${INSTALL_LIB_DIR} COMPONENT library

@@ -18,6 +18,9 @@ class SDKContractTests(unittest.TestCase):
         self.prefix = self.directory / "relocated-sdk"
         self.config = self.prefix / "lib/cmake/OpenMS"
         self.config.mkdir(parents=True)
+        (self.config / "Modules").mkdir()
+        shutil.copyfile(ROOT / "cmake/Modules/OpenMSDependencyDefaults.cmake",
+                        self.config / "Modules/OpenMSDependencyDefaults.cmake")
         (self.prefix / "include").mkdir()
         self.dependencies = self.directory / "dependencies"
         self.dependencies.mkdir()
@@ -46,13 +49,13 @@ endforeach()
     def _dependency(self, name, version, *targets):
         directory = self.dependencies / name
         directory.mkdir(exist_ok=True)
-        config = f'set({name}_VERSION "{version}")\nset(PACKAGE_PREFIX_DIR "{directory}")\n'
+        config = f'set({name}_VERSION "{version}")\nset(PACKAGE_PREFIX_DIR "{directory.as_posix()}")\n'
         for target in targets:
             config += f'if(NOT TARGET {target})\n  add_library({target} INTERFACE IMPORTED)\nendif()\n'
         (directory / f"{name}Config.cmake").write_text(config)
         script = self.directory / "dependency-version.cmake"
         script.write_text(f'''include(CMakePackageConfigHelpers)
-write_basic_package_version_file("{directory}/{name}ConfigVersion.cmake"
+write_basic_package_version_file("{directory.as_posix()}/{name}ConfigVersion.cmake"
  VERSION {version} COMPATIBILITY ExactVersion ARCH_INDEPENDENT)
 ''')
         result = self._run(["-P", script])
@@ -63,7 +66,7 @@ write_basic_package_version_file("{directory}/{name}ConfigVersion.cmake"
                   "Arrow_VERSION": "23.0.0", "Parquet_VERSION": "23.0.0",
                   "Boost_VERSION_STRING": "1.90.0", "OPENMS_ARROW_TARGET": "Arrow::arrow_shared",
                   "OPENMS_PARQUET_TARGET": "Parquet::parquet_shared", "OPENMP_FOUND": "OFF",
-                  "CMAKE_INSTALL_PREFIX": str(self.prefix), "INSTALL_SHARE_DIR": "share/OpenMS/4.0.0",
+                  "CMAKE_INSTALL_PREFIX": self.prefix.as_posix(), "INSTALL_SHARE_DIR": "share/OpenMS/4.0.0",
                   "INSTALL_LIB_DIR": "lib", "INSTALL_BIN_DIR": "bin", "INSTALL_DOC_DIR": "share/doc",
                   "WITH_HDF5": "ON", "WITH_OPENTIMS": "OFF", "WITH_THERMO_RAW": "OFF",
                   "WITH_ONNX": "OFF", "ENABLE_TDL": "OFF", "WITH_WNETALIGN": "OFF",
@@ -73,10 +76,10 @@ write_basic_package_version_file("{directory}/{name}ConfigVersion.cmake"
         script = self.directory / "generate-config.cmake"
         script.write_text("include(CMakePackageConfigHelpers)\n" +
                           "\n".join(f'set({key} "{value}")' for key, value in values.items()) + f'''
-configure_package_config_file("{ROOT}/cmake/OpenMSConfig.cmake.in" "{self.config}/OpenMSConfig.cmake"
+configure_package_config_file("{ROOT.as_posix()}/cmake/OpenMSConfig.cmake.in" "{self.config.as_posix()}/OpenMSConfig.cmake"
  INSTALL_DESTINATION lib/cmake/OpenMS
  PATH_VARS INSTALL_SHARE_DIR INSTALL_LIB_DIR INSTALL_BIN_DIR INSTALL_DOC_DIR)
-write_basic_package_version_file("{self.config}/OpenMSConfigVersion.cmake"
+write_basic_package_version_file("{self.config.as_posix()}/OpenMSConfigVersion.cmake"
  VERSION 4.0.0 COMPATIBILITY ExactVersion ARCH_INDEPENDENT)
 ''')
         result = self._run(["-P", script])
@@ -100,7 +103,7 @@ endif()
 if(NOT OpenMS_SOURCE_REVISION STREQUAL "{'a' * 40}" OR NOT OpenMS_CXX_STANDARD EQUAL 23)
   message(FATAL_ERROR "SDK identity was not exported")
 endif()
-if(NOT OpenMS_DATA_DIR STREQUAL "{self.prefix}/share/OpenMS/4.0.0")
+if(NOT OpenMS_DATA_DIR STREQUAL "{self.prefix.as_posix()}/share/OpenMS/4.0.0")
   message(FATAL_ERROR "Data directory is not relative to installed SDK")
 endif()
 foreach(target OpenMS::Core OpenMS::OpenSwathAlgo OpenMS::Arrow OpenMS OpenSwathAlgo)
@@ -203,15 +206,15 @@ class OwnershipTests(unittest.TestCase):
 endfunction()
 function(set_source_files_properties)
 endfunction()
-include("{ROOT}/src/openms/includes.cmake")
+include("{ROOT.as_posix()}/src/openms/includes.cmake")
 foreach(path IN LISTS OpenMS_sources OpenMS_sources_h)
-  if(NOT EXISTS "{ROOT}/src/openms/${{path}}")
+  if(NOT EXISTS "{ROOT.as_posix()}/src/openms/${{path}}")
     message(FATAL_ERROR "Core source/header missing: ${{path}}")
   endif()
 endforeach()
-include("{ROOT}/src/tests/class_tests/openms/executables.cmake")
+include("{ROOT.as_posix()}/src/tests/class_tests/openms/executables.cmake")
 foreach(name IN LISTS TEST_executables)
-  if(NOT EXISTS "{ROOT}/src/tests/class_tests/openms/source/${{name}}.cpp")
+  if(NOT EXISTS "{ROOT.as_posix()}/src/tests/class_tests/openms/source/${{name}}.cpp")
     message(FATAL_ERROR "Core test source missing: ${{name}}")
   endif()
 endforeach()
@@ -233,16 +236,16 @@ class DataMetadataTests(unittest.TestCase):
             data.mkdir(parents=True)
             script = directory / "generate.cmake"
             script.write_text(f'''include(CMakePackageConfigHelpers)
-set(CMAKE_INSTALL_PREFIX "{original}")
+set(CMAKE_INSTALL_PREFIX "{original.as_posix()}")
 set(INSTALL_SHARE_DIR "share/OpenMS/4.0.0")
 set(OPENMS_PACKAGE_VERSION "4.0.0")
 set(OPENMS_SOURCE_REVISION "{'b' * 40}")
 set(OPENMP_FOUND ON)
 set(OPENMS_WITH_OPENSWATH ON)
-configure_package_config_file("{ROOT}/cmake/OpenMSDataConfig.cmake.in"
- "{config}/OpenMSDataConfig.cmake" INSTALL_DESTINATION lib/cmake/OpenMSData
+configure_package_config_file("{ROOT.as_posix()}/cmake/OpenMSDataConfig.cmake.in"
+ "{config.as_posix()}/OpenMSDataConfig.cmake" INSTALL_DESTINATION lib/cmake/OpenMSData
  PATH_VARS INSTALL_SHARE_DIR)
-write_basic_package_version_file("{config}/OpenMSDataConfigVersion.cmake"
+write_basic_package_version_file("{config.as_posix()}/OpenMSDataConfigVersion.cmake"
  VERSION 4.0.0 COMPATIBILITY ExactVersion ARCH_INDEPENDENT)
 ''')
             result = subprocess.run([CMAKE, "-P", str(script)], capture_output=True, text=True)
@@ -254,7 +257,7 @@ write_basic_package_version_file("{config}/OpenMSDataConfigVersion.cmake"
             (consumer / "CMakeLists.txt").write_text(f'''cmake_minimum_required(VERSION 3.24)
 project(DataOnly LANGUAGES NONE)
 find_package(OpenMSData 4.0.0 EXACT CONFIG REQUIRED ${{REQUEST_COMPONENTS}})
-if(NOT OpenMS_DATA_DIR STREQUAL "{relocated}/share/OpenMS/4.0.0")
+if(NOT OpenMS_DATA_DIR STREQUAL "{relocated.as_posix()}/share/OpenMS/4.0.0")
   message(FATAL_ERROR "Non-relocatable core data")
 endif()
 if(NOT OpenMSData_SOURCE_REVISION STREQUAL "{'b' * 40}" OR NOT OpenMS_WITH_OPENMP)
@@ -265,7 +268,7 @@ if(TARGET OpenMS::Core OR TARGET OpenMP::OpenMP_CXX)
 endif()
 ''')
             arguments = [CMAKE, "-S", str(consumer), "-B", str(directory / "build"),
-                         f"-DCMAKE_PREFIX_PATH={relocated}"]
+                         f"-DCMAKE_PREFIX_PATH={relocated.as_posix()}"]
             result = subprocess.run(arguments, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             result = subprocess.run(arguments + ["-DREQUEST_COMPONENTS=COMPONENTS;TestSupport"],

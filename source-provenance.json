@@ -28911,6 +28911,7 @@
   ],
   "extraction_changes": {
     "desktop_resources": "GUISTYLE/qtStyleSheet.qss and DESKTOP metadata transferred to openms4-desktop; desktop embeds the stylesheet in its Qt resource archive.",
-    "obsolete_orchestration": "Unreachable suite packaging, KNIME, CWL/documentation build modules and monorepo version-editing scripts removed; preserved in superproject legacy."
+    "obsolete_orchestration": "Unreachable suite packaging, KNIME, CWL/documentation build modules and monorepo version-editing scripts removed; preserved in superproject legacy.",
+    "core_build_system": "Unused first-party suite installers, KNIME resources, Jenkins/Gitpod jobs, obsolete build wrappers and unused Boost date_time/iostreams linkage removed. Presets reduced to Core Debug/Release; native CMake unity batching replaces the custom generator. imported_files records the original import, not the current file inventory."
   }
 }

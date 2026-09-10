@@ -11,15 +11,6 @@ project("OpenSWATHAlgo")
 cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
 #------------------------------------------------------------------------------
-# Find Boost lib
-#------------------------------------------------------------------------------
-find_boost()
-
-if(NOT Boost_FOUND)
-  message(FATAL_ERROR "Boost was not found!")
-endif()
-
-#------------------------------------------------------------------------------
 # get information regarding the openswath files
 include(source/OPENSWATHALGO/OpenSwathAlgoFiles.cmake)
 

@@ -37,9 +37,9 @@ class BuildIdentityTests(unittest.TestCase):
     def identity(self, settings="", source=None, success=True):
         script = self.directory / "identity.cmake"
         script.write_text(f'''{settings}
-include("{ROOT}/cmake/OpenMSSourceIdentity.cmake")
-openms_source_identity("{source or self.source}" revision dirty)
-file(WRITE "{self.directory}/identity.txt" "${{revision}};${{dirty}}")
+include("{ROOT.as_posix()}/cmake/OpenMSSourceIdentity.cmake")
+openms_source_identity("{(source or self.source).as_posix()}" revision dirty)
+file(WRITE "{self.directory.as_posix()}/identity.txt" "${{revision}};${{dirty}}")
 ''')
         result = self.run_command([CMAKE, "-P", script], success=success)
         if result.returncode:
@@ -77,7 +77,7 @@ file(WRITE "{self.directory}/identity.txt" "${{revision}};${{dirty}}")
 
     def test_build_guard_rejects_source_changed_after_configuration(self):
         (self.source / "tracked.txt").write_text("late edit\n")
-        result = self.run_command([CMAKE, f"-DOPENMS_CHECK_SOURCE_DIR={self.source}",
+        result = self.run_command([CMAKE, f"-DOPENMS_CHECK_SOURCE_DIR={self.source.as_posix()}",
                                    f"-DOPENMS_EXPECTED_REVISION={self.revision}",
                                    "-DOPENMS_EXPECTED_DIRTY=OFF", "-P",
                                    ROOT / "cmake/OpenMSSourceIdentity.cmake"], success=False)
@@ -90,7 +90,7 @@ file(WRITE "{self.directory}/identity.txt" "${{revision}};${{dirty}}")
         project.mkdir()
         (project / "CMakeLists.txt").write_text(f'''cmake_minimum_required(VERSION 3.24)
 project(ABI LANGUAGES CXX)
-include("{ROOT}/cmake/OpenMSRuntimeABI.cmake")
+include("{ROOT.as_posix()}/cmake/OpenMSRuntimeABI.cmake")
 file(WRITE "${{CMAKE_BINARY_DIR}}/abi.txt" "${{OPENMS_STANDARD_LIBRARY}};${{OPENMS_LIBSTDCXX_CXX11_ABI}};${{OPENMS_MSVC_RUNTIME_LIBRARY}}")
 ''')
         self.run_command([CMAKE, "-S", project, "-B", self.directory / "abi-build"])
@@ -108,7 +108,7 @@ file(WRITE "${{CMAKE_BINARY_DIR}}/abi.txt" "${{OPENMS_STANDARD_LIBRARY}};${{OPEN
         project.mkdir()
         (project / "CMakeLists.txt").write_text(f'''cmake_minimum_required(VERSION 3.24)
 project(Identity LANGUAGES NONE)
-set(OPENMS_HOST_DIRECTORY "{self.source}")
+set(OPENMS_HOST_DIRECTORY "{self.source.as_posix()}")
 set(OPENMS_HOST_BINARY_DIRECTORY "${{CMAKE_BINARY_DIR}}")
 set(INSTALL_CMAKE_DIR lib/cmake/OpenMS)
 set(OPENMS_SOURCE_REVISION "{self.revision}")
@@ -132,7 +132,7 @@ set(Eigen3_VERSION 5.0.1)
 set(CURL_VERSION_STRING 8.15.0)
 set(OPENMS_ARROW_TARGET Arrow::arrow_shared)
 set(OPENMS_PARQUET_TARGET Parquet::parquet_shared)
-include("{ROOT}/cmake/OpenMSBuildInfo.cmake")
+include("{ROOT.as_posix()}/cmake/OpenMSBuildInfo.cmake")
 ''')
         build = self.directory / "build"
         self.run_command([CMAKE, "-S", project, "-B", build, "-DCMAKE_BUILD_TYPE=Debug"])

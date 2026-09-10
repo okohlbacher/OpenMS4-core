@@ -89,15 +89,8 @@ else()
 endif()
 
 #------------------------------------------------------------------------------
-# 2 - add link dependencies (TODO could be more finegrained for boost)
-foreach(t ${Boost_dependent_tests})
-  if(TARGET ${t})
-    foreach(comp ${OpenMS_BOOST_COMPONENTS})
-      target_link_libraries(${t} Boost::${comp})
-    endforeach()
-  endif()
-endforeach()
-
+# Extra dependencies needed directly by individual tests. Boost regex is public
+# on OpenMS and already propagates to every class test.
 target_link_libraries(Base64_test ZLIB::ZLIB)
 target_link_libraries(Libzip_test libzip::zip)
 # Xerces is a PRIVATE dependency of libOpenMS. These tests exercise the internal

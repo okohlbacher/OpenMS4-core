@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -36,10 +37,11 @@ def main() -> None:
     work.mkdir(parents=True, exist_ok=True)
     results = []
 
-    def run(command: list[str], *, expect_failure: bool = False) -> None:
+    def run(command: list[str], *, expect_failure: bool = False,
+            environment: dict[str, str] | None = None) -> None:
         started = time.monotonic()
         completed = subprocess.run(command, text=True, stdout=subprocess.PIPE,
-                                   stderr=subprocess.STDOUT, cwd=work)
+                                   stderr=subprocess.STDOUT, cwd=work, env=environment)
         index = len(results) + 1
         log = work / f"{index:02d}.log"
         log.write_text(completed.stdout)
@@ -58,12 +60,12 @@ def main() -> None:
         if len(configs) != 1:
             raise SystemExit(f"Expected one installed OpenMSConfig.cmake under {prefix}; found {configs}")
         build = work / name
-        prefixes = [str(prefix), *(str(p.resolve()) for p in args.dependency_prefix)]
+        prefixes = [prefix.as_posix(), *(p.resolve().as_posix() for p in args.dependency_prefix)]
         command = ["cmake", "-S", str(source), "-B", str(build), "-G", args.generator,
                    f"-DCMAKE_BUILD_TYPE={args.configuration}",
                    f"-DCMAKE_PREFIX_PATH={';'.join(prefixes)}",
-                   f"-DOpenMS_DIR={configs[0].parent}",
-                   f"-DOPENMS_EXPECTED_PREFIX={prefix}", *args.cmake_argument]
+                   f"-DOpenMS_DIR={configs[0].parent.as_posix()}",
+                   f"-DOPENMS_EXPECTED_PREFIX={prefix.as_posix()}", *args.cmake_argument]
         if wrong_revision:
             command.append("-DOPENMS_EXPECTED_SOURCE_REVISION=0000000000000000000000000000000000000000")
         elif args.expected_revision:
@@ -81,8 +83,12 @@ def main() -> None:
         build = configure(prefix, name)
         run(["cmake", "--build", str(build), "--config", args.configuration,
              "--parallel", str(args.jobs)])
+        environment = os.environ.copy()
+        if os.name == "nt":
+            # Windows has no RPATH: prefer the SDK being tested, including after relocation.
+            environment["PATH"] = str(prefix / "bin") + os.pathsep + environment.get("PATH", "")
         run(["ctest", "--test-dir", str(build), "-C", args.configuration,
-             "--output-on-failure", "--parallel", str(args.jobs)])
+             "--output-on-failure", "--parallel", str(args.jobs)], environment=environment)
     configure(sdk, "wrong-revision-consumer", wrong_revision=True)
     print(f"Installed SDK acceptance passed. Results: {work / 'results.json'}")
 

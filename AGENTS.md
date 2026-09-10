@@ -17,7 +17,7 @@ and consume an installed, pinned Core SDK. See README.md and CORE_IMPLEMENTATION
 
 ## Build and acceptance
 
-Use CMake 3.24+, C++23 and the `core-debug` preset. The preset enables shared SDK
+Use CMake 3.24+, C++23 and the `core-debug` preset (`core-release` for delivery). The preset enables shared SDK
 libraries, scientific class tests and TestSupport; optional Opentims, Thermo RAW,
 HDF5, TDL, ONNX and WNet integrations remain selectable but are disabled in it.
 There are no GUI, TOPP, Python, documentation or suite-installer build switches here.
@@ -28,6 +28,10 @@ cmake --build --preset core-debug --parallel 2
 ctest --preset core-debug --parallel 2
 python3 -m unittest discover -s tests/sdk_contract -v
 ```
+
+CI uses Release with conda-forge dependencies on five native platform/architecture
+pairs. Windows uses the Visual Studio generator and matching Release CRT; do not
+link those dependencies into an ordinary MSVC Debug build.
 
 On macOS use shared Boost (`BOOST_USE_STATIC=OFF`), shared Arrow
 (`ARROW_USE_STATIC=OFF`) and the curl/framework flags in README.md. Do not edit
