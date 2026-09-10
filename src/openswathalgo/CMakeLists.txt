@@ -37,5 +37,3 @@ openms_add_library(TARGET_NAME OpenSwathAlgo
 set_target_properties(OpenSwathAlgo PROPERTIES AUTOMOC OFF EXPORT_NAME OpenSwathAlgo)
 add_library(OpenMS::OpenSwathAlgo ALIAS OpenSwathAlgo)
 target_link_libraries(OpenSwathAlgo PUBLIC Boost::boost Eigen3::Eigen)
-
-openms_doc_path("${PROJECT_SOURCE_DIR}/include")

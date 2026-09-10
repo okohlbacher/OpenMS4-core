@@ -9,6 +9,7 @@
 #include <OpenMS/FORMAT/ParamCTDFile.h>
 
 #include <OpenMS/DATASTRUCTURES/ParamTags.h>
+#include <OpenMS/DATASTRUCTURES/StringUtils.h>
 
 #include <cstdint>
 #include <fstream>

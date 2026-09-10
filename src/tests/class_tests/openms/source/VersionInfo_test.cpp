@@ -14,6 +14,7 @@
 #include <OpenMS/CONCEPT/VersionInfo.h>
 #include <OpenMS/openms_package_version.h>
 #include <OpenMS/DATASTRUCTURES/StringUtils.h>
+#include <sstream>
 
 
 /////////////////////////////////////////////////////////////
@@ -41,9 +42,15 @@ END_SECTION
 START_SECTION((static VersionDetails getVersionStruct()))
 {
   VersionInfo::VersionDetails detail;
-  detail.version_major = 3;
-  detail.version_minor = 6;
-  detail.version_patch = 0;
+  // Parse the configured release independently of VersionDetails::create(),
+  // so this checks the library against its installed version header.
+  std::istringstream version(OPENMS_PACKAGE_VERSION);
+  char first_dot = '\0';
+  char second_dot = '\0';
+  version >> detail.version_major >> first_dot >> detail.version_minor >> second_dot >> detail.version_patch;
+  TEST_FALSE(version.fail());
+  TEST_EQUAL(first_dot, '.');
+  TEST_EQUAL(second_dot, '.');
   TEST_EQUAL(VersionInfo::getVersionStruct().version_major, detail.version_major);
   TEST_EQUAL(VersionInfo::getVersionStruct().version_minor, detail.version_minor);
   TEST_EQUAL(VersionInfo::getVersionStruct().version_patch, detail.version_patch);

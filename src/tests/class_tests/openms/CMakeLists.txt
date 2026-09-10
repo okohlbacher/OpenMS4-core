@@ -21,11 +21,6 @@ configure_file(${PROJECT_SOURCE_DIR}/include/OpenMS/test_config.h.in ${CONFIGURE
 include(executables.cmake)
 
 #------------------------------------------------------------------------------
-# scan this project's include dir for API docs, so TestFileValidation.h's
-# VALIDATE_TMP_FILES / VALIDATE_FILE land on the ClassTest doxygen page
-openms_doc_path("${PROJECT_SOURCE_DIR}/include")
-
-#------------------------------------------------------------------------------
 # Include directories for tests
 set(OPENMS_CLASS_TESTS_INTERNAL_INCLUDE_DIRECTORIES "${PROJECT_BINARY_DIR}/include/;${PROJECT_SOURCE_DIR}/include/")
 # add OpenMS directories
@@ -42,11 +37,16 @@ endif()
 
 #------------------------------------------------------------------------------
 # Add the actual tests
+# An OBJECT target keeps the registration object in every executable while
+# compiling it only once. A static archive could discard its initializer.
+add_library(OpenMSClassTestSupport OBJECT source/OpenMSTestSupport.cpp)
+target_link_libraries(OpenMSClassTestSupport PRIVATE OpenMSTestFramework ${OpenMS_LIBRARIES})
+openms_add_executable_compiler_flags(OpenMSClassTestSupport)
 foreach(_class_test ${TEST_executables})
   # OpenMSTestSupport.cpp registers libOpenMS behavior (unique-ID seeding, exception
   # naming) with the std-only test framework. Removing it makes ID-bearing
   # reference-file comparisons nondeterministic -- see the file's header comment.
-  add_executable(${_class_test} source/${_class_test}.cpp source/OpenMSTestSupport.cpp)
+  add_executable(${_class_test} source/${_class_test}.cpp $<TARGET_OBJECTS:OpenMSClassTestSupport>)
   target_link_libraries(${_class_test} OpenMSTestFramework ${OpenMS_LIBRARIES})
   openms_add_executable_compiler_flags(${_class_test})
   add_test(${_class_test} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${_class_test})
@@ -71,37 +71,31 @@ set_tests_properties(StopWatch_test PROPERTIES RUN_SERIAL 1)
 set_tests_properties(PipEchoAlgorithm_realistic_test PROPERTIES LABELS "slow" TIMEOUT 1800)
 
 # Percolator_subprocess_parity_test runs side-by-side comparisons against the
-# external `percolator` binary. Tests that need it are gated via the
-# PERCOLATOR_BINARY environment variable and skip silently when unset. Search
-# PATH first, then fall back to the repo's bundled THIRDPARTY/<os>/<arch>/
-# layout so local dev builds pick it up automatically.
-set(_percolator_thirdparty_hints)
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  list(APPEND _percolator_thirdparty_hints
-    "${OpenMS_SOURCE_DIR}/THIRDPARTY/Linux/${CMAKE_SYSTEM_PROCESSOR}/Percolator"
-    "${CMAKE_SOURCE_DIR}/THIRDPARTY/Linux/${CMAKE_SYSTEM_PROCESSOR}/Percolator")
-elseif (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-  list(APPEND _percolator_thirdparty_hints
-    "${OpenMS_SOURCE_DIR}/THIRDPARTY/MacOS/${CMAKE_SYSTEM_PROCESSOR}/Percolator"
-    "${CMAKE_SOURCE_DIR}/THIRDPARTY/MacOS/${CMAKE_SYSTEM_PROCESSOR}/Percolator")
-endif()
-find_program(PERCOLATOR_BINARY_FOR_TEST percolator
-  PATHS ENV PATH ${_percolator_thirdparty_hints})
+# external `percolator` binary. The PIN-stamp section always runs; optional
+# subprocess sections report their unavailable dependency explicitly. Set
+# PERCOLATOR_BINARY_FOR_TEST to pin the external executable, or discover it
+# on PATH without assuming any sibling source repository.
+find_program(PERCOLATOR_BINARY_FOR_TEST NAMES percolator
+  DOC "Optional external Percolator executable used by subprocess parity tests")
+set_tests_properties(Percolator_subprocess_parity_test PROPERTIES
+  LABELS "core;optional-integration")
 
 if (PERCOLATOR_BINARY_FOR_TEST)
   set_tests_properties(Percolator_subprocess_parity_test PROPERTIES
     ENVIRONMENT "PERCOLATOR_BINARY=${PERCOLATOR_BINARY_FOR_TEST}")
   message(STATUS "Percolator_subprocess_parity_test: enabled (found ${PERCOLATOR_BINARY_FOR_TEST})")
 else()
-  message(STATUS "Percolator_subprocess_parity_test: subprocess sections skipped (percolator binary not on PATH nor in THIRDPARTY)")
+  message(STATUS "Percolator_subprocess_parity_test: PIN-stamp checks enabled; subprocess sections SKIPPED (set PERCOLATOR_BINARY_FOR_TEST or put percolator on PATH)")
 endif()
 
 #------------------------------------------------------------------------------
 # 2 - add link dependencies (TODO could be more finegrained for boost)
 foreach(t ${Boost_dependent_tests})
-  foreach(comp ${OpenMS_BOOST_COMPONENTS})
-    target_link_libraries(${t} Boost::${comp})
-  endforeach()
+  if(TARGET ${t})
+    foreach(comp ${OpenMS_BOOST_COMPONENTS})
+      target_link_libraries(${t} Boost::${comp})
+    endforeach()
+  endif()
 endforeach()
 
 target_link_libraries(Base64_test ZLIB::ZLIB)
@@ -119,7 +113,9 @@ target_link_libraries(SpectraSTSimilarityScore_test Eigen3::Eigen)
 target_link_libraries(BinnedSpectrum_test Eigen3::Eigen)
 target_link_libraries(BilinearInterpolation_test Eigen3::Eigen)
 target_link_libraries(MatrixEigen_test Eigen3::Eigen)
-target_link_libraries(MRMScoring_test Eigen3::Eigen)
+if(TARGET MRMScoring_test)
+  target_link_libraries(MRMScoring_test Eigen3::Eigen)
+endif()
 
 
 if (WITH_HDF5)
@@ -327,7 +323,7 @@ endif()
 #------------------------------------------------------------------------------
 # restore old compiler flags
 if (CMAKE_COMPILER_IS_INTELCXX OR CMAKE_COMPILER_IS_GNUCXX OR CMAKE_COMPILER_IS_CLANG)
-  set(${CMAKE_CXX_FLAGS_RELEASE} ${_TMP_CMAKE_CXX_FLAGS_RELEASE})
+  set(CMAKE_CXX_FLAGS_RELEASE "${_TMP_CMAKE_CXX_FLAGS_RELEASE}")
 endif()
 
 #------------------------------------------------------------------------------
@@ -372,7 +368,8 @@ add_test(NAME CoreDataPath_explicit_override
 set_tests_properties(CoreDataPath_explicit_override PROPERTIES
   ENVIRONMENT "OPENMS_DATA_PATH=${_data_override}")
 add_test(NAME CoreDataPath_invalid_override
-  COMMAND CoreDataPath_probe "${_data_override}")
-set_tests_properties(CoreDataPath_invalid_override PROPERTIES
-  ENVIRONMENT "OPENMS_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/missing-data-override"
-  WILL_FAIL TRUE)
+  COMMAND ${CMAKE_COMMAND}
+    "-DPROBE_EXECUTABLE=$<TARGET_FILE:CoreDataPath_probe>"
+    "-DPROBE_ARGUMENTS=${_data_override}"
+    "-DINVALID_OVERRIDE=${CMAKE_CURRENT_BINARY_DIR}/missing-data-override"
+    -P "${OPENMS_HOST_DIRECTORY}/tests/installed_sdk_acceptance/ExpectInvalidDataOverride.cmake")

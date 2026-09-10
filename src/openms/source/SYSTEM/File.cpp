@@ -606,9 +606,9 @@ namespace OpenMS{
     //(this is the usual culprit for missing standard share/OpenMS files, e.g. a stale OPENMS_DATA_PATH)
     const std::string hint = "OpenMS searched its shared-data directory '" + getOpenMSDataPath()
       + "' (via " + getOpenMSDataPathSource() + "). "
-      + "If this is a wrong or outdated OpenMS installation, reinstall OpenMS (or ensure the executable sits "
-      + "next to its '.../share/OpenMS' directory); OPENMS_DATA_PATH is only used as a last-resort fallback, "
-      + "so unset it if it points to a stale location";
+      + "If this is a wrong or outdated OpenMS installation, reinstall the Core SDK with its shared data. "
+      + "OPENMS_DATA_PATH is an explicit override that takes precedence over installation discovery, "
+      + "so unset or correct it if it points to a stale location";
     throw Exception::FileNotFound(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, filename, hint);
   }
 

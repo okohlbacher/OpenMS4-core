@@ -13,6 +13,39 @@ PR - Pull Request (on GitHub), i.e. integration of a new feature or bugfix
 
 
 ------------------------------------------------------------------------------------------
+----                 Experimental OpenMS Core SDK 4.0.0 (unreleased)                   ----
+------------------------------------------------------------------------------------------
+
+This private package experiment starts from OpenMS develop commit
+ca32296038839459d8c9b075b759e285913d6294. The upstream history below is retained.
+
+Core SDK boundary:
+  - Extract scientific OpenMS and OpenSwathAlgo libraries from TOPP, desktop and
+    Python products; keep ConsoleUtils and shared parameter tag constants in Core.
+  - Remove active GUI discovery, product generation, documentation and suite installer
+    orchestration from the Core build. Preserve scientific and optional native readers.
+  - Export namespaced installed SDK targets, exact source/dependency identities,
+    versioned runtime data and a separate optional TestSupport development component.
+  - Resolve runtime data relative to the loaded Core library, with an explicit
+    OPENMS_DATA_PATH override taking precedence and invalid overrides failing clearly.
+
+Build and tests:
+  - Add the core-debug profile for a shared Debug SDK and scientific class tests using
+    installed dependencies; optional reader/model/alignment integrations remain opt-in.
+  - Compile deterministic class-test registration once as an OBJECT target and include
+    it in every test. Preserve test fixtures locally and remove sibling-tool assumptions.
+  - Discover optional external Percolator explicitly or through PATH, report missing
+    subprocess comparisons, and retain independent in-process/PIN-stamp checks.
+  - Correct the Core version assertion and ParamCTDFile's direct StringUtils dependency;
+    update data-resolution diagnostics to describe the new override behavior.
+  - Add external installed-SDK consumers for public APIs, Eigen, Arrow/Parquet,
+    runtime-data relocation, source identity and optional TestSupport acceptance.
+
+Native validation results and feature/platform limits are recorded in
+OpenMS4-tests/docs/core-native-validation.md. These changes are experimental and do
+not claim validation of every product, optional integration or platform.
+
+------------------------------------------------------------------------------------------
 ----                                OpenMS 3.6.0     (under development)              ----
 ------------------------------------------------------------------------------------------
 

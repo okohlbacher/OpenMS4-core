@@ -7,7 +7,7 @@
 # --------------------------------------------------------------------------
 
 
-cmake_minimum_required(VERSION 3.21 FATAL_ERROR) ## if you change this, also update doc/doxygen/install/install-<OS>.doxygen
+cmake_minimum_required(VERSION 3.21 FATAL_ERROR)
 
 # The vcpkg toolchain must be selected before project() initializes compilers.
 # Existing system/contrib dependency discovery remains the default.
@@ -33,10 +33,7 @@ if(NOT multiConfig AND NOT DEFINED CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug CACHE STRING "Choose the type of build.")
 endif()
 
-project("OpenMS_host" LANGUAGES CXX)
-
-# required for cmake < 3.13 if ccache is used
-set(CMAKE_AUTOMOC_COMPILER_PREDEFINES OFF)
+project("OpenMSCoreSDK" LANGUAGES CXX)
 
 #------------------------------------------------------------------------------
 # General CMake definitions & helper
@@ -70,12 +67,7 @@ enable_testing()
 #------------------------------------------------------------------------------
 option(MT_ENABLE_OPENMP "Enable OpenMP support" ON)
 option(BOOST_USE_STATIC "Use Boost static libraries." ON)
-option(HAS_XSERVER "Indicates if an X server is available. If set to Off it will disable certain tests and the doc target." ON)
-set(ENABLE_DOCS OFF)
-set(BUILD_TOPP_TOOLS OFF)
 option(INSTALL_OPENMS_EXAMPLES "Install the OpenMS example data." ON)
-set(WITH_GUI OFF)
-option(NO_WEBENGINE_WIDGETS "Do not use QtWebengineWidgets. Disables Javascript views in TOPPView." OFF)
 option(WITH_HDF5 "Build HDF5 parts of OpenMS." OFF)
 option(WITH_OPENTIMS "Build with Bruker TimsTOF .d file support via opentims" ON)
 option(ENABLE_OPENTIMS_TESTS "Download Bruker test data for opentims integration tests" OFF)
@@ -91,7 +83,6 @@ option(WITH_THERMO_RAW "Build with Thermo RAW file reading support via openms-th
 option(ENABLE_THERMO_RAW_TESTS "Download Thermo RAW test data for integration tests" OFF)
 option(ENABLE_THERMO_FAIMS_DIA_TESTS "Download Thermo FAIMS-DIA test data for integration tests" OFF)
 option(ENABLE_TDL "Load dependency and compile against TDL (required for CWL file support)." OFF)
-set(ENABLE_CWL_GENERATION OFF)
 option(ENABLE_CLASS_TESTING "Build scientific core class tests." ON)
 option(OPENMS_BUILD_TEST_SUPPORT "Build and install the optional TestSupport development component." ON)
 option(ARROW_USE_STATIC "Use static Arrow libraries (experimental; shared is preferred)." OFF)
@@ -110,13 +101,6 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^aarch64$" AND UNIX AND NOT APPLE)
       "https://github.com/thermofisherlsms/RawFileReader/issues/21 and contact Thermo Fisher "
       "support by email if native support matters for your workflow.")
   endif()
-endif()
-
-if(ENABLE_CWL_GENERATION AND NOT ENABLE_TDL)
-    message(FATAL_ERROR "ENABLE_CWL_GENERATION requires ENABLE_TDL to be ON.")
-endif()
-if(ENABLE_CWL_GENERATION AND NOT BUILD_TOPP_TOOLS)
-    message(FATAL_ERROR "ENABLE_CWL_GENERATION requires BUILD_TOPP_TOOLS to be ON.")
 endif()
 
 if(MSVC)
@@ -215,8 +199,6 @@ if(NOT CMAKE_MODULE_PATH)
 	set(CMAKE_MODULE_PATH)
 endif()
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/Modules")
-## CMake looks for the NSIS script in the module path.
-list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/Windows")
 
 #------------------------------------------------------------------------------
 # OpenMS Version Information
@@ -231,7 +213,7 @@ message(STATUS "Building OpenMS ${OPENMS_PACKAGE_VERSION}")
 #------------------------------------------------------------------------------
 # retrieve detailed information on the working copy (git)
 include(GetGitRevisionDescription)
-option(GIT_TRACKING "Embedding of Git version control information into the OpenMS library (and OpenMSInfo tool). Note that if activated, every branch-switch or commit will trigger re-generation of the build system (MakeFiles, VS Solutions etc)." ON)
+option(GIT_TRACKING "Embed Git version information in the core library; branch changes and commits regenerate build metadata." ON)
 if (GIT_TRACKING)
   ## will configure an include file
   git_short_info(OPENMS_GIT_SHORT_REFSPEC OPENMS_GIT_SHORT_SHA1 OPENMS_GIT_LC_DATE)
@@ -422,18 +404,11 @@ endif()
 include (${PROJECT_SOURCE_DIR}/cmake/build_system_macros.cmake)
 # .. and some to ease the installation process
 include (${PROJECT_SOURCE_DIR}/cmake/install_macros.cmake)
-# .. and some to ease preparing the documentation builds
-include (${PROJECT_SOURCE_DIR}/cmake/doc_macros.cmake)
 # .. and some to ease the installation process
 include (${PROJECT_SOURCE_DIR}/cmake/add_library_macros.cmake)
 # .. and some to ease the export process
 include (${PROJECT_SOURCE_DIR}/cmake/export_macros.cmake)
 
-
-#------------------------------------------------------------------------------
-# Core produces an SDK; suite packaging belongs to the superproject.
-set(PACKAGE_TYPE "none")
-set(ENABLE_PREPARE_KNIME_PACKAGE OFF)
 
 #------------------------------------------------------------------------------
 # Output directories
@@ -463,12 +438,6 @@ endif()
 
 set(INSTALL_CMAKE_DIR ${DEF_INSTALL_CMAKE_DIR} CACHE PATH "Installation directory for CMake files")
 set(INSTALL_LIB_DIR ${DEF_INSTALL_LIB_DIR} CACHE PATH "Installation directory for libraries")
-set(INSTALL_PLUGIN_SUBDIR plugins CACHE PATH "Installation subdirectory under the lib dir for QT plugins")
-set(INSTALL_PLUGIN_DIR ${INSTALL_LIB_DIR}/${INSTALL_PLUGIN_SUBDIR})
-file(RELATIVE_PATH INSTALL_LIB_PATH_REL_TO_BIN /${INSTALL_BIN_DIR} /${INSTALL_LIB_DIR})
-set(QT_PLUGIN_PATH_REL_TO_BIN ${INSTALL_LIB_PATH_REL_TO_BIN}/${INSTALL_PLUGIN_SUBDIR})
-
-
 # Library-relative RPATH permits SDK relocation without a build-directory fallback.
 if(UNIX)
   set(CMAKE_SKIP_BUILD_RPATH FALSE)

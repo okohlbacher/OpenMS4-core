@@ -403,7 +403,6 @@ endif()
 install_directory(${OPENMS_HOST_DIRECTORY}/cmake/Modules/ ${INSTALL_CMAKE_DIR}/Modules cmake)
 file(COPY ${OPENMS_HOST_DIRECTORY}/cmake/Modules DESTINATION ${OPENMS_HOST_BINARY_DIRECTORY})
 
-openms_doc_path("${PROJECT_SOURCE_DIR}/include")
 
 # Add the ONNX source files conditionally
 if(WITH_ONNX)

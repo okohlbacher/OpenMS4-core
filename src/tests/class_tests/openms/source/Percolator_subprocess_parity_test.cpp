@@ -8,7 +8,7 @@
 //
 // Side-by-side regression suite for the in-process Percolator against the
 // external `percolator` binary. Sections 2+ are gated on the environment
-// variable PERCOLATOR_BINARY; without it, they no-op. Section 1 (PIN stamp
+// variable PERCOLATOR_BINARY; without it, they report a skip. Section 1 (PIN stamp
 // parity) always runs.
 
 #include <OpenMS/CONCEPT/ClassTest.h>
@@ -602,7 +602,9 @@ START_SECTION([EXTRA] scores and FDR-threshold counts match subprocess)
   const std::string bin = percolatorBinary();
   if (bin.empty())
   {
-    TEST_EQUAL(true, true);  // skip silently; external binary unavailable
+    STATUS("SKIPPED subprocess comparison: PERCOLATOR_BINARY is unset; PIN-stamp checks still run.");
+    ADD_MESSAGE("Optional external Percolator comparisons were skipped; no external executable configured.");
+    NOT_TESTABLE;
   }
   else
   {
@@ -680,7 +682,8 @@ START_SECTION([EXTRA] ranking parity at q &lt;= 0.01 / 0.05 / 0.10)
   const std::string bin = percolatorBinary();
   if (bin.empty())
   {
-    TEST_EQUAL(true, true);  // skip silently
+    STATUS("SKIPPED subprocess comparison: PERCOLATOR_BINARY is unset.");
+    NOT_TESTABLE;
   }
   else
   {
@@ -754,7 +757,8 @@ START_SECTION([EXTRA] parameter matrix: each flag flows through to the SVM)
   const std::string bin = percolatorBinary();
   if (bin.empty())
   {
-    TEST_EQUAL(true, true);  // skip silently
+    STATUS("SKIPPED subprocess comparison: PERCOLATOR_BINARY is unset.");
+    NOT_TESTABLE;
   }
   else
   {
@@ -883,7 +887,8 @@ START_SECTION([EXTRA] SVM weights match average of per-fold subprocess weights)
   const std::string bin = percolatorBinary();
   if (bin.empty())
   {
-    TEST_EQUAL(true, true);  // skip silently
+    STATUS("SKIPPED subprocess comparison: PERCOLATOR_BINARY is unset.");
+    NOT_TESTABLE;
   }
   else
   {
@@ -1000,7 +1005,8 @@ START_SECTION([EXTRA] realistic idXML parity at library layer)
   const std::string bin = percolatorBinary();
   if (bin.empty())
   {
-    TEST_EQUAL(true, true);  // skip silently
+    STATUS("SKIPPED subprocess comparison: PERCOLATOR_BINARY is unset.");
+    NOT_TESTABLE;
   }
   else
   {

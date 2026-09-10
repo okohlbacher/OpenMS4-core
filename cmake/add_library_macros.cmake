@@ -50,31 +50,23 @@ function(convert_to_unity_build UB_SUFFIX SOURCE_FILES_NAME)
 endfunction(convert_to_unity_build)
 
 #------------------------------------------------------------------------------
-## Copy the dll produced by the given target to the test/doc binary path.
+## Copy the DLL produced by the given target to the class-test binary path.
 ## @param targetname The target to modify.
 ## @note This macro will do nothing outside of Windows since the linker will find the libs.
 macro(copy_dll_to_extern_bin targetname)
-  if (WIN32)
+  if (WIN32 AND ENABLE_CLASS_TESTING)
     get_property(_copy_dll_is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
     if(_copy_dll_is_multi_config)
       file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/src/tests/class_tests/bin/$<CONFIG>/$<TARGET_FILE_NAME:${targetname}>" DLL_TEST_TARGET)
       file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/src/tests/class_tests/bin/$<CONFIG>" DLL_TEST_TARGET_PATH)
-
-      file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/doc/doxygen/parameters/$<CONFIG>/$<TARGET_FILE_NAME:${targetname}>" DLL_DOC_TARGET)
-      file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/doc/doxygen/parameters/$<CONFIG>" DLL_DOC_TARGET_PATH)
     else()
       file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/src/tests/class_tests/bin/$<TARGET_FILE_NAME:${targetname}>" DLL_TEST_TARGET)
       file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/src/tests/class_tests/bin/" DLL_TEST_TARGET_PATH)
-
-      file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/doc/doxygen/parameters/$<TARGET_FILE_NAME:${targetname}>" DLL_DOC_TARGET)
-      file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/doc/doxygen/parameters/" DLL_DOC_TARGET_PATH)
     endif()
     add_custom_command(TARGET ${targetname}
             POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory "${DLL_TEST_TARGET_PATH}"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:${targetname}> ${DLL_TEST_TARGET}
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${DLL_DOC_TARGET_PATH}"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:${targetname}> ${DLL_DOC_TARGET}
             )
   endif()
 endmacro()
@@ -211,14 +203,13 @@ function(openms_add_library)
   openms_register_export_target(${openms_add_library_TARGET_NAME})
 
   #------------------------------------------------------------------------------
-  # On Windows copy DLLs and dependencies of them to other locations of executables that need them (tests, documenter)
-  # TODO Find something that does not copy 100s of MB three times.
-  # TODO I think this should ideally go to the tests and docs CMakeLists separately.
+  # On Windows, place core DLLs beside class tests and keep native dependencies
+  # beside the library. Library-only builds do not create test directories.
   # Copy target DLLs themselves
   copy_dll_to_extern_bin(${openms_add_library_TARGET_NAME})
   # Copy dependencies
   if(WIN32)
-    # with newer CMakes we can also easily copy dependencies like Qt
+    # CMake resolves the runtime dependencies of the core library.
     # This stores the command as a list
     set(has_dll_dep
             $<BOOL:$<TARGET_RUNTIME_DLLS:${openms_add_library_TARGET_NAME}>>
@@ -236,10 +227,8 @@ function(openms_add_library)
     get_property(is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
     if(is_multi_config)
       file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/src/tests/class_tests/bin/$<CONFIG>/" DLL_TEST_TARGET_PATH)
-      file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/doc/doxygen/parameters/$<CONFIG>/" DLL_DOC_TARGET_PATH)
     else()
       file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/src/tests/class_tests/bin/" DLL_TEST_TARGET_PATH)
-      file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/doc/doxygen/parameters/" DLL_DOC_TARGET_PATH)
     endif()
 
     set(copy_dlls_to_test_folder
@@ -248,7 +237,11 @@ function(openms_add_library)
             ${DLL_TEST_TARGET_PATH}
             )
 
-    foreach(command IN ITEMS "${copy_dlls_to_output_folder}" "${copy_dlls_to_test_folder}")
+    set(_openms_copy_test_dependencies "${none_command}")
+    if(ENABLE_CLASS_TESTING)
+      set(_openms_copy_test_dependencies "${copy_dlls_to_test_folder}")
+    endif()
+    foreach(command IN ITEMS "${copy_dlls_to_output_folder}" "${_openms_copy_test_dependencies}")
       set(if_runtime_dlls_copy
               $<IF:${has_dll_dep},${command},${none_command}>
               )
@@ -258,30 +251,7 @@ function(openms_add_library)
               )
     endforeach()
 
-    if(ENABLE_DOCS)
-        set(copy_dlls_to_doc_folder
-         ${CMAKE_COMMAND} -E copy_if_different
-         $<TARGET_RUNTIME_DLLS:${openms_add_library_TARGET_NAME}>
-         ${DLL_DOC_TARGET_PATH}
-         )
-        set(if_runtime_dlls_copy
-              $<IF:${has_dll_dep},${copy_dlls_to_doc_folder},${none_command}>
-              )
-        add_custom_command(TARGET ${openms_add_library_TARGET_NAME} POST_BUILD
-              COMMAND ${CMAKE_COMMAND} -E make_directory "${DLL_DOC_TARGET_PATH}"
-              COMMAND "${if_runtime_dlls_copy}"
-              COMMAND_EXPAND_LISTS
-              )
-    endif()
 
-    ## another fix for APPLE, see https://github.com/OpenMS/OpenMS/pull/7525
-    if(APPLECLANG)
-      if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "15.0.0")
-          target_link_options(${openms_add_library_TARGET_NAME} PRIVATE -ld_classic)
-          set_target_properties(${openms_add_library_TARGET_NAME} PROPERTIES
-              QT_NO_DISABLE_WARN_DUPLICATE_LIBRARIES TRUE)
-      endif()
-    endif()
   endif()
   #------------------------------------------------------------------------------
   # Status message for configure output

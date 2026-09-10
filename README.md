@@ -1,6 +1,103 @@
-# OpenMS 4 core experiment
+# Experimental OpenMS 4 Core SDK
 
-Independent scientific SDK extracted from OpenMS develop at ca32296038839459d8c9b075b759e285913d6294. See [CORE_IMPLEMENTATION_NOTES.md](CORE_IMPLEMENTATION_NOTES.md) for the new build/export contract and validation limits. Core C++ version is 4.0.0; this is experimental and has not been compiled in this extraction task.
+Independent C++23 scientific SDK extracted from OpenMS develop at
+`ca32296038839459d8c9b075b759e285913d6294`, with experimental ABI version **4.0.0**.
+This repository builds `OpenMS::Core`, `OpenMS::OpenSwathAlgo`, their scientific
+class tests, and optional development test support. CLI tools, desktop applications,
+and pyOpenMS consume the installed SDK from separate repositories.
+
+## Build and test Core
+
+Use CMake 3.24 or newer, a C++23 compiler, and installed native dependencies.
+`core-debug` uses shared Core/Boost/Arrow libraries and enables scientific class
+tests and TestSupport. Opentims, Thermo RAW, WNet, TDL, ONNX, and HDF5 support are
+disabled in this first portable profile; their CMake switches remain available.
+Qt and downstream application builds are absent.
+
+From this repository's root, with dependencies on the normal discovery path:
+
+```bash
+cmake --preset core-debug
+cmake --build --preset core-debug --parallel 2
+ctest --preset core-debug --parallel 2
+```
+
+For custom native dependency locations, add
+`-DCMAKE_PREFIX_PATH="/absolute/dependency/prefix;/another/prefix"` to configuration.
+On Apple Silicon macOS, select Homebrew curl explicitly so an older system-local
+`libcurl.framework` cannot override the intended native dependency:
+
+```bash
+cmake --preset core-debug -U 'CURL_*' \
+  -DCMAKE_PREFIX_PATH="/opt/homebrew;/opt/homebrew/opt/libomp" \
+  -DCURL_ROOT=/opt/homebrew/opt/curl -DCMAKE_FIND_FRAMEWORK=LAST
+```
+
+The `-U` argument removes cached curl discovery results before the explicit root is
+applied. Match the compiler, architecture and Debug configuration when building SDK
+consumers, and pass the same curl/framework settings to their configuration when
+needed. The platform vcpkg presets remain available separately.
+External Percolator comparisons use `-DPERCOLATOR_BINARY_FOR_TEST=/absolute/path/to/percolator`
+or PATH discovery; unavailable subprocess checks are reported explicitly. The
+in-process scientific tests remain in Core.
+
+## Install the SDK and optional TestSupport
+
+A default `cmake --install` includes every enabled component, including TestSupport.
+To exercise a complete SDK without TestSupport, select components into a fresh prefix:
+
+```bash
+OPENMS_CORE_PREFIX="$PWD/build/core-sdk"
+for component in library OpenMS_headers OpenSwathAlgo_headers thirdparty_headers cmake share; do
+  cmake --install build/core-debug --config Debug --prefix "$OPENMS_CORE_PREFIX" --component "$component"
+done
+```
+
+Consumers then use `find_package(OpenMS 4.0.0 EXACT CONFIG REQUIRED)` and link
+`OpenMS::Core`. Its package configuration records the exact Core source revision,
+public dependency versions and enabled features. Core runtime data is versioned
+under `share/OpenMS/4.0.0`; `OpenMS_DATA_DIR` exposes its location.
+
+Install the optional development component after checking the SDK without it:
+
+```bash
+cmake --install build/core-debug --config Debug --prefix "$OPENMS_CORE_PREFIX" --component TestSupport
+```
+
+It provides `OpenMS::TestFramework`, the registration source and class-test fixtures,
+selected with `find_package(OpenMS 4.0.0 EXACT CONFIG REQUIRED COMPONENTS TestSupport)`.
+The `examples` install component is separate from runtime data and test support.
+
+## Verify installed consumers
+
+The [installed-SDK acceptance project](tests/installed_sdk_acceptance/README.md)
+builds small independent consumers, tests public Eigen/Arrow APIs and mzML/Parquet
+round trips, checks optional test support, and repeats after SDK relocation. Use a
+clean, committed Core checkout so the expected revision identifies the built source:
+
+```bash
+python3 tests/installed_sdk_acceptance/run_acceptance.py \
+  --sdk-prefix "$OPENMS_CORE_PREFIX" \
+  --work-dir "$PWD/build/installed-acceptance" \
+  --expected-revision "$(git rev-parse HEAD)" \
+  --configuration Debug --jobs 2
+```
+
+Add `--dependency-prefix /absolute/dependency/prefix` when needed. For the SDK without
+TestSupport, run it before adding that component, use a different empty work directory,
+and pass `--cmake-argument=-DOPENMS_ACCEPTANCE_TEST_SUPPORT=OFF`.
+
+Current native build, class-test and installed-consumer results are recorded in the
+[superproject's Core native validation report](https://github.com/okohlbacher/OpenMS4-tests/blob/codex/package-split/docs/core-native-validation.md).
+A successful build on one profile does not validate disabled native integrations or
+other platforms. See [CORE_IMPLEMENTATION_NOTES.md](CORE_IMPLEMENTATION_NOTES.md)
+for ownership, exports and validation boundaries.
+
+## Historical upstream overview
+
+The following overview is retained from the upstream OpenMS 3.6 source. Its suite,
+GUI and Python descriptions refer to the wider OpenMS project; the Core SDK workflow
+above applies to this repository.
 
 ---
 

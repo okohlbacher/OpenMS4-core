@@ -65,4 +65,3 @@ if(OPENMS_BUILD_TEST_SUPPORT)
   install(FILES "${OPENMS_HOST_BINARY_DIRECTORY}/OpenMSTestSupportConfig.cmake"
     DESTINATION ${INSTALL_CMAKE_DIR} COMPONENT TestSupport)
 endif()
-openms_doc_path("${PROJECT_SOURCE_DIR}/include")
