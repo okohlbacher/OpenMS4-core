@@ -14,6 +14,8 @@
 #include <cstring>
 #include <ctime>
 #include <iterator>
+#include <locale>
+#include <sstream>
 #include <memory>
 #include <type_traits>
 
@@ -83,10 +85,28 @@ namespace OpenMS
       // Determine format: use scientific for extreme values or when fixed_format is requested
       // but the value is too small/large for fixed notation
       T abs_val = (value < 0) ? -value : value;
-      bool use_scientific = fixed_format
-        ? (abs_val != T(0) && (abs_val >= T(1e4) || abs_val < T(1e-2)))
-        : (abs_val != T(0) && (abs_val >= T(1e4) || abs_val < T(1e-2)));
+      bool use_scientific = abs_val != T(0) && (abs_val >= T(1e4) || abs_val < T(1e-2));
 
+#if defined(_LIBCPP_VERSION)
+      // libc++ implements long-double to_chars by narrowing to double. On Intel macOS
+      // that loses both precision and range; streams preserve the original value.
+      if constexpr (std::is_same_v<T, long double> &&
+                    std::numeric_limits<T>::digits > std::numeric_limits<double>::digits)
+      {
+        std::ostringstream stream;
+        stream.imbue(std::locale::classic());
+        stream.precision(use_scientific && !fixed_format ? std::numeric_limits<T>::max_digits10 - 1 : precision);
+        stream << (use_scientific ? std::scientific : std::fixed) << value;
+        const std::string formatted = stream.str();
+        if (formatted.size() > sizeof(buf))
+        {
+          throw std::length_error("Long-double representation exceeds numeric buffer");
+        }
+        std::memcpy(buf, formatted.data(), formatted.size());
+        fc = {buf + formatted.size(), std::errc{}};
+      }
+      else
+#endif
       if (use_scientific)
       {
         if (fixed_format)
@@ -102,10 +122,6 @@ namespace OpenMS
           // reproduces the existing reference-file values without updates.
           fc = std::to_chars(buf, buf + sizeof(buf), value, std::chars_format::scientific);
         }
-      }
-      else if (fixed_format)
-      {
-        fc = std::to_chars(buf, buf + sizeof(buf), value, std::chars_format::fixed, precision);
       }
       else
       {

@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <iostream>
 #include <iomanip>
@@ -164,6 +165,20 @@ START_SECTION((StringUtils::toStr(long double, bool full_precision)))
   TEST_EQUAL(StringUtils::toStr(17.012345L, false), "17.012")
   // exact integer-mantissa value (representable in 64/80/128-bit long double): keeps ".0"
   TEST_EQUAL(StringUtils::toStr(1000000.0L),        "1.0e06")
+
+  // Extended values must survive formatting without narrowing to double. In
+  // particular, Intel libc++ previously lost this integer and overflowed max().
+  if constexpr (std::numeric_limits<long double>::digits > std::numeric_limits<double>::digits)
+  {
+    const long double extended_integer = 9007199254740993.0L;
+    const std::string formatted = StringUtils::toStr(extended_integer);
+    TEST_EQUAL(std::strtold(formatted.c_str(), nullptr) == extended_integer, true)
+  }
+  for (long double value : {std::numeric_limits<long double>::max(), std::numeric_limits<long double>::min()})
+  {
+    const std::string formatted = StringUtils::toStr(value);
+    TEST_EQUAL(std::strtold(formatted.c_str(), nullptr) == value, true)
+  }
 
   constexpr long double nan_ld = std::numeric_limits<long double>::quiet_NaN();
   TEST_EQUAL(StringUtils::toStr(nan_ld, true),  "NaN")
