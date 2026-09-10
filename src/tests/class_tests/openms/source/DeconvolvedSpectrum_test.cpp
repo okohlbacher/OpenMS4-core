@@ -7,12 +7,9 @@
 // --------------------------------------------------------------------------
 
 #include <OpenMS/CONCEPT/ClassTest.h>
-#include <OpenMS/test_config.h>
 
 ///////////////////////////
 #include <OpenMS/ANALYSIS/TOPDOWN/DeconvolvedSpectrum.h>
-#include <OpenMS/ANALYSIS/TOPDOWN/SpectralDeconvolution.h>
-#include <OpenMS/FORMAT/MzMLFile.h>
 ///////////////////////////
 
 using namespace OpenMS;
@@ -20,29 +17,31 @@ using namespace std;
 
 START_TEST(DeconvolvedSpectrum, "$Id$")
 
-// load test data
-PeakMap input;
-MzMLFile().load(OPENMS_GET_TEST_DATA_PATH("FLASHDeconv_sample_input1.mzML"), input);
-MSSpectrum test_spec = input[0];
+// Data-container tests construct records without requiring the FLASH algorithm.
+MSSpectrum test_spec;
+test_spec.setMSLevel(1);
+test_spec.setRT(251.72280736002);
+test_spec.emplace_back(500.0, 100.0);
+DeconvolvedSpectrum prec_deconv_spec_1(2);
+prec_deconv_spec_1.setOriginalSpectrum(test_spec);
+PeakGroup peak_group(5, 20, true);
+peak_group.setMonoisotopicMass(1000.0);
+peak_group.push_back(FLASHHelperClasses::LogMzPeak(test_spec[0], true));
+prec_deconv_spec_1.push_back(peak_group);
 
+MSSpectrum ms2_spec;
+ms2_spec.setMSLevel(2);
+DeconvolvedSpectrum ms2_deconv_spec(6);
+ms2_deconv_spec.setOriginalSpectrum(ms2_spec);
+Precursor precursor;
+precursor.setCharge(9);
+precursor.setMZ(13682.3053614085 / 9 + Constants::PROTON_MASS_U);
+precursor.setIntensity(12293.4);
+ms2_deconv_spec.setPrecursor(precursor);
+ms2_deconv_spec.setActivationMethod(Precursor::ETD);
 
-SpectralDeconvolution fd_algo = SpectralDeconvolution();
-Param fd_param;
-fd_param.setValue("min_charge", 5);
-fd_param.setValue("max_charge", 20);
-fd_algo.setParameters(fd_param);
-fd_algo.calculateAveragine(false);
-
-    fd_algo.performSpectrumDeconvolution(input[1], 2, PeakGroup());
-DeconvolvedSpectrum prec_deconv_spec_1 = fd_algo.getDeconvolvedSpectrum();
-
-    fd_algo.performSpectrumDeconvolution(input[3], 4, PeakGroup());
-DeconvolvedSpectrum prec_deconv_spec_2 = fd_algo.getDeconvolvedSpectrum();
-
-    fd_algo.performSpectrumDeconvolution(input[5], 6, PeakGroup());
-DeconvolvedSpectrum ms2_deconv_spec = fd_algo.getDeconvolvedSpectrum();
-
-DeconvolvedSpectrum test_deconv_spec = DeconvolvedSpectrum(1);
+DeconvolvedSpectrum test_deconv_spec(1);
+test_deconv_spec.setOriginalSpectrum(test_spec);
 
 
 /////////////////////////////////////////////////////////////

@@ -8,7 +8,6 @@
 
 #include <OpenMS/ANALYSIS/TOPDOWN/PeakGroup.h>
 #include <OpenMS/ANALYSIS/TOPDOWN/PeakGroupScoring.h>
-#include <OpenMS/ANALYSIS/TOPDOWN/SpectralDeconvolution.h>
 
 namespace OpenMS
 {
@@ -110,8 +109,8 @@ namespace OpenMS
         int min_isotope_index, max_isotope_index;
         getPerIsotopeIntensities_(current_per_isotope_intensities, min_isotope_index, max_isotope_index, abs_charge, 0, tol);
         float cos_score
-          = SpectralDeconvolution::getCosine(current_per_isotope_intensities, min_isotope_index, max_isotope_index, iso_dist, 0,
-                                             SpectralDeconvolution::min_iso_size);
+          = PeakGroupScoring::getCosine(current_per_isotope_intensities, min_isotope_index, max_isotope_index, iso_dist, 0,
+                                             PeakGroupScoring::MIN_ISOTOPE_COUNT);
         setChargeIsotopeCosine(abs_charge, cos_score); //
       }
     }
@@ -140,7 +139,7 @@ namespace OpenMS
     int h_offset;
     int window_width = is_last ? 0 : -1;
 
-    isotope_cosine_score_ = SpectralDeconvolution::getIsotopeCosineAndIsoOffset(
+    isotope_cosine_score_ = PeakGroupScoring::getIsotopeCosineAndIsoOffset(
       monoisotopic_mass_, per_isotope_int_, h_offset, avg,
       -min_negative_isotope_index_, // change if to select cosine calculation and if to get second best hits
       window_width, excluded_masses);

@@ -11,6 +11,7 @@
 ///////////////////////////
 #include <OpenMS/ANALYSIS/TOPDOWN/FLASHHelperClasses.h>
 #include <OpenMS/ANALYSIS/TOPDOWN/PeakGroup.h>
+#include <OpenMS/ANALYSIS/TOPDOWN/PeakGroupScoring.h>
 #include <unordered_set>
 ///////////////////////////
 
@@ -379,6 +380,32 @@ START_SECTION(([EXTRA] std::hash<PeakGroup>))
   // Inserting equal element should not change size
   pg_set.insert(pg_copy);
   TEST_EQUAL(pg_set.size(), 2);
+}
+END_SECTION
+
+START_SECTION([EXTRA] shared isotope scoring remains available without the FLASH backend)
+{
+  IsotopeDistribution reference;
+  reference.clear();
+  reference.insert(0, 0.6f);
+  reference.insert(1, 0.8f);
+  const std::vector<float> intensities{0.0f, 0.6f, 0.8f};
+  TEST_REAL_SIMILAR(PeakGroupScoring::getCosine(intensities, 1, 3, reference, 1, 2), 1.0)
+  TEST_REAL_SIMILAR(PeakGroupScoring::getCosine(intensities, 1, 2, reference, 1, 2), 0.0)
+  TEST_REAL_SIMILAR(PeakGroupScoring::getCosine(std::vector<float>(3, 0.0f), 0, 3, reference, 0, 2), 0.0)
+
+  CoarseIsotopePatternGenerator generator;
+  FLASHHelperClasses::PrecalculatedAveragine avg(1000.0, 2000.0, 1000.0, generator, false, -1);
+  const auto isotope = avg.get(1000.0);
+  std::vector<float> shifted{0.0f};
+  for (const auto& peak : isotope) { shifted.push_back(peak.getIntensity()); }
+  int offset = -99;
+  const float score = PeakGroupScoring::getIsotopeCosineAndIsoOffset(1000.0, shifted, offset, avg, 0, -1, {});
+  TOLERANCE_ABSOLUTE(0.001)
+  TEST_REAL_SIMILAR(score, 1.0)
+  TEST_EQUAL(offset, 1)
+  TEST_REAL_SIMILAR(PeakGroupScoring::getIsotopeCosineAndIsoOffset(1000.0, {1.0f}, offset, avg, 0, -1, {}), 0.0)
+  TEST_EQUAL(offset, 0)
 }
 END_SECTION
 

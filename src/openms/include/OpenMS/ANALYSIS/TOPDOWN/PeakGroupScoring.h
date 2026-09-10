@@ -31,6 +31,38 @@ namespace OpenMS
   public:
     typedef FLASHHelperClasses::LogMzPeak LogMzPeak;
 
+    /// Minimum isotopologue count accepted by isotope scoring.
+    static constexpr int MIN_ISOTOPE_COUNT = 2;
+
+    /**
+      @brief Calculate the cosine score for a measured intensity window and an isotope distribution.
+      @param[in] a Measured isotope intensities.
+      @param[in] a_start First included measured index, clamped to zero.
+      @param[in] a_end Exclusive final measured index, clamped to the vector size.
+      @param[in] b Reference isotope distribution.
+      @param[in] offset Index shift from measured to reference intensities.
+      @param[in] min_iso_len Minimum accepted number of measured indices.
+      @return Cosine score, or zero for an insufficient or zero-intensity window.
+    */
+    static float getCosine(const std::vector<float>& a, int a_start, int a_end,
+                           const IsotopeDistribution& b, int offset, int min_iso_len);
+
+    /**
+      @brief Score an isotope pattern and find its best monoisotopic offset.
+      @param[in] mono_mass Initial monoisotopic mass.
+      @param[in] per_isotope_intensities Measured isotope intensities summed across charges.
+      @param[out] offset Selected offset relative to the initial isotope shift.
+      @param[in] avg Reference averagine distributions.
+      @param[in] iso_int_shift Initial isotope shift.
+      @param[in] window_width Offset search window; negative selects the automatic window.
+      @param[in] excluded_masses Mass hypotheses to exclude.
+      @return Best cosine score using the existing deconvolution scoring convention.
+    */
+    static float getIsotopeCosineAndIsoOffset(double mono_mass,
+      const std::vector<float>& per_isotope_intensities, int& offset,
+      const FLASHHelperClasses::PrecalculatedAveragine& avg, int iso_int_shift,
+      int window_width, const std::vector<double>& excluded_masses);
+
     /// get QScore for a peak group of specific abs_charge
     static double getQscore(const PeakGroup* pg);
 

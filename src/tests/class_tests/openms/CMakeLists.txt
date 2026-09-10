@@ -252,14 +252,6 @@ if (TARGET ArrowIOHelpers_test)
     ${OPENMS_PARQUET_TARGET}
   )
 endif()
-# Builds its fixture tables with arrow::*Builder rather than through an exporter, so it needs
-# Arrow itself, not just what OpenMS re-exports -- the same reason QPXValueValidation_test does.
-if (TARGET ParquetTableComparator_test)
-  target_link_libraries(ParquetTableComparator_test
-    ${OPENMS_ARROW_TARGET}
-    ${OPENMS_PARQUET_TARGET}
-  )
-endif()
 if (TARGET ParquetFile_test)
   target_link_libraries(ParquetFile_test
     ${OPENMS_ARROW_TARGET}
@@ -286,7 +278,7 @@ if (TARGET BrukerTimsFile_test AND OPENTIMS_DDA_TEST_DATA)
     OPENTIMS_DIA_TEST_DATA="${OPENTIMS_DIA_TEST_DATA}"
     OPENTIMS_TEST_FASTA="${OPENTIMS_TEST_FASTA}")
   # This test loads real Bruker .d files (DDA + DIA) including frame aggregation,
-  # a peptide search engine run, and three-way (greedy vs. hill) centroiding
+  # a reader metadata assertions, and three-way (greedy vs. hill) centroiding
   # comparisons (which add 4 extra full-fixture loads), so it needs a generous timeout.
   set_tests_properties(BrukerTimsFile_test PROPERTIES TIMEOUT 3600)
 endif()

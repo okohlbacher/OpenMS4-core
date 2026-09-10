@@ -109,4 +109,104 @@ namespace OpenMS
       return 0;
     }
 
-  } // namespace OpenMS
+    float PeakGroupScoring::getIsotopeCosineAndIsoOffset(double mono_mass,
+                                                            const std::vector<float>& per_isotope_intensities,
+                                                            int& offset,
+                                                            const FLASHHelperClasses::PrecalculatedAveragine& avg,
+                                                            const int iso_int_shift,
+                                                            const int window_width,
+                                                            const std::vector<double>& excluded_masses)
+  {
+    offset = 0;
+    if ((int)per_isotope_intensities.size() < MIN_ISOTOPE_COUNT + iso_int_shift) { return .0; }
+    auto iso = avg.get(mono_mass);
+
+    int right = (int)avg.getApexIndex(mono_mass) / 4 + 1;
+    int left = right;
+
+    right += iso_int_shift;
+    left -= iso_int_shift;
+    float max_cos = -1000;
+    int max_isotope_index = (int)per_isotope_intensities.size(); // exclusive
+    int min_isotope_index = -1;                                  // inclusive
+
+    for (int i = 0; i < max_isotope_index; i++)
+    {
+      if (per_isotope_intensities[i] <= 0) { continue; }
+
+      if (min_isotope_index < 0) { min_isotope_index = i; }
+    }
+    if (max_isotope_index - min_isotope_index < MIN_ISOTOPE_COUNT) { return .0; }
+
+    std::vector<std::pair<int, float>> offset_cos;
+    offset_cos.reserve(right + left + 1);
+
+    for (int tmp_offset = -left; tmp_offset <= right; tmp_offset++)
+    {
+      if (window_width >= 0 && abs(tmp_offset - iso_int_shift) > window_width)
+        continue;
+      if (!excluded_masses.empty())
+      {
+        bool exclude = false;
+        for (auto em : excluded_masses)
+        {
+          if ( std::abs(mono_mass + (tmp_offset - iso_int_shift)* Constants::ISOTOPE_MASSDIFF_55K_U - em) < mono_mass * 1e-5) // tmp
+          {
+            exclude = true;
+            break;
+          }
+        }
+        if (exclude) continue;
+      }
+      float tmp_cos = getCosine(per_isotope_intensities, min_isotope_index, max_isotope_index, iso, tmp_offset, MIN_ISOTOPE_COUNT);
+      offset_cos.emplace_back(tmp_offset, tmp_cos);
+    }
+    if (offset_cos.empty()) return max_cos;
+
+    std::sort(offset_cos.begin(), offset_cos.end(),
+              [](const std::pair<int, float>& p1, const std::pair<int, float>& p2) { return p1.second > p2.second; });
+
+    for (const auto& [o, c] : offset_cos)
+    {
+      if (o > right || o < -left) continue;
+      if (window_width >= 0 && abs(o - iso_int_shift) > window_width) //
+        continue;
+
+      offset = o;
+      max_cos = c;
+      break;
+    }
+
+    max_cos = std::max(max_cos, .0f);
+    offset -= iso_int_shift;
+
+    return max_cos;
+  }
+
+  float PeakGroupScoring::getCosine(const std::vector<float>& a, int a_start, int a_end, const IsotopeDistribution& b, int offset, int min_iso_len)
+  {
+    float n = .0, a_norm = .0, b_norm = 1.0f;
+    a_start = std::max(0, a_start);
+    a_end = std::min((int)a.size(), a_end);
+
+    if (a_end - a_start < min_iso_len) { return 0; }
+
+    float max_intensity = 0;
+
+    for (int j = a_start; j < a_end; j++)
+    {
+      int i = j - offset;
+      a_norm += a[j] * a[j];
+
+      if (max_intensity < a[j]) { max_intensity = a[j]; }
+
+      if (i >= (int)b.size() || i < 0 || b[i].getIntensity() <= 0) { continue; }
+      else { n += a[j] * b[i].getIntensity(); }
+    }
+
+    if (a_norm <= 0) { return 0; }
+
+    return n / sqrt(a_norm * b_norm);
+  }
+
+} // namespace OpenMS

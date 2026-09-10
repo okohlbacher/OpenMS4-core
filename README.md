@@ -103,6 +103,21 @@ A successful build on one profile does not validate disabled native integrations
 other platforms. See [CORE_IMPLEMENTATION_NOTES.md](CORE_IMPLEMENTATION_NOTES.md)
 for ownership, exports and validation boundaries.
 
+## Tool backend extraction
+
+NuXL search algorithms, ProSEAlgorithm, FLASH search/deconvolution orchestration,
+and adapter/workflow/comparison helpers now have independent product providers.
+Core retains all reusable format readers/writers, including NuXLReport, MQ writers,
+FLASHDeconv file writers and their shared record/scoring types. NA chemistry and
+Comet modification parameter representation remain SDK APIs. The separate ProSE
+and FLASH developer packages provide their moved C++ headers and shared libraries;
+Python builds explicitly select those providers to retain their existing APIs.
+
+This is an experimental API/ABI change: use a newly built SDK and rebuild consumers
+with its exact source pin. Core tests remain independent of product libraries;
+algorithm integration tests move to their owner. See the parent repository's
+`docs/tool-backend-refactoring.md` and execution report for migration and validation.
+
 ## Historical upstream overview
 
 The following overview is retained from the upstream OpenMS 3.6 source. Its suite,

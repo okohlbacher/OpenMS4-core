@@ -50,7 +50,6 @@ MSPFile.cpp
 MSPGenericFile.cpp
 MSstatsFile.cpp
 MascotGenericFile.cpp
-MascotRemoteQuery.cpp
 MascotXMLFile.cpp
 MsInspectFile.cpp
 MzDataFile.cpp
@@ -73,7 +72,6 @@ ParamCTDFile.cpp
 ParamCWLFile.cpp
 ParamJSONFile.cpp
 ParamXMLFile.cpp
-ParquetTableComparator.cpp
 PEFFFile.cpp
 PTMXMLFile.cpp
 PeakTypeEstimator.cpp

@@ -19,7 +19,6 @@ set(concept_executables_list
 )
 set(qc_executables_list
   Contaminants_test
-  DBSuitability_test
   FeatureSummary_test
   FragmentMassError_test
   FWHM_test
@@ -117,7 +116,6 @@ set(metadata_executables_list
   MetaInfoInterfaceUtils_test
   MetaInfoRegistry_test
   MetaInfo_test
-  CometNativeIDRemapper_test
   SpectrumNativeIDParser_test
   PeptideEvidence_test
   PeptideHit_test
@@ -237,7 +235,6 @@ set(format_executables_list
   MSPGenericFile_test
   MSstatsFile_test
   MascotGenericFile_test
-  MascotRemoteQuery_test
   MascotXMLFile_test
   #MSDataWritingConsumer_test
   MRMFeaturePickerFile_test
@@ -352,7 +349,7 @@ list(APPEND format_executables_list Arrow_test MSExperimentArrowExport_test Cons
   ModificationDefinitionIO_test
   ArrowSchemaRegistry_test
   ArrowIOHelpers_test
-  ParquetTableComparator_test)
+)
 
 set(math_executables_list
   BasicStatistics_test
@@ -561,7 +558,6 @@ set(analysis_executables_list
   FeatureHandle_test
   FIAMSDataProcessor_test
   FIAMSScheduler_test
-  FLASHDeconvAlgorithm_test
   FLASHDeconvHelperStructs_test
   OpenSearchModificationAnalysis_test
   IDBoostGraph_test
@@ -572,7 +568,6 @@ set(analysis_executables_list
   IDScoreSwitcherAlgorithm_test
   ILPDCWrapper_test
   IonIdentityMolecularNetworking_test
-  DDAWorkflowCommons_test
   IsotopeLabelingMDVs_test
   IncludeExcludeTarget_test
   IsobaricChannelExtractor_test
@@ -613,7 +608,6 @@ set(analysis_executables_list
   MapAlignmentTransformer_test
   MassDecompositionAlgorithm_test
   MassDecomposition_test
-  MassFeatureTrace_test
   MetaboliteFeatureDeconvolution_test
   MetaboliteSpectralMatching_test
   ModifiedPeptideGenerator_test
@@ -636,13 +630,8 @@ set(analysis_executables_list
   QTClusterFinder_test
   ReactionMonitoringTransition_test
   NuXLReport_test
-  NuXLFragmentAdductDefinition_test
-  NuXLModificationsGenerator_test
-  NuXLParameterParsing_test
-  ProSEAlgorithm_test
   SimpleSearchEngineAlgorithm_test
   SimpleSVM_test
-  SpectralDeconvolution_test
   StablePairFinder_test
   PercolatorFeatureSetHelper_test
   TransformationDescription_test

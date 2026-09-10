@@ -8,10 +8,11 @@
 
 #include <OpenMS/CONCEPT/ClassTest.h>
 
-#include <OpenMS/ANALYSIS/NUXL/NuXLModificationsGenerator.h>
 #include <OpenMS/ANALYSIS/NUXL/NuXLReport.h>
 #include <OpenMS/CHEMISTRY/AASequence.h>
 #include <OpenMS/CHEMISTRY/EmpiricalFormula.h>
+#include <OpenMS/CHEMISTRY/ModificationsDB.h>
+#include <OpenMS/CHEMISTRY/ResidueModification.h>
 #include <OpenMS/CONCEPT/Constants.h>
 
 using namespace OpenMS;
@@ -32,12 +33,29 @@ START_SECTION((static std::vector<NuXLReportRow> annotate(const PeakMap&, Peptid
   peptide_with_adduct.setModificationByDiffMonoMass(0, adduct_mass);
 
   // The named definition on a clean residue, and folded into the oxidised one.
+  // Define the writer's input with generic SDK types; NuXL's search backend is external.
   const EmpiricalFormula adduct_formula("C9H11N2O8P1");
+  ResidueModification definition;
+  definition.setId("NuXL:U-H2O1");
+  definition.setOrigin('T');
+  definition.setTermSpecificity(ResidueModification::ANYWHERE);
+  definition.setFullId();
+  definition.setDiffFormula(adduct_formula);
+  definition.setDiffMonoMass(adduct_formula.getMonoWeight());
+  definition.setDiffAverageMass(adduct_formula.getAverageWeight());
   AASequence peptide_with_definition = peptide;
-  peptide_with_definition.setModification(4, NuXLModificationsGenerator::registerPrecursorAdduct("U-H2O1", adduct_formula, peptide[4]));
+  peptide_with_definition.setModification(4, ModificationsDB::getInstance()->registerDefinition(definition));
   TEST_STRING_EQUAL(peptide_with_definition.toString(), "M(Oxidation)PEPT(NuXL:U-H2O1)IDE")
   AASequence peptide_with_combined_definition = peptide;
-  peptide_with_combined_definition.setModification(0, NuXLModificationsGenerator::registerPrecursorAdduct("U-H2O1", adduct_formula, peptide[0]));
+  ResidueModification combined_definition = definition;
+  combined_definition.setId("NuXL:U-H2O1~Oxidation");
+  combined_definition.setOrigin('M');
+  combined_definition.setFullId();
+  const ResidueModification* oxidation = peptide[0].getModification();
+  combined_definition.setDiffFormula(adduct_formula + oxidation->getDiffFormula());
+  combined_definition.setDiffMonoMass(adduct_mass + oxidation->getDiffMonoMass());
+  combined_definition.setDiffAverageMass(adduct_formula.getAverageWeight() + oxidation->getDiffAverageMass());
+  peptide_with_combined_definition.setModification(0, ModificationsDB::getInstance()->registerDefinition(combined_definition));
   TEST_STRING_EQUAL(peptide_with_combined_definition.toString(), "M(NuXL:U-H2O1~Oxidation)PEPTIDE")
 
   PeakMap spectra;

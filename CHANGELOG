@@ -1,3 +1,10 @@
+Experimental OpenMS 4 tool backend extraction (2026-09-10)
+---------------------------------------------------------
+- Move NuXL/ProSE/FLASH algorithms and private adapter/workflow helpers to independent pinned product packages.
+- Retain file readers/writers, their shared record/scoring types and format tests in Core.
+- Relocate algorithm tests; preserve independent NuXL report, Bruker reader and FLASH record/scoring tests.
+- Moved C++ APIs require the new product provider and a complete consumer rebuild; old experimental binaries are not ABI-compatible.
+
 
 Glossary:
 OpenMS - Name of the project and our C++ library
