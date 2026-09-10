@@ -47,7 +47,11 @@ file(WRITE "${{CMAKE_BINARY_DIR}}/result.txt" "${{PROBE}}")
     def test_unity_build_preserves_excluded_translation_units(self):
         with tempfile.TemporaryDirectory(prefix="core-unity-") as directory:
             root = Path(directory).resolve()
-            (root / "a.cpp").write_text("namespace { int local_value = 1; }\nint a() { return local_value; }\n")
+            # Readers require UTF-8 bytes, including for escaped Unicode literals.
+            (root / "a.cpp").write_text(
+                '#include <string_view>\n'
+                'static_assert(std::string_view("\\u2212") == "\\xe2\\x88\\x92");\n'
+                'namespace { int local_value = 1; }\nint a() { return local_value; }\n')
             (root / "b.cpp").write_text("int b() { return 2; }\n")
             # This name would collide with a.cpp if the exclusion were ignored.
             (root / "separate.cpp").write_text("namespace { int local_value = 3; }\nint c() { return local_value; }\n")

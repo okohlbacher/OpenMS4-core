@@ -141,6 +141,7 @@ function(openms_add_compiler_flags target_name)
       /wd4996          # disable deprecated functions warning
       /wd4661          # disable explicit template instantiation request warning
       /wd4503          # disable decorated name length exceeded warning9
+      /utf-8           # preserve UTF-8 literals used by readers and tests
       /bigobj          # for large object files
       /MP              # use multiple CPU cores
     )
