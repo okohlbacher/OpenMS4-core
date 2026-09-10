@@ -16,6 +16,7 @@
 #include <iterator>
 #include <locale>
 #include <sstream>
+#include <stdexcept>
 #include <memory>
 #include <type_traits>
 
@@ -66,7 +67,7 @@ namespace OpenMS
       return p;
     }
 
-    /// Append a double/float/long double via std::to_chars.
+    /// Append a floating-point value as locale-independent decimal text.
     /// NaN is output as "NaN" (uppercase) for backward compatibility, infinities as "inf"/"-inf".
     /// Trailing zeros are trimmed but at least one digit after '.' is kept (matches old karma behavior).
     template <typename T>
