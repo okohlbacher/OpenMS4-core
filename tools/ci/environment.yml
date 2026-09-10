@@ -13,7 +13,6 @@ dependencies:
   - libboost-devel=1.89.0
   - eigen=5.0.1
   - libsvm=337
-  - coin-or-cbc=2.10.*
   - xerces-c
   - libcurl
   - libzip

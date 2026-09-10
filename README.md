@@ -112,7 +112,7 @@ for ownership, exports and validation boundaries.
 
 GitHub Actions builds and runs the scientific tests on Linux x64/ARM64, macOS
 x64/ARM64 and Windows x64 (MSVC). Each job uses the `core-release` profile and
-pinned conda-forge dependencies. Windows Release matches the native dependencies'
+pinned conda-forge dependencies (COIN-OR on Linux/macOS, GLPK on Windows). Windows Release matches the native dependencies'
 MSVC runtime; use matching Debug dependencies for Windows development builds.
 Optional native readers and inference integrations remain opt-in and are not
 covered by this portable CI profile.

@@ -90,8 +90,8 @@ CTestTestfile.cmake
 OpenMSConfig.cmake
 OpenMSConfigVersion.cmake
 OpenMSTargets.cmake
-# NOTE: Modules/ is a generated directory, but cmake/modules/ contains tracked files
-Modules/
+# Only the root Modules copy is generated; cmake/Modules contains source modules.
+/Modules/
 
 # IDE and editor files
 *.code-workspace

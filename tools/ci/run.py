@@ -46,6 +46,7 @@ def main() -> None:
     build, sdk = work / "build", work / "sdk"
     dependencies = Path(os.environ["CONDA_PREFIX"]).resolve()
     windows = sys.platform == "win32"
+    solver = "GLPK" if windows else "COIN"
     dependency_prefix = dependencies / "Library" if windows else dependencies
     env = os.environ.copy()
     env.update(OMP_NUM_THREADS="1", OPENMS_RUN_SLOW_TESTS="1", PYTHONUTF8="1")
@@ -85,7 +86,7 @@ def main() -> None:
     generator = "Visual Studio 17 2022" if windows else "Ninja"
     cmake_args = [f"-DCMAKE_PREFIX_PATH={dependency_prefix.as_posix()}",
                   f"-DCURL_ROOT={dependency_prefix.as_posix()}", "-DCMAKE_FIND_FRAMEWORK=LAST",
-                  "-DLP_SOLVER=COIN", "-DSTL_DEBUG=OFF"]
+                  f"-DLP_SOLVER={solver}", "-DSTL_DEBUG=OFF"]
     if windows:
         cmake_args += ["-A", "x64", "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL"]
     elif sys.platform == "darwin":
@@ -117,6 +118,7 @@ def main() -> None:
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
             summary.write(f"### {args.platform}: SDK built, all enabled tests passed, archive deployment verified\n\n")
+            summary.write(f"Linear programming backend tested: {solver}.\n\n")
             summary.write("| Stage | Seconds |\n|---|---:|\n")
             for command in commands:
                 summary.write(f"| {command['name']} | {command['elapsed_seconds']:.3f} |\n")
