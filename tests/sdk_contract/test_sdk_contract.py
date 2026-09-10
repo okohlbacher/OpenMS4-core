@@ -14,7 +14,7 @@ CMAKE = shutil.which("cmake")
 class SDKContractTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="openms-sdk-contract-")
-        self.directory = Path(self.temporary.name)
+        self.directory = Path(self.temporary.name).resolve()
         self.prefix = self.directory / "relocated-sdk"
         self.config = self.prefix / "lib/cmake/OpenMS"
         self.config.mkdir(parents=True)
@@ -201,7 +201,7 @@ class OwnershipTests(unittest.TestCase):
     @unittest.skipUnless(CMAKE, "CMake is required for source-list verification")
     def test_core_source_lists_resolve(self):
         with tempfile.TemporaryDirectory(prefix="openms-source-list-") as temporary:
-            script = Path(temporary) / "verify.cmake"
+            script = Path(temporary).resolve() / "verify.cmake"
             script.write_text(f'''function(source_group)
 endfunction()
 function(set_source_files_properties)
@@ -228,7 +228,7 @@ endforeach()
 class DataMetadataTests(unittest.TestCase):
     def test_relocated_metadata_needs_no_native_dependencies(self):
         with tempfile.TemporaryDirectory(prefix="openms-data-metadata-") as temporary:
-            directory = Path(temporary)
+            directory = Path(temporary).resolve()
             original = directory / "original"
             config = original / "lib/cmake/OpenMSData"
             config.mkdir(parents=True)

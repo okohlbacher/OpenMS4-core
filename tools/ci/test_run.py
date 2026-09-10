@@ -7,9 +7,33 @@ import tempfile
 import unittest
 
 from run import package_sdk
+from verify_release import PLATFORMS, verify
 
 
 class DeploymentArchiveTest(unittest.TestCase):
+    def test_release_requires_complete_matching_archives(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sdk = root / "sdk"
+            sdk.mkdir()
+            revision = "a" * 40
+            (sdk / "source-revision.txt").write_text(revision + "\n")
+            for platform in PLATFORMS:
+                package_sdk(sdk, root / "artifacts" / f"sdk-{platform}", root / "deployed",
+                            f"OpenMS4-core-{platform}-Release-{revision[:12]}")
+            verify(root / "artifacts", revision)
+            with self.assertRaises(ValueError):
+                verify(root / "artifacts", "b" * 40)
+            with self.assertRaisesRegex(ValueError, "Source revision mismatch"):
+                verify(root / "artifacts", revision[:12] + "b" * 28)
+            checksum = next((root / "artifacts").rglob("*.sha256"))
+            checksum.write_text("wrong checksum\n")
+            with self.assertRaisesRegex(ValueError, "Checksum mismatch"):
+                verify(root / "artifacts", revision)
+            checksum.unlink()
+            with self.assertRaisesRegex(ValueError, "exactly five"):
+                verify(root / "artifacts", revision)
+
     def test_archive_round_trip(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -122,8 +122,11 @@ builds independent consumers against both the extracted and relocated SDK. The
 checks exercise public APIs, mzML/Parquet round trips, runtime data, TestSupport
 and rejection of an incorrect Core revision. Logs record test results and timings.
 
-Tags beginning with `core-v` publish experimental GitHub release assets only after
-all platform jobs succeed. These are SDK archives, with headers, libraries,
+After branch CI succeeds, tags beginning with `core-v` publish its exact tested
+archives as experimental GitHub release assets. Tagging reuses those artifacts
+without rebuilding them; the release job checks the full source revision and
+checksums. If a tag is pushed before CI succeeds, rerun its release job after
+CI completes. The successful run must still retain its SDK artifacts. These are SDK archives, with headers, libraries,
 runtime data, CMake package files and TestSupport. Their dependency manifest
 records the exact conda packages used. Dependencies remain separately installed;
 the archives do not bundle third-party libraries or platform runtimes. Consumers

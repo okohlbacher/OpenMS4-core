@@ -15,7 +15,7 @@ GIT = shutil.which("git")
 class BuildIdentityTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="core-identity-")
-        self.directory = Path(self.temp.name)
+        self.directory = Path(self.temp.name).resolve()
         self.source = self.directory / "source"
         self.source.mkdir()
         self.run_command([GIT, "init", str(self.source)])

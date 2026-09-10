@@ -3,7 +3,6 @@ name: Core SDK
 on:
   push:
     branches: ['**']
-    tags: ['core-v*']
   pull_request:
   workflow_dispatch:
 
@@ -12,7 +11,7 @@ permissions:
 
 concurrency:
   group: core-sdk-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: true
 
 jobs:
   native:
@@ -84,28 +83,3 @@ jobs:
             ${{ runner.temp }}/core-sdk/build/Testing/Temporary/LastTest.log
             ${{ runner.temp }}/core-sdk/build/CMakeFiles/CMakeConfigureLog.yaml
           if-no-files-found: warn
-
-  publish:
-    name: Publish tested SDK archives
-    if: startsWith(github.ref, 'refs/tags/core-v')
-    needs: native
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
-        with:
-          pattern: sdk-*
-          merge-multiple: true
-          path: dist
-      - name: Verify and publish immutable prerelease assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          cd dist
-          sha256sum --check --strict ./*.sha256
-          gh release create "$RELEASE_TAG" ./*.tar.gz ./*.sha256 \
-            --verify-tag --prerelease --title "Core SDK $RELEASE_TAG" \
-            --notes "Native Release SDKs for Linux x64/arm64, macOS x64/arm64, and Windows x64. Every archive passed the full enabled scientific test suite and installed/relocated consumer tests after extraction. Recreate its matching conda-forge dependencies from the included dependencies.txt; dependencies are not bundled. Optional native readers and downloaded models are disabled in this portable build."

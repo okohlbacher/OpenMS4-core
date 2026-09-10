@@ -1,0 +1,44 @@
+name: Release Core SDK
+
+on:
+  push:
+    tags: ['core-v*']
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish the tested archives for this commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Download successful native CI artifacts for the tag commit
+        run: |
+          revision=$(git rev-parse HEAD)
+          run_id=$(gh run list --workflow core-sdk.yml --commit "$revision" \
+            --event push --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -z "$run_id" ]; then
+            echo "::error::No successful native branch CI run exists for $revision. Tag only after all five platforms pass; rerun this release after CI succeeds."
+            exit 1
+          fi
+          gh run download "$run_id" --pattern 'sdk-*' --dir artifacts
+          python3 tools/ci/verify_release.py artifacts "$revision"
+          echo "Reusing tested artifacts from https://github.com/$GH_REPO/actions/runs/$run_id" >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish immutable prerelease assets
+        run: |
+          gh release create "$RELEASE_TAG" ./artifacts/sdk-*/*.tar.gz ./artifacts/sdk-*/*.sha256 \
+            --verify-tag --prerelease --title "Core SDK $RELEASE_TAG" \
+            --notes "Native Release SDKs for Linux x64/arm64, macOS x64/arm64, and Windows x64. These exact archives passed the full enabled scientific test suite and installed/relocated consumer tests after extraction. Recreate their matching conda-forge dependencies from the included dependencies.txt; dependencies are not bundled. Optional native readers and downloaded models are disabled in this portable build."

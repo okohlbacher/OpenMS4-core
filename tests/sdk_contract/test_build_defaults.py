@@ -17,7 +17,7 @@ class BuildDefaultsTests(unittest.TestCase):
 
     def test_curl_prefers_native_library_and_preserves_explicit_framework_choice(self):
         with tempfile.TemporaryDirectory(prefix="core-dependency-") as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             framework = root / "frameworks/libcurl.framework"
             framework.mkdir(parents=True)
             (framework / "libcurl").touch()
@@ -46,7 +46,7 @@ file(WRITE "${{CMAKE_BINARY_DIR}}/result.txt" "${{PROBE}}")
     @unittest.skipUnless(shutil.which("c++") or shutil.which("cl"), "C++ compiler is required")
     def test_unity_build_preserves_excluded_translation_units(self):
         with tempfile.TemporaryDirectory(prefix="core-unity-") as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             (root / "a.cpp").write_text("namespace { int local_value = 1; }\nint a() { return local_value; }\n")
             (root / "b.cpp").write_text("int b() { return 2; }\n")
             # This name would collide with a.cpp if the exclusion were ignored.
