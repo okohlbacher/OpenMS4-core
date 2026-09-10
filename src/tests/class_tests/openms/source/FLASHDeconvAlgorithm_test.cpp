@@ -260,10 +260,10 @@ START_SECTION(Spectrum merging - block mode combines MS1 scans)
   {
     if (spectrum.getMSLevel() == 1 && !spectrum.empty())
     {
-      block_input.push_back(spectrum);
-      block_input.push_back(spectrum);
-      block_input.back().setRT(spectrum.getRT() + 1.0);
-      block_input.back().setNativeID("scan=999999");
+      block_input.addSpectrum(spectrum);
+      block_input.addSpectrum(spectrum);
+      block_input.getSpectra().back().setRT(spectrum.getRT() + 1.0);
+      block_input.getSpectra().back().setNativeID("scan=999999");
       break;
     }
   }
