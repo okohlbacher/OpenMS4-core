@@ -4,6 +4,7 @@ Experimental OpenMS 4 tool backend extraction (2026-09-10)
 - Retain file readers/writers, their shared record/scoring types and format tests in Core.
 - Relocate algorithm tests; preserve independent NuXL report, Bruker reader and FLASH record/scoring tests.
 - Moved C++ APIs require the new product provider and a complete consumer rebuild; old experimental binaries are not ABI-compatible.
+- Fix fractional isotope residual comparisons in PeakGroup recruitment and noise reporting on GCC; add a signal/noise regression without changing public API signatures.
 
 
 Glossary:

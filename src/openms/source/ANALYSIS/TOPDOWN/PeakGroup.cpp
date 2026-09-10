@@ -9,6 +9,8 @@
 #include <OpenMS/ANALYSIS/TOPDOWN/PeakGroup.h>
 #include <OpenMS/ANALYSIS/TOPDOWN/PeakGroupScoring.h>
 
+#include <cmath>
+
 namespace OpenMS
 {
   PeakGroup::PeakGroup(const int min_abs_charge, const int max_abs_charge, const bool is_positive):
@@ -550,7 +552,7 @@ namespace OpenMS
 
         if (iso_index < min_isotope) { continue; }
 
-        if (abs(pmz - cmz - iso_index * iso_delta) <= pmz * tol * mul_tol)
+        if (std::abs(pmz - cmz - iso_index * iso_delta) <= pmz * tol * mul_tol)
         {
           auto p = LogMzPeak(spec[index], is_positive_);
           p.isotopeIndex = iso_index;
@@ -638,7 +640,7 @@ namespace OpenMS
         if (iso_index < min_isotope) { continue; }
 
         // Only collect noisy peaks (those that don't match the isotope pattern tolerance)
-        if (!(abs(pmz - cmz - iso_index * iso_delta) <= pmz * tol * mul_tol))
+        if (!(std::abs(pmz - cmz - iso_index * iso_delta) <= pmz * tol * mul_tol))
         {
           if (iso_index >= 0)
           {

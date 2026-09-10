@@ -409,8 +409,54 @@ START_SECTION([EXTRA] shared isotope scoring remains available without the FLASH
 }
 END_SECTION
 
+START_SECTION([EXTRA] fractional isotope residuals distinguish signal peaks from noise)
+{
+  CoarseIsotopePatternGenerator generator;
+  FLASHHelperClasses::PrecalculatedAveragine avg(1000.0, 2000.0, 1000.0, generator, false, -1);
+  const double mono_mass = 1000.0;
+  const double mono_mz = mono_mass + FLASHHelperClasses::getChargeMass(true);
+  const double isotope_mz = mono_mz + Constants::ISOTOPE_MASSDIFF_55K_U;
+  const double tolerance = 10e-6;
+
+  // Both off-grid peaks have sub-Dalton residuals; integer abs would turn them into zero.
+  MSSpectrum spectrum;
+  for (const double mz : {mono_mz, mono_mz + 0.2, isotope_mz - 0.2, isotope_mz})
+  {
+    Peak1D peak;
+    peak.setMZ(mz);
+    peak.setIntensity(100.0f);
+    spectrum.push_back(peak);
+  }
+
+  PeakGroup group(1, 1, true);
+  const auto recruited_noise = group.recruitAllPeaksInSpectrum(spectrum, tolerance, avg, mono_mass);
+  TEST_EQUAL(group.size(), 2)
+  if (group.size() == 2)
+  {
+    TEST_REAL_SIMILAR(group[0].mz, mono_mz)
+    TEST_REAL_SIMILAR(group[1].mz, isotope_mz)
+  }
+  TEST_EQUAL(recruited_noise.size(), 2)
+  if (recruited_noise.size() == 2)
+  {
+    TEST_REAL_SIMILAR(recruited_noise[0].mz, mono_mz + 0.2)
+    TEST_REAL_SIMILAR(recruited_noise[1].mz, isotope_mz - 0.2)
+  }
+
+  const PeakGroup& unchanged_group = group;
+  const auto reported_noise = unchanged_group.getNoisyPeaks(spectrum, tolerance, avg);
+  TEST_EQUAL(reported_noise.size(), 2)
+  TEST_EQUAL(group.size(), 2)
+  if (reported_noise.size() == 2)
+  {
+    TEST_REAL_SIMILAR(reported_noise[0].mz, mono_mz + 0.2)
+    TEST_REAL_SIMILAR(reported_noise[1].mz, isotope_mz - 0.2)
+  }
+}
+END_SECTION
+
 /// TODOs
-/// - updateIsotopeCosineAndQscore, recruitAllPeaksInSpectrum, isSignalMZ, setTargeted, getIsotopeIntensities
+/// - updateIsotopeCosineAndQscore, isSignalMZ, setTargeted, getIsotopeIntensities
 /// - isTargeted, getTargetDecoyType, setTargetDecoyType, getQvalue, setQvalue, getQvalueWithChargeDecoyOnly, setQvalueWithChargeDecoyOnly
 
 
