@@ -9,15 +9,14 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: core-sdk-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   native:
     name: ${{ matrix.platform }} / Release
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
+    concurrency:
+      group: core-sdk-${{ github.ref }}-${{ matrix.platform }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
