@@ -110,85 +110,12 @@ StringList numericFeatures(const StringList& feature_set)
   return numeric;
 }
 
-/// Composite key for 1:1 cross-run matching of PSMs. Scan + sequence + charge
-/// uniquely identifies a row in the .pin for the TOPP test data.
-std::string rowKey(const PeptideIdentification& pid, const PeptideHit& hit)
-{
-  std::string sr = std::string(pid.getSpectrumReference());
-  if (sr.empty() && pid.metaValueExists("spectrum_id"))
-  {
-    sr = pid.getMetaValue("spectrum_id").toString();
-  }
-  return sr + "|" + hit.getSequence().toString() + "|" + StringUtils::toStr(hit.getCharge());
-}
-
 struct PercolatorTriplet
 {
   double score = 0.0;
   double qval = 0.0;
   double pep = 0.0;
 };
-
-/// Extract the PSI-MS CV values the subprocess adapter stamps on each hit.
-/// MS:1001491 = q-value, MS:1001492 = SVM score, MS:1001493 = PEP.
-std::map<std::string, PercolatorTriplet> loadBaselineTriplets(const std::string& idxml)
-{
-  vector<ProteinIdentification> prs;
-  PeptideIdentificationList pids;
-  IdXMLFile().load(idxml, prs, pids);
-  std::map<std::string, PercolatorTriplet> out;
-  for (const auto& pid : pids)
-  {
-    for (const auto& hit : pid.getHits())
-    {
-      PercolatorTriplet t;
-      if (hit.metaValueExists("MS:1001492"))
-        t.score = static_cast<double>(hit.getMetaValue("MS:1001492"));
-      if (hit.metaValueExists("MS:1001491"))
-        t.qval = static_cast<double>(hit.getMetaValue("MS:1001491"));
-      if (hit.metaValueExists("MS:1001493"))
-        t.pep = static_cast<double>(hit.getMetaValue("MS:1001493"));
-      out[rowKey(pid, hit)] = t;
-    }
-  }
-  return out;
-}
-
-/// Materialize RescoreInput rows in the same iteration order used downstream.
-/// Also returns the hit pointers so the caller can zip them with outputs.
-struct BuiltInput
-{
-  RescoreInput ri;
-  std::vector<const PeptideIdentification*> pid_per_row;
-  std::vector<const PeptideHit*> hit_per_row;
-};
-
-BuiltInput buildRescoreInput(const PeptideIdentificationList& pids,
-                             const StringList& numeric_features)
-{
-  BuiltInput b;
-  b.ri.feature_names = numeric_features;
-  for (const auto& pid : pids)
-  {
-    for (const auto& hit : pid.getHits())
-    {
-      bool has_all = true;
-      std::vector<double> feats;
-      feats.reserve(numeric_features.size());
-      for (const auto& f : numeric_features)
-      {
-        if (!hit.metaValueExists(f)) { has_all = false; break; }
-        feats.push_back(static_cast<double>(hit.getMetaValue(f)));
-      }
-      if (!has_all) continue;
-      b.ri.features.push_back(std::move(feats));
-      b.ri.is_decoy.push_back(hit.isDecoy());
-      b.pid_per_row.push_back(&pid);
-      b.hit_per_row.push_back(&hit);
-    }
-  }
-  return b;
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Shared infrastructure for Tests 2-5: synthetic dataset, minimal .pin writer,
@@ -391,56 +318,6 @@ SubprocessOut runSubprocess(const std::string& bin,
   parse(decoy_pout);
   return s;
 }
-
-/// Convenience: align in-process RescoreOutput rows against subprocess map by
-/// row id. Missing rows are reported via `misses`.
-struct AlignedRows
-{
-  size_t matches = 0;
-  size_t misses = 0;
-  double score_r = 0.0;       ///< Pearson on SVM scores
-  double max_dq = 0.0;
-  double max_dpep = 0.0;
-  int target_lt_001_in = 0;
-  int target_lt_001_sub = 0;
-};
-
-AlignedRows alignAndCompare(const RescoreOutput& inp,
-                            const SubprocessOut& sub,
-                            const std::vector<bool>& is_decoy)
-{
-  AlignedRows a;
-  double sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
-  for (size_t i = 0; i < inp.scores.size(); ++i)
-  {
-    char row_id[64];
-    std::snprintf(row_id, sizeof(row_id), "row_%08zu|-.PEPTIDE.-", i);
-    auto it = sub.triplets.find(row_id);
-    if (it == sub.triplets.end()) { a.misses++; continue; }
-    a.matches++;
-    const double sc_in = inp.scores[i];
-    const double sc_sub = it->second.score;
-    const double dq = std::abs(inp.q_values[i] - it->second.qval);
-    const double dpep = std::abs(inp.peps[i] - it->second.pep);
-    sx += sc_in;  sy += sc_sub;
-    sxx += sc_in * sc_in;
-    syy += sc_sub * sc_sub;
-    sxy += sc_in * sc_sub;
-    a.max_dq   = std::max(a.max_dq,   dq);
-    a.max_dpep = std::max(a.max_dpep, dpep);
-    if (!is_decoy[i] && inp.q_values[i]   <= 0.01) a.target_lt_001_in++;
-    if (!is_decoy[i] && it->second.qval <= 0.01)   a.target_lt_001_sub++;
-  }
-  const double n = static_cast<double>(a.matches);
-  if (n > 1)
-  {
-    const double num = n * sxy - sx * sy;
-    const double den = std::sqrt((n * sxx - sx * sx) * (n * syy - sy * sy));
-    a.score_r = (den > 1e-15) ? num / den : 0.0;
-  }
-  return a;
-}
-
 
 } // namespace
 
@@ -1027,8 +904,7 @@ START_SECTION([EXTRA] realistic idXML parity at library layer)
     PercolatorInfile::store(pin_path, pids, feature_set, enz, min_charge, max_charge);
 
     // Parse .pin back to build RescoreInput that matches subprocess input
-    // exactly. Avoids buildRescoreInput / stampPinFeaturesOnHits alignment
-    // pitfalls because .pin is the ground truth for row order.
+    // exactly, using the .pin file as the ground truth for row order.
     TextFile pin;
     pin.load(pin_path);
     const size_t n_lines = std::distance(pin.begin(), pin.end());

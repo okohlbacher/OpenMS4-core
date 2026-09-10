@@ -101,7 +101,7 @@ public:
 
     double getRT() const override;
 
-    double getMetaValue(std::string name) const;
+    double getMetaValue(std::string name) const override;
 
     size_t size() const override;
 

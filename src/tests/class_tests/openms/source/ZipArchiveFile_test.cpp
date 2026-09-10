@@ -37,6 +37,11 @@ START_SECTION(void addOrReplaceFromFile(const std::string&, const std::string&, 
   ZipArchiveFile::addOrReplaceFromFile(archive, "library/precursors.parquet", file1);
   TEST_EQUAL(File::exists(archive), true)
 
+  // An invalid UTF-8 entry name must report the libzip error without reading a closed handle.
+  TEST_EXCEPTION_WITH_MESSAGE(Exception::InvalidValue,
+    ZipArchiveFile::addOrReplaceFromFile(archive, std::string(1, static_cast<char>(0xff)), file1),
+    "the value '' was used but is not valid; zip_file_add failed: Invalid argument")
+
   // verify listing contains the entry
   auto entries = ZipArchiveFile::listEntries(archive);
   bool found = false;

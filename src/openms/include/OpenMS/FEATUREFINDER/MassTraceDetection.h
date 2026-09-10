@@ -185,7 +185,8 @@ namespace OpenMS
 
         // parameter stuff
         double mass_error_ppm_;
-        double mass_error_da_;
+        // Retained for object layout compatibility; tolerance is computed from mass_error_ppm_.
+        [[maybe_unused]] double mass_error_da_;
         double noise_threshold_int_;
         double chrom_peak_snr_;
         double ion_mobility_tolerance_;

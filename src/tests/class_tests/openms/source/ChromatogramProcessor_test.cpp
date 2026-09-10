@@ -64,10 +64,9 @@ START_SECTION(static void pickExperiment(...))
     chromatograms, transition_exp, feature_finder_param,
     featureFile, transition_group_map);
 
-  // Verify that feature finding was attempted
-  // (exact results depend on the feature finder implementation)
-  TEST_EQUAL(featureFile.size() >= 0, true)  // May be 0 if no features found
-  TEST_EQUAL(transition_group_map.size() >= 0, true)  // May be 0 if no transitions mapped
+  // Unmatched native IDs must not create features or transition groups.
+  TEST_EQUAL(featureFile.size(), 0)
+  TEST_EQUAL(transition_group_map.size(), 0)
 }
 END_SECTION
 
@@ -112,7 +111,7 @@ START_SECTION(ChromatogramProcessor_edge_case_empty_chromatograms)
 
   // Should handle empty chromatograms gracefully
   TEST_EQUAL(featureFile.size(), 0)  // No features should be found
-  TEST_EQUAL(transition_group_map.size() >= 0, true)  // May have transition groups but no features
+  TEST_EQUAL(transition_group_map.size(), 0)  // No matching native ID
 }
 END_SECTION
 
@@ -194,8 +193,8 @@ START_SECTION(ChromatogramProcessor_edge_case_mismatched_transitions)
     featureFile, transition_group_map);
 
   // Should handle mismatched transitions gracefully
-  TEST_EQUAL(featureFile.size() >= 0, true)  // May find features or not
-  TEST_EQUAL(transition_group_map.size() >= 0, true)  // May have transition groups
+  TEST_EQUAL(featureFile.size(), 0)
+  TEST_EQUAL(transition_group_map.size(), 0)
 }
 END_SECTION
 
@@ -265,9 +264,9 @@ START_SECTION(ChromatogramProcessor_edge_case_multiple_chromatograms)
     chromatograms, transition_exp, feature_finder_param,
     featureFile, transition_group_map);
 
-  // Should handle multiple chromatograms and transitions
-  TEST_EQUAL(featureFile.size() >= 0, true)  // May find features
-  TEST_EQUAL(transition_group_map.size() >= 0, true)  // May have transition groups
+  // Neither chromatogram has a matching transition native ID.
+  TEST_EQUAL(featureFile.size(), 0)
+  TEST_EQUAL(transition_group_map.size(), 0)
   TEST_EQUAL(chromatograms.size(), 2)  // Input should remain unchanged
 }
 END_SECTION
@@ -306,23 +305,12 @@ START_SECTION(ChromatogramProcessor_edge_case_invalid_parameters)
   FeatureMap featureFile;
   OpenMS::MRMFeatureFinderScoring::TransitionGroupMapType transition_group_map;
 
-  // Test the static method with invalid parameters
-  // This should either handle gracefully or throw an exception
-  bool exception_thrown = false;
-  try
-  {
-    ChromatogramProcessor::pickExperiment(
-      chromatograms, transition_exp, feature_finder_param,
-      featureFile, transition_group_map);
-  }
-  catch (const std::exception& e)
-  {
-    exception_thrown = true;
-    OPENMS_LOG_INFO << "Expected exception caught: " << e.what() << std::endl;
-  }
-
-  // Either should succeed with defaults or throw exception
-  TEST_EQUAL(exception_thrown || featureFile.size() >= 0, true)
+  // Negative resampling spacing must be rejected before feature finding.
+  TEST_EXCEPTION(Exception::InvalidParameter, ChromatogramProcessor::pickExperiment(
+    chromatograms, transition_exp, feature_finder_param,
+    featureFile, transition_group_map))
+  TEST_EQUAL(featureFile.size(), 0)
+  TEST_EQUAL(transition_group_map.size(), 0)
 }
 END_SECTION
 

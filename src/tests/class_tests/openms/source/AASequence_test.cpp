@@ -64,7 +64,7 @@ START_SECTION(AASequence fromString(const std::string& s, bool permissive = true
   TEST_EQUAL(seq.isModified(), false)
   TEST_EQUAL(seq.hasNTerminalModification(), false);
   TEST_EQUAL(seq.hasCTerminalModification(), false);
-  TEST_EQUAL(seq.getResidue(4).getModification(), 0);
+  TEST_EQUAL(seq.getResidue(4).getModification(), nullptr);
 
   AASequence seq2;
   seq2 = AASequence::fromString("CNARCKNCNCNARCDRE");
@@ -76,7 +76,7 @@ START_SECTION(AASequence fromString(const std::string& s, bool permissive = true
   TEST_EQUAL(seq3.isModified(), true)
   TEST_EQUAL(seq3.hasNTerminalModification(), false);
   TEST_EQUAL(seq3.hasCTerminalModification(), true);
-  TEST_EQUAL(seq3.getResidue(4).getModification(), 0);
+  TEST_EQUAL(seq3.getResidue(4).getModification(), nullptr);
   TEST_EQUAL(seq3.getCTerminalModificationName(), "Label:18O(2)");
   AASequence seq4 = AASequence::fromString("VPQVSTPTLVEVSRSLGK(Label:18O(2))");
   TEST_EQUAL(seq3, seq4);
@@ -771,7 +771,7 @@ START_SECTION(const ResidueModification* getNTerminalModification() const)
   TEST_EQUAL(seq1.getNTerminalModification()->getFullId(), "Formyl (N-term)");
 
   AASequence seq2 = AASequence::fromString("DFPIANGER");
-  TEST_EQUAL(seq2.getNTerminalModification(),  0);
+  TEST_EQUAL(seq2.getNTerminalModification(), nullptr);
 END_SECTION
 
 START_SECTION(const ResidueModification* getCTerminalModification() const)
@@ -780,7 +780,7 @@ START_SECTION(const ResidueModification* getCTerminalModification() const)
 
   TEST_EQUAL(seq2.getCTerminalModification()->getId(), "Amidated");
   TEST_EQUAL(seq2.getCTerminalModification()->getFullId(), "Amidated (C-term)");
-  TEST_EQUAL(seq1.getCTerminalModification(),  0);
+  TEST_EQUAL(seq1.getCTerminalModification(), nullptr);
 END_SECTION
 
 START_SECTION(void setCTerminalModification(const std::string& modification))

@@ -21,6 +21,7 @@
 
 using json = nlohmann::json;
 
+#if defined(ENABLE_TDL)
 // replaces the substrings inside a string
 // This method is 'static' so no external linkage occurs
 static std::string replaceAll(std::string str, const std::string& pattern, const std::string& replacement)
@@ -33,6 +34,7 @@ static std::string replaceAll(std::string str, const std::string& pattern, const
   }
   return str;
 }
+#endif
 
 namespace OpenMS
 {

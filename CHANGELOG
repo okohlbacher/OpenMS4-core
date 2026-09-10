@@ -1,3 +1,13 @@
+Core compiler warning cleanup (2026-09-10)
+------------------------------------------
+- Propagate Arrow append/finalization errors with column diagnostics; retain nullable results and empty-table output.
+- Keep protein descriptions alive while median-normalization regular expressions inspect them.
+- Remove the incorrect noexcept from AA::fromIndex so its documented Debug precondition exception can be caught.
+- Replace deprecated UTF-8 path/ZIP calls and Boost.Process timed waits; preserve exit codes and bounded waits.
+- Preserve ZIP error details before freeing archive handles on failed add/replace operations.
+- Correct signed comparisons, aggregate initialization, and tests with uninitialized inputs or tautological assertions; remove unused internal helpers.
+- Preserve the layout of legacy SDK classes while marking unused private compatibility fields explicitly.
+
 Experimental OpenMS 4 tool backend extraction (2026-09-10)
 ---------------------------------------------------------
 - Move NuXL/ProSE/FLASH algorithms and private adapter/workflow helpers to independent pinned product packages.

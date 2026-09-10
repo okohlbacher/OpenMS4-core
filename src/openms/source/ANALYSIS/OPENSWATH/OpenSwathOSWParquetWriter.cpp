@@ -6,6 +6,7 @@
 // $Authors: Justin Sing $
 // --------------------------------------------------------------------------
 
+#include <OpenMS/SYSTEM/PathUtils.h>
 #include <OpenMS/ANALYSIS/OPENSWATH/OpenSwathOSWParquetWriter.h>
 #include <OpenMS/ANALYSIS/OPENSWATH/OpenSwathLibraryIDNormalizer.h>
 
@@ -54,18 +55,6 @@ namespace OpenMS
       }
     }
 
-    void appendOptionalInt_(arrow::Int64Builder& builder, bool has_value, int64_t value, const char* column)
-    {
-      if (!has_value)
-      {
-        ParquetFile::appendOrThrow(builder.AppendNull(), column);
-      }
-      else
-      {
-        ParquetFile::appendOrThrow(builder.Append(value), column);
-      }
-    }
-
     bool extractMetaDouble_(const Feature& feature, const std::string& key, double& value)
     {
       if (!feature.metaValueExists(key)) return false;
@@ -101,22 +90,6 @@ namespace OpenMS
       else
       {
         ParquetFile::appendOrThrow(builder.AppendNull(), column);
-      }
-    }
-
-    bool extractMetaDouble_(const BaseFeature& feature, const std::string& key, double& value)
-    {
-      if (!feature.metaValueExists(key)) return false;
-      const DataValue& meta = feature.getMetaValue(key);
-      if (meta.isEmpty()) return false;
-      try
-      {
-        value = StringUtils::toDouble(meta.toString());
-        return true;
-      }
-      catch (Exception::ConversionError&)
-      {
-        return false;
       }
     }
 
@@ -1309,7 +1282,7 @@ namespace OpenMS
     // robust random-access reads later.
     if (!output_is_dir)
     {
-      const std::filesystem::path dirpath = std::filesystem::u8path(std::string(base_dir));
+      const std::filesystem::path dirpath = OpenMS::to_path(std::string(base_dir));
       const std::string output_zip_abs = File::absolutePath(output_path);
       // If we're preserving an existing archive (we unpacked it above), don't
       // remove it here. Otherwise remove any existing file to start fresh.

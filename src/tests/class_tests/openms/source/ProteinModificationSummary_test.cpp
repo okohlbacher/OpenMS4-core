@@ -78,7 +78,7 @@ END_SECTION
 START_SECTION((bool operator==(const ProteinModificationSummary& rhs) const))
 {
   const ResidueModification* ox = ModificationsDB::getInstance()->getModification("Oxidation", "M", ResidueModification::ANYWHERE);
-  TEST_NOT_EQUAL(ox, 0)
+  TEST_NOT_EQUAL(ox, nullptr)
 
   ProteinModificationSummary::Statistics st;
   st.count = 42;

@@ -190,8 +190,8 @@ namespace OpenMS
     }
 
     /// Create an unambiguous AA from an index (0..21 inclusive -> 'A'..'V').
-    /// @throw OpenMS::Precondition if not index < unambiguousAACount().
-    static AA fromIndex(size_t index) noexcept
+    /// @throws Exception::Precondition if not index < unambiguousAACount().
+    static AA fromIndex(size_t index)
     {
       OPENMS_PRECONDITION(index < unambiguousAACount(), "AA::fromIndex(): index must be in [0, unambiguousAACount())");
       AA r;

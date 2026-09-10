@@ -261,6 +261,18 @@ START_SECTION((static bool passesFilters_(ConsensusMap::ConstIterator cf_it, con
 
   TEST_TRUE(ConsensusMapNormalizerAlgorithmMedian::passesFilters_(map.begin(), map, "ALBU", ""))
   TEST_FALSE(ConsensusMapNormalizerAlgorithmMedian::passesFilters_(map.begin(), map, "TRYP", ""))
+
+  // A long description forces heap storage; regex matching must retain the returned string.
+  ProteinHit protein_hit;
+  protein_hit.setAccession("P02769|ALBU_BOVIN");
+  protein_hit.setDescription("Serum albumin " + std::string(4096, 'x') + " bovine");
+  ProteinIdentification protein_id;
+  protein_id.setHits({protein_hit});
+  map.setProteinIdentifications({protein_id});
+
+  TEST_TRUE(ConsensusMapNormalizerAlgorithmMedian::passesFilters_(map.begin(), map, "ALBU", "^Serum albumin .* bovine$"))
+  TEST_FALSE(ConsensusMapNormalizerAlgorithmMedian::passesFilters_(map.begin(), map, "ALBU", "trypsin"))
+  TEST_FALSE(ConsensusMapNormalizerAlgorithmMedian::passesFilters_(map.begin(), map, "TRYP", "albumin"))
 }
 END_SECTION
 

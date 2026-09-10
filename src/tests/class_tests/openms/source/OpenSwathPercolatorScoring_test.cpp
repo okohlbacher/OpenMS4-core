@@ -123,26 +123,6 @@ namespace
     TEST_TRUE(total_rows > 0)
     TEST_TRUE(total_non_null > 0)
   }
-
-  void checkParquetTransitionColumns_(const std::string& base_dir,
-                                      const std::vector<std::string>& expected_columns,
-                                      const std::string& non_null_score_column)
-  {
-    Size total_rows = 0;
-    Size total_non_null = 0;
-    for (const Int64 run_id : readRunIds_(base_dir))
-    {
-      const auto table = ParquetFile::readTable(base_dir + "/runs/run_id=" + StringUtils::toStr(run_id) + "/feature_transition.parquet");
-      total_rows += static_cast<Size>(table->num_rows());
-      for (const auto& column : expected_columns)
-      {
-        TEST_NOT_EQUAL(ParquetFile::getOptionalColumn(table, column), nullptr)
-      }
-      total_non_null += countNonNull_(ParquetFile::getOptionalColumn(table, non_null_score_column));
-    }
-    TEST_TRUE(total_rows > 0)
-    TEST_TRUE(total_non_null > 0)
-  }
 } // namespace
 
 START_TEST(OpenSwathPercolatorScoring, "$Id$")

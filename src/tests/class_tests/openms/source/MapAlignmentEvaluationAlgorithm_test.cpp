@@ -56,9 +56,9 @@ START_SECTION((virtual void evaluate(const ConsensusMap &conensus_map_in, const 
 	MAEA maea;
 	ConsensusMap map1;
 	ConsensusMap map2;
-	double rt_dev, mz_dev;
-	Peak2D::IntensityType int_dev;
-	double real;
+  double rt_dev = 0.0, mz_dev = 0.0;
+  Peak2D::IntensityType int_dev = 0.0f;
+  double real = 0.0;
 	maea.evaluate(map1, map2, rt_dev, mz_dev, int_dev, false, real);
 	TEST_EQUAL(real, 1.5)
 END_SECTION

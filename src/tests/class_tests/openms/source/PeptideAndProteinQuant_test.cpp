@@ -2274,7 +2274,7 @@ START_SECTION(([EXTRA] median/mean aggregate the detected peptides, not the stor
                            consensus, design);
 
   // 'top:include_all' is what IsobaricWorkflow sets, so this is the shipped isobaric path.
-  for (const std::string& aggregate : {"median", "mean"})
+  for (const char* aggregate : {"median", "mean"})
   {
     PeptideAndProteinQuant quantifier;
     Param p = quantifier.getParameters();

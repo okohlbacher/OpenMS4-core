@@ -25,11 +25,11 @@ namespace OpenMS
     // Lehninger: Nelson DL, Cox MM. Lehninger Principles of Biochemistry. 6th ed., Table 3-1.
     // Keep these values in sync with the cited proteomics scale definition here, even though
     // ResidueDB uses slightly different side-chain values for D/E/Y from a different reference.
-    static const PkaValues lehninger = {9.69, 2.34, 3.65, 4.25, 8.18, 10.07, 6.00, 10.53, 12.48};
+    static const PkaValues lehninger = {9.69, 2.34, 3.65, 4.25, 8.18, 10.07, 6.00, 10.53, 12.48, {}, {}};
     // EMBOSS: used by pepstats (EMBOSS suite)
-    static const PkaValues emboss = {8.6, 3.6, 3.9, 4.1, 8.5, 10.1, 6.5, 10.8, 12.5};
+    static const PkaValues emboss = {8.6, 3.6, 3.9, 4.1, 8.5, 10.1, 6.5, 10.8, 12.5, {}, {}};
     // Sillero: Sillero & Ribeiro, Anal Biochem 1989
-    static const PkaValues sillero = {8.2, 3.2, 4.0, 4.5, 9.0, 10.0, 6.4, 10.4, 12.0};
+    static const PkaValues sillero = {8.2, 3.2, 4.0, 4.5, 9.0, 10.0, 6.4, 10.4, 12.0, {}, {}};
     // Bjellqvist: Bjellqvist et al. Electrophoresis 1993, 14:1023-1031.
     // N-terminal pKa depends on the identity of the N-terminal residue; C-terminal pKa for D and E differs.
     static const PkaValues bjellqvist = {

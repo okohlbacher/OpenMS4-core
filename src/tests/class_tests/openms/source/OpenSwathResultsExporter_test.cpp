@@ -56,6 +56,11 @@ START_SECTION((static void write(const std::string& filename, const std::vector<
     mkRow(7777, "TG1", "PEPTIDEK"),
     mkRow(8888, "TG2", "SAMPLER"),
   };
+  rows[0].aggr_prec_peak_area = 321.5;
+  rows[0].alignment_group_id = 1234567890123LL;
+  rows[0].gene_name = "GENE1";
+  rows[0].decoy = true;
+  rows[0].from_alignment = true;
 
   // ----- TSV output -----
   {
@@ -115,7 +120,39 @@ START_SECTION((static void write(const std::string& filename, const std::vector<
     TEST_EQUAL(ParquetFile::getInt64(fid, 1, -1, false), 8888)
     TEST_EQUAL(ParquetFile::getString(ParquetFile::getColumn(tbl, "Sequence"), 0), "PEPTIDEK")
     TEST_EQUAL(ParquetFile::getString(ParquetFile::getColumn(tbl, "transition_group_id"), 1), "TG2")
+
+    auto area = ParquetFile::getColumn(tbl, "aggr_prec_Peak_Area");
+    TEST_REAL_SIMILAR(ParquetFile::getDouble(area, 0, -1.0, false), 321.5)
+    TEST_EQUAL(area->IsNull(1), true)
+    auto alignment = ParquetFile::getColumn(tbl, "alignment_group_id");
+    TEST_EQUAL(ParquetFile::getInt64(alignment, 0, -1, false), 1234567890123LL)
+    TEST_EQUAL(alignment->IsNull(1), true)
+    auto gene = ParquetFile::getColumn(tbl, "GeneName");
+    TEST_STRING_EQUAL(ParquetFile::getString(gene, 0), "GENE1")
+    TEST_EQUAL(gene->IsNull(1), true)
+    auto decoy = ParquetFile::getColumn(tbl, "decoy");
+    TEST_EQUAL(ParquetFile::getBool(decoy, 0, false, false), true)
+    TEST_EQUAL(ParquetFile::getBool(decoy, 1, false, false), false)
+    auto from_alignment = ParquetFile::getColumn(tbl, "from_alignment");
+    TEST_EQUAL(ParquetFile::getBool(from_alignment, 0, false, false), true)
+    TEST_EQUAL(ParquetFile::getBool(from_alignment, 1, false, false), false)
   }
+}
+END_SECTION
+
+START_SECTION((empty Parquet output preserves the schema))
+{
+  OpenSwathResultsExportConfig cfg;
+  cfg.format = OpenSwathExportFileFormat::Parquet;
+  std::string fn;
+  NEW_TMP_FILE(fn)
+  OpenSwathResultsExporter::write(fn, {}, cfg);
+  const auto table = ParquetFile::readTable(fn);
+  TEST_NOT_EQUAL(table, nullptr)
+  TEST_EQUAL(table->num_rows(), 0)
+  TEST_EQUAL(table->num_columns(), 59)
+  TEST_STRING_EQUAL(table->field(0)->name(), "run_id")
+  TEST_STRING_EQUAL(table->field(58)->name(), "ipf_peptidoform_m_score")
 }
 END_SECTION
 

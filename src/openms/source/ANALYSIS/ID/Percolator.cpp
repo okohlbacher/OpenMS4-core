@@ -292,38 +292,6 @@ static std::vector<size_t> selectTrainingSubset(
   return P::sampleTrainingRowIndices(scans, exp_masses, max_train);
 }
 
-// Build a new RescoreInput by selecting the given row indices. Preserves
-// the optional PIN-compat / cv_group_keys fields when they're populated.
-static RescoreInput makeSubsetInput_(
-  const RescoreInput& input, const std::vector<size_t>& indices)
-{
-  RescoreInput out;
-  out.feature_names = input.feature_names;
-  out.features.reserve(indices.size());
-  out.is_decoy.reserve(indices.size());
-  const bool has_cv       = !input.cv_group_keys.empty();
-  const bool has_scan     = !input.scan_numbers.empty();
-  const bool has_specfile = !input.spec_file_numbers.empty();
-  const bool has_exp      = !input.exp_masses.empty();
-  const bool has_calc     = !input.calc_masses.empty();
-  if (has_cv)       out.cv_group_keys.reserve(indices.size());
-  if (has_scan)     out.scan_numbers.reserve(indices.size());
-  if (has_specfile) out.spec_file_numbers.reserve(indices.size());
-  if (has_exp)      out.exp_masses.reserve(indices.size());
-  if (has_calc)     out.calc_masses.reserve(indices.size());
-  for (size_t i : indices)
-  {
-    out.features.push_back(input.features[i]);
-    out.is_decoy.push_back(input.is_decoy[i]);
-    if (has_cv)       out.cv_group_keys.push_back(input.cv_group_keys[i]);
-    if (has_scan)     out.scan_numbers.push_back(input.scan_numbers[i]);
-    if (has_specfile) out.spec_file_numbers.push_back(input.spec_file_numbers[i]);
-    if (has_exp)      out.exp_masses.push_back(input.exp_masses[i]);
-    if (has_calc)     out.calc_masses.push_back(input.calc_masses[i]);
-  }
-  return out;
-}
-
 // Dimension + optional-field checks shared by rescore/train/score entry points.
 static void validateRescoreInput_(const RescoreInput& input)
 {

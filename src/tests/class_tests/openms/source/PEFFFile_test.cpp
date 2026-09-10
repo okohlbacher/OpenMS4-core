@@ -1753,7 +1753,7 @@ START_SECTION([EXTRA] literal backslash in a structured tuple text field must no
 }
 END_SECTION
 
-START_SECTION([EXTRA] scalar \PName= with embedded balanced parens must round-trip in full)
+START_SECTION([EXTRA] scalar \\PName= with embedded balanced parens must round-trip in full)
 {
   // Regression: an earlier reader truncated scalar PName values to their first
   // parenthesized substring (so "Insulin (Fragment)" became "Fragment"). PEFF 1.0

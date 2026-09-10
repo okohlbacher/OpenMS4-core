@@ -534,7 +534,7 @@ START_SECTION(([EXTRA] two groups sharing a leading protein are distinct rows, n
   prot_id.setPrimaryMSRunPath({"/data/SimpleSearchEngine_1.mzML"});
 
   std::vector<ProteinHit> hits;
-  for (const std::string& acc : {"PROT_A", "PROT_B", "PROT_C"})
+  for (const char* acc : {"PROT_A", "PROT_B", "PROT_C"})
   {
     ProteinHit ph;
     ph.setAccession(acc);

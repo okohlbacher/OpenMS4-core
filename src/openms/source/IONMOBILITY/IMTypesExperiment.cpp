@@ -14,6 +14,7 @@
 #include <OpenMS/KERNEL/MSExperiment.h>
 #include <OpenMS/KERNEL/MSSpectrum.h>
 #include <set>
+#include <utility>
 
 namespace OpenMS
 {
@@ -22,7 +23,7 @@ namespace OpenMS
     std::set<IMFormat> occs;
     for (const auto& spec : exp.getSpectra())
     {
-      if (spec.getMSLevel() != ms_level) continue;
+      if (std::cmp_not_equal(spec.getMSLevel(), ms_level)) continue;
       occs.insert(determineIMFormat(spec));
     }
     occs.erase(IMFormat::NONE);

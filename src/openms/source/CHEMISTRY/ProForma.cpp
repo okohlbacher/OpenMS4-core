@@ -1020,7 +1020,6 @@ namespace detail
     while (check_(TokenType::LBRACKET))
     {
       Tokenizer lookahead = createLookahead_();
-      int group_count = 0;
       bool found_question = false;
       while (true)
       {
@@ -1029,7 +1028,6 @@ namespace detail
         int depth = 0;
         tok = lookahead.next();
         depth = 1;
-        group_count++;
         while (lookahead.hasMore() && depth > 0) { tok = lookahead.next(); if (tok.type == TokenType::LBRACKET) depth++; else if (tok.type == TokenType::RBRACKET) depth--; }
         tok = lookahead.peek();
         if (tok.type == TokenType::CARET) { lookahead.next(); tok = lookahead.peek(); if (tok.type == TokenType::NUMBER) { lookahead.next(); tok = lookahead.peek(); } }

@@ -666,20 +666,6 @@ namespace OpenMS
   }
 
 
-  /// Compute precursor m/z at charge 1 (M+H)+ directly from amino acid chars.
-  /// Formula: (sum_of_internal_masses + H2O + proton) / 1
-  static float computePrecursorMzFromChars(const char* seq, size_t len, const std::array<double, 128>& table)
-  {
-    // M+H = sum(internal masses) + H2O + proton
-    static const double water = Residue::getInternalToFull().getMonoWeight(); // 18.0105646834
-    double mass = water + Constants::PROTON_MASS_U;
-    for (size_t i = 0; i < len; ++i)
-    {
-      mass += table[static_cast<unsigned char>(seq[i])];
-    }
-    return static_cast<float>(mass);
-  }
-
   void FragmentIndex::generateSNESMothers_(const std::vector<FASTAFile::FASTAEntry>& fasta_entries)
   {
     // Residue-mass table already initialized by the caller (generatePeptides).

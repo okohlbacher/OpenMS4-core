@@ -147,8 +147,8 @@ START_SECTION((ExitCodes run(std::vector<FASTAFile::FASTAEntry>& proteins, std::
       set<std::string> protein_accessions = pep_ids_local[i].getHits()[0].extractProteinAccessionsSet();
       bool is_CASIQK = (i == 0);
       bool allow_at_least_3_ambAA = (i_aa >= 3);
-      std::cerr << "TEST: ambAA=" << i_aa << ", hit#:" << i << " ==> prots: " << protein_accessions.size() << "==" << (is_CASIQK & allow_at_least_3_ambAA ? 1 : 0) << "?\n";
-      TEST_EQUAL(protein_accessions.size(), is_CASIQK & allow_at_least_3_ambAA ? 1 : 0);
+      std::cerr << "TEST: ambAA=" << i_aa << ", hit#:" << i << " ==> prots: " << protein_accessions.size() << "==" << (is_CASIQK && allow_at_least_3_ambAA ? 1 : 0) << "?\n";
+      TEST_EQUAL(protein_accessions.size(), is_CASIQK && allow_at_least_3_ambAA ? 1 : 0);
     }
   }
 

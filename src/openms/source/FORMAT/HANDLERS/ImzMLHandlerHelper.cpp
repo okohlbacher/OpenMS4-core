@@ -72,6 +72,7 @@ namespace
     }
   }
 
+#if OPENMS_IS_BIG_ENDIAN
   inline uint32_t swapU32_(const uint32_t v)
   {
     return ((v & 0x000000ffU) << 24) | ((v & 0x0000ff00U) << 8) | ((v & 0x00ff0000U) >> 8)
@@ -85,6 +86,8 @@ namespace
            | ((v << 8) & 0x000000FF00000000ULL) | ((v << 24) & 0x0000FF0000000000ULL)
            | ((v << 40) & 0x00FF000000000000ULL) | ((v << 56) & 0xFF00000000000000ULL);
   }
+
+#endif
 
   /// imzML .ibd arrays are little-endian (imzML 1.1.0); byte-swap on big-endian hosts.
   template<typename T>

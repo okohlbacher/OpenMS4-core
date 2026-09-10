@@ -1,0 +1,1564 @@
+{
+  "date": "2026-09-10",
+  "baseline_revision": "6bfc0e4711105f4eda2fea86812a83af7c7e791f",
+  "code_patch_sha256": "c538838be7847c859f120155eb098db83a85320a99bd03136886e957ba0029b0",
+  "source_state": "uncommitted; documentation excluded from code patch",
+  "linux": {
+    "phases": {
+      "baseline": [
+        {
+          "label": "clone",
+          "command": [
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "--branch",
+            "codex/package-split",
+            "https://github.com/okohlbacher/OpenMS4-core.git",
+            "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/source"
+          ],
+          "exit_code": 0,
+          "seconds": 7.084
+        },
+        {
+          "label": "configure",
+          "command": [
+            "/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/cmake",
+            "--preset",
+            "core-debug",
+            "-S",
+            "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/source",
+            "-B",
+            "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/build",
+            "-G",
+            "Ninja",
+            "-DCMAKE_PREFIX_PATH=/scratch/kohlbach/openms4-5d1e239-20260910/deps",
+            "-DCMAKE_INSTALL_PREFIX=/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/sdk",
+            "-DCMAKE_C_COMPILER=/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/x86_64-conda-linux-gnu-cc",
+            "-DCMAKE_CXX_COMPILER=/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/x86_64-conda-linux-gnu-c++",
+            "-DCMAKE_C_COMPILER_LAUNCHER=",
+            "-DCMAKE_CXX_COMPILER_LAUNCHER=",
+            "-DLP_SOLVER=COIN",
+            "-DSTL_DEBUG=OFF",
+            "-DMT_ENABLE_OPENMP=ON",
+            "-DOPENMS_REQUIRE_CLEAN_SOURCE=ON"
+          ],
+          "exit_code": 0,
+          "seconds": 6.605
+        },
+        {
+          "label": "build",
+          "command": [
+            "/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/cmake",
+            "--build",
+            "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/build",
+            "--clean-first",
+            "--parallel",
+            "320"
+          ],
+          "exit_code": 0,
+          "seconds": 52.596
+        },
+        {
+          "label": "tests",
+          "command": [
+            "/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/ctest",
+            "--test-dir",
+            "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/build",
+            "--parallel",
+            "128",
+            "--output-on-failure",
+            "--output-junit",
+            "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/baseline/tests.xml"
+          ],
+          "exit_code": 0,
+          "seconds": 49.547
+        }
+      ],
+      "fixed-v2": [
+        {
+          "label": "configure",
+          "command": [
+            "/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/cmake",
+            "--preset",
+            "core-debug",
+            "-S",
+            "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/source",
+            "-B",
+            "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/build",
+            "-G",
+            "Ninja",
+            "-DCMAKE_PREFIX_PATH=/scratch/kohlbach/openms4-5d1e239-20260910/deps",
+            "-DCMAKE_INSTALL_PREFIX=/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/sdk",
+            "-DCMAKE_C_COMPILER=/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/x86_64-conda-linux-gnu-cc",
+            "-DCMAKE_CXX_COMPILER=/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/x86_64-conda-linux-gnu-c++",
+            "-DCMAKE_C_COMPILER_LAUNCHER=",
+            "-DCMAKE_CXX_COMPILER_LAUNCHER=",
+            "-DLP_SOLVER=COIN",
+            "-DSTL_DEBUG=OFF",
+            "-DMT_ENABLE_OPENMP=ON",
+            "-DOPENMS_REQUIRE_CLEAN_SOURCE=OFF"
+          ],
+          "exit_code": 0,
+          "seconds": 3.708
+        },
+        {
+          "label": "build",
+          "command": [
+            "/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/cmake",
+            "--build",
+            "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/build",
+            "--clean-first",
+            "--parallel",
+            "320"
+          ],
+          "exit_code": 0,
+          "seconds": 53.286
+        },
+        {
+          "label": "tests",
+          "command": [
+            "/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/ctest",
+            "--test-dir",
+            "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/build",
+            "--parallel",
+            "128",
+            "--output-on-failure",
+            "--output-junit",
+            "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/fixed-v2/tests.xml"
+          ],
+          "exit_code": 8,
+          "seconds": 48.297
+        }
+      ],
+      "fixed-v3": [
+        {
+          "label": "configure",
+          "command": [
+            "/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/cmake",
+            "--preset",
+            "core-debug",
+            "-S",
+            "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/source",
+            "-B",
+            "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/build",
+            "-G",
+            "Ninja",
+            "-DCMAKE_PREFIX_PATH=/scratch/kohlbach/openms4-5d1e239-20260910/deps",
+            "-DCMAKE_INSTALL_PREFIX=/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/sdk",
+            "-DCMAKE_C_COMPILER=/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/x86_64-conda-linux-gnu-cc",
+            "-DCMAKE_CXX_COMPILER=/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/x86_64-conda-linux-gnu-c++",
+            "-DCMAKE_C_COMPILER_LAUNCHER=",
+            "-DCMAKE_CXX_COMPILER_LAUNCHER=",
+            "-DLP_SOLVER=COIN",
+            "-DSTL_DEBUG=OFF",
+            "-DMT_ENABLE_OPENMP=ON",
+            "-DOPENMS_REQUIRE_CLEAN_SOURCE=OFF"
+          ],
+          "exit_code": 0,
+          "seconds": 3.704
+        },
+        {
+          "label": "build",
+          "command": [
+            "/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/cmake",
+            "--build",
+            "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/build",
+            "--parallel",
+            "320"
+          ],
+          "exit_code": 0,
+          "seconds": 1.902
+        },
+        {
+          "label": "tests",
+          "command": [
+            "/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/ctest",
+            "--test-dir",
+            "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/build",
+            "--parallel",
+            "128",
+            "--output-on-failure",
+            "--output-junit",
+            "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/fixed-v3/tests.xml"
+          ],
+          "exit_code": 0,
+          "seconds": 48.065
+        }
+      ]
+    },
+    "baseline_warnings": [
+      {
+        "file": "src/openms/source/CHEMISTRY/IsoelectricPoint.cpp",
+        "line": 28,
+        "column": 96,
+        "message": "missing initializer for member 'OpenMS::IsoelectricPoint::PkaValues::nterm_by_residue' [-Wmissing-field-initializers]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/CHEMISTRY/IsoelectricPoint.cpp",
+        "line": 28,
+        "column": 96,
+        "message": "missing initializer for member 'OpenMS::IsoelectricPoint::PkaValues::cterm_by_residue' [-Wmissing-field-initializers]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/CHEMISTRY/IsoelectricPoint.cpp",
+        "line": 30,
+        "column": 84,
+        "message": "missing initializer for member 'OpenMS::IsoelectricPoint::PkaValues::nterm_by_residue' [-Wmissing-field-initializers]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/CHEMISTRY/IsoelectricPoint.cpp",
+        "line": 30,
+        "column": 84,
+        "message": "missing initializer for member 'OpenMS::IsoelectricPoint::PkaValues::cterm_by_residue' [-Wmissing-field-initializers]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/CHEMISTRY/IsoelectricPoint.cpp",
+        "line": 32,
+        "column": 85,
+        "message": "missing initializer for member 'OpenMS::IsoelectricPoint::PkaValues::nterm_by_residue' [-Wmissing-field-initializers]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/CHEMISTRY/IsoelectricPoint.cpp",
+        "line": 32,
+        "column": 85,
+        "message": "missing initializer for member 'OpenMS::IsoelectricPoint::PkaValues::cterm_by_residue' [-Wmissing-field-initializers]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/FORMAT/ZipArchiveFile.cpp",
+        "line": 32,
+        "column": 64,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = std::__cxx11::basic_string<char>; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/FORMAT/ZipArchiveFile.cpp",
+        "line": 33,
+        "column": 64,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = std::__cxx11::basic_string<char>; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/FORMAT/ZipArchiveFile.cpp",
+        "line": 116,
+        "column": 66,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = std::__cxx11::basic_string<char>; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/FORMAT/ZipArchiveFile.cpp",
+        "line": 124,
+        "column": 63,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = std::__cxx11::basic_string<char>; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/FORMAT/ZipArchiveFile.cpp",
+        "line": 226,
+        "column": 20,
+        "message": "'int zip_replace(zip_t*, zip_uint64_t, zip_source_t*)' is deprecated: use 'zip_file_replace' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/FORMAT/ZipArchiveFile.cpp",
+        "line": 292,
+        "column": 63,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = std::__cxx11::basic_string<char>; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/FORMAT/ZipArchiveFile.cpp",
+        "line": 371,
+        "column": 20,
+        "message": "'int zip_replace(zip_t*, zip_uint64_t, zip_source_t*)' is deprecated: use 'zip_file_replace' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/FORMAT/ZipArchiveFile.cpp",
+        "line": 415,
+        "column": 63,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = std::__cxx11::basic_string<char>; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/FORMAT/ZipArchiveFile.cpp",
+        "line": 416,
+        "column": 77,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = std::__cxx11::basic_string<char>; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/FORMAT/ZipArchiveFile.cpp",
+        "line": 456,
+        "column": 67,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = std::__cxx11::basic_string<char>; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/FORMAT/ZipArchiveFile.cpp",
+        "line": 465,
+        "column": 65,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = std::__cxx11::basic_string<char>; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/FORMAT/ZipArchiveFile.cpp",
+        "line": 466,
+        "column": 55,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = std::__cxx11::basic_string<char>; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/QUANTITATION/ItraqConstants.cpp",
+        "line": 177,
+        "column": 28,
+        "message": "comparison of integer expressions of different signedness: 'long int' and 'OpenMS::Size' {aka 'long unsigned int'} [-Wsign-compare]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/include/OpenMS/CONCEPT/Macros.h",
+        "line": 70,
+        "column": 5,
+        "message": "'throw' will always call 'terminate' [-Wterminate]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/IONMOBILITY/IMTypesExperiment.cpp",
+        "line": 25,
+        "column": 29,
+        "message": "comparison of integer expressions of different signedness: 'OpenMS::UInt' {aka 'unsigned int'} and 'int' [-Wsign-compare]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/SYSTEM/JavaInfo.cpp",
+        "line": 55,
+        "column": 37,
+        "message": "'bool boost::process::v1::child::wait_for(const std::chrono::duration<_Rep1, _Period1>&) [with Rep = long int; Period = std::ratio<1>]' is deprecated: wait_for is unreliable [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/SYSTEM/PythonInfo.cpp",
+        "line": 86,
+        "column": 37,
+        "message": "'bool boost::process::v1::child::wait_for(const std::chrono::duration<_Rep1, _Period1>&) [with Rep = long int; Period = std::ratio<1>]' is deprecated: wait_for is unreliable [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/SYSTEM/PythonInfo.cpp",
+        "line": 120,
+        "column": 37,
+        "message": "'bool boost::process::v1::child::wait_for(const std::chrono::duration<_Rep1, _Period1>&) [with Rep = long int; Period = std::ratio<1>]' is deprecated: wait_for is unreliable [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/SYSTEM/PythonInfo.cpp",
+        "line": 149,
+        "column": 37,
+        "message": "'bool boost::process::v1::child::wait_for(const std::chrono::duration<_Rep1, _Period1>&) [with Rep = long int; Period = std::ratio<1>]' is deprecated: wait_for is unreliable [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/COMPARISON/PeakAlignment.cpp",
+        "line": 103,
+        "column": 28,
+        "message": "comparison of integer expressions of different signedness: 'long int' and 'OpenMS::Size' {aka 'long unsigned int'} [-Wsign-compare]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/COMPARISON/PeakAlignment.cpp",
+        "line": 107,
+        "column": 28,
+        "message": "comparison of integer expressions of different signedness: 'long int' and 'OpenMS::Size' {aka 'long unsigned int'} [-Wsign-compare]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/COMPARISON/PeakAlignment.cpp",
+        "line": 187,
+        "column": 28,
+        "message": "comparison of integer expressions of different signedness: 'long int' and 'OpenMS::Size' {aka 'long unsigned int'} [-Wsign-compare]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/COMPARISON/PeakAlignment.cpp",
+        "line": 191,
+        "column": 28,
+        "message": "comparison of integer expressions of different signedness: 'long int' and 'OpenMS::Size' {aka 'long unsigned int'} [-Wsign-compare]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/COMPARISON/PeakAlignment.cpp",
+        "line": 238,
+        "column": 28,
+        "message": "comparison of integer expressions of different signedness: 'long int' and 'OpenMS::Size' {aka 'long unsigned int'} [-Wsign-compare]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/COMPARISON/PeakAlignment.cpp",
+        "line": 242,
+        "column": 28,
+        "message": "comparison of integer expressions of different signedness: 'long int' and 'OpenMS::Size' {aka 'long unsigned int'} [-Wsign-compare]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/COMPARISON/PeakAlignment.cpp",
+        "line": 349,
+        "column": 28,
+        "message": "comparison of integer expressions of different signedness: 'long int' and 'OpenMS::Size' {aka 'long unsigned int'} [-Wsign-compare]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/COMPARISON/PeakAlignment.cpp",
+        "line": 358,
+        "column": 28,
+        "message": "comparison of integer expressions of different signedness: 'long int' and 'OpenMS::Size' {aka 'long unsigned int'} [-Wsign-compare]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/thirdparty/percolator/ScoreHolder.h",
+        "line": 41,
+        "column": 13,
+        "message": "'OpenMS::Internal::Percolator::ScoreHolder::label' will be initialized after [-Wreorder]",
+        "owner": "vendor"
+      },
+      {
+        "file": "src/openms/thirdparty/percolator/ScoreHolder.h",
+        "line": 40,
+        "column": 19,
+        "message": "  'OpenMS::Internal::Percolator::PSMDescription* OpenMS::Internal::Percolator::ScoreHolder::pPSM' [-Wreorder]",
+        "owner": "vendor"
+      },
+      {
+        "file": "src/openms/thirdparty/percolator/ScoreHolder.h",
+        "line": 43,
+        "column": 3,
+        "message": "  when initialized here [-Wreorder]",
+        "owner": "vendor"
+      },
+      {
+        "file": "src/openms/thirdparty/percolator/ScoreHolder.h",
+        "line": 41,
+        "column": 13,
+        "message": "'OpenMS::Internal::Percolator::ScoreHolder::label' will be initialized after [-Wreorder]",
+        "owner": "vendor"
+      },
+      {
+        "file": "src/openms/thirdparty/percolator/ScoreHolder.h",
+        "line": 40,
+        "column": 19,
+        "message": "  'OpenMS::Internal::Percolator::PSMDescription* OpenMS::Internal::Percolator::ScoreHolder::pPSM' [-Wreorder]",
+        "owner": "vendor"
+      },
+      {
+        "file": "src/openms/thirdparty/percolator/ScoreHolder.h",
+        "line": 50,
+        "column": 3,
+        "message": "  when initialized here [-Wreorder]",
+        "owner": "vendor"
+      },
+      {
+        "file": "src/openms/thirdparty/percolator/SetHandler.h",
+        "line": 95,
+        "column": 3,
+        "message": "type qualifiers ignored on function return type [-Wignored-qualifiers]",
+        "owner": "vendor"
+      },
+      {
+        "file": "src/openms/extern/Quadtree/include/Vector2.h",
+        "line": 13,
+        "column": 26,
+        "message": "template-id not allowed for constructor in C++20 [-Wtemplate-id-cdtor]",
+        "owner": "vendor"
+      },
+      {
+        "file": "src/openms/include/OpenMS/CONCEPT/Macros.h",
+        "line": 70,
+        "column": 5,
+        "message": "'throw' will always call 'terminate' [-Wterminate]",
+        "owner": "core"
+      },
+      {
+        "file": "src/testframework/include/OpenMS/CONCEPT/ClassTest.h",
+        "line": 332,
+        "column": 39,
+        "message": "cast to pointer from integer of different size [-Wint-to-pointer-cast]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/QUANTITATION/IsotopeLabelingMDVs.cpp",
+        "line": 88,
+        "column": 30,
+        "message": "comparison of integer expressions of different signedness: 'long int' and 'OpenMS::Size' {aka 'long unsigned int'} [-Wsign-compare]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/QUANTITATION/IsotopeLabelingMDVs.cpp",
+        "line": 90,
+        "column": 32,
+        "message": "comparison of integer expressions of different signedness: 'long int' and 'OpenMS::Size' {aka 'long unsigned int'} [-Wsign-compare]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 36,
+        "column": 23,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 40,
+        "column": 27,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 48,
+        "column": 23,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 52,
+        "column": 27,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 60,
+        "column": 27,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 64,
+        "column": 23,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 163,
+        "column": 22,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 166,
+        "column": 26,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 167,
+        "column": 26,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 169,
+        "column": 28,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 170,
+        "column": 21,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 175,
+        "column": 22,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 176,
+        "column": 18,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 177,
+        "column": 18,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 178,
+        "column": 24,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 179,
+        "column": 24,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 180,
+        "column": 19,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 181,
+        "column": 25,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 182,
+        "column": 25,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 183,
+        "column": 25,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 186,
+        "column": 26,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 187,
+        "column": 27,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 195,
+        "column": 31,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 196,
+        "column": 23,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 197,
+        "column": 23,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "line": 214,
+        "column": 30,
+        "message": "ignoring returned value of type 'arrow::Status', declared with attribute 'nodiscard' [-Wunused-result]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/TransitionParquetFile.cpp",
+        "line": 729,
+        "column": 68,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = std::__cxx11::basic_string<char>; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/TransitionParquetFile.cpp",
+        "line": 730,
+        "column": 68,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = std::__cxx11::basic_string<char>; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/TransitionParquetFile.cpp",
+        "line": 754,
+        "column": 54,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = std::__cxx11::basic_string<char>; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/TransitionParquetFile.cpp",
+        "line": 755,
+        "column": 54,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = std::__cxx11::basic_string<char>; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/PEFFFile_test.cpp",
+        "line": 1756,
+        "column": 91,
+        "message": "unknown escape sequence: '\\P'",
+        "owner": "core"
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathOSWParquetWriter.cpp",
+        "line": 1312,
+        "column": 68,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = std::__cxx11::basic_string<char>; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/TMTSixPlexQuantitationMethod_test.cpp",
+        "line": 119,
+        "column": 10,
+        "message": "unused variable 'real_m' [-Wunused-variable]",
+        "owner": "core"
+      },
+      {
+        "file": "src/testframework/include/OpenMS/CONCEPT/ClassTest.h",
+        "line": 332,
+        "column": 39,
+        "message": "cast to pointer from integer of different size [-Wint-to-pointer-cast]",
+        "owner": "core"
+      },
+      {
+        "file": "src/testframework/include/OpenMS/CONCEPT/ClassTest.h",
+        "line": 242,
+        "column": 44,
+        "message": "cast to pointer from integer of different size [-Wint-to-pointer-cast]",
+        "owner": "core"
+      },
+      {
+        "file": "src/testframework/include/OpenMS/CONCEPT/ClassTest.h",
+        "line": 332,
+        "column": 39,
+        "message": "cast to pointer from integer of different size [-Wint-to-pointer-cast]",
+        "owner": "core"
+      },
+      {
+        "file": "tests/runtime/CoreExecutablePath_probe.cpp",
+        "line": 12,
+        "column": 61,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = std::__cxx11::basic_string<char>; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "tests/runtime/CoreExecutablePath_probe.cpp",
+        "line": 12,
+        "column": 94,
+        "message": "'std::filesystem::__cxx11::path std::filesystem::__cxx11::u8path(const _Source&) [with _Source = char*; _Require = path; _CharT = char]' is deprecated: use 'path((const char8_t*)&*source)' instead [-Wdeprecated-declarations]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/MzMLFile_test.cpp",
+        "line": 1462,
+        "column": 22,
+        "message": "loop variable 'accession' of type 'const std::string&' {aka 'const std::__cxx11::basic_string<char>&'} binds to a temporary constructed from type 'const char* const' [-Wrange-loop-construct]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/MRMAssay_test.cpp",
+        "line": 933,
+        "column": 10,
+        "message": "unused variable 'initial_transitions' [-Wunused-variable]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/ProteinGroupArrowExport_test.cpp",
+        "line": 537,
+        "column": 27,
+        "message": "loop variable 'acc' of type 'const std::string&' {aka 'const std::__cxx11::basic_string<char>&'} binds to a temporary constructed from type 'const char* const' [-Wrange-loop-construct]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/ChromatogramProcessor_test.cpp",
+        "line": 69,
+        "column": 33,
+        "message": "comparison of unsigned expression in '>= 0' is always true [-Wtype-limits]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/ChromatogramProcessor_test.cpp",
+        "line": 70,
+        "column": 42,
+        "message": "comparison of unsigned expression in '>= 0' is always true [-Wtype-limits]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/ChromatogramProcessor_test.cpp",
+        "line": 115,
+        "column": 42,
+        "message": "comparison of unsigned expression in '>= 0' is always true [-Wtype-limits]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/ChromatogramProcessor_test.cpp",
+        "line": 197,
+        "column": 33,
+        "message": "comparison of unsigned expression in '>= 0' is always true [-Wtype-limits]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/ChromatogramProcessor_test.cpp",
+        "line": 198,
+        "column": 42,
+        "message": "comparison of unsigned expression in '>= 0' is always true [-Wtype-limits]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/ChromatogramProcessor_test.cpp",
+        "line": 269,
+        "column": 33,
+        "message": "comparison of unsigned expression in '>= 0' is always true [-Wtype-limits]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/ChromatogramProcessor_test.cpp",
+        "line": 270,
+        "column": 42,
+        "message": "comparison of unsigned expression in '>= 0' is always true [-Wtype-limits]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/ChromatogramProcessor_test.cpp",
+        "line": 325,
+        "column": 53,
+        "message": "comparison of unsigned expression in '>= 0' is always true [-Wtype-limits]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/DefaultChromHandler_test.cpp",
+        "line": 87,
+        "column": 28,
+        "message": "comparison of unsigned expression in '>= 0' is always true [-Wtype-limits]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/DefaultChromHandler_test.cpp",
+        "line": 142,
+        "column": 28,
+        "message": "comparison of unsigned expression in '>= 0' is always true [-Wtype-limits]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/DefaultChromHandler_test.cpp",
+        "line": 268,
+        "column": 28,
+        "message": "comparison of unsigned expression in '>= 0' is always true [-Wtype-limits]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/DefaultChromHandler_test.cpp",
+        "line": 358,
+        "column": 28,
+        "message": "comparison of unsigned expression in '>= 0' is always true [-Wtype-limits]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/DefaultChromHandler_test.cpp",
+        "line": 423,
+        "column": 48,
+        "message": "comparison of unsigned expression in '>= 0' is always true [-Wtype-limits]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/DefaultChromHandler_test.cpp",
+        "line": 494,
+        "column": 28,
+        "message": "comparison of unsigned expression in '>= 0' is always true [-Wtype-limits]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/DefaultChromHandler_test.cpp",
+        "line": 539,
+        "column": 28,
+        "message": "comparison of unsigned expression in '>= 0' is always true [-Wtype-limits]",
+        "owner": "core"
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/PeptideAndProteinQuant_test.cpp",
+        "line": 2277,
+        "column": 27,
+        "message": "loop variable 'aggregate' of type 'const std::string&' {aka 'const std::__cxx11::basic_string<char>&'} binds to a temporary constructed from type 'const char* const' [-Wrange-loop-construct]",
+        "owner": "core"
+      }
+    ],
+    "clean_fixed_warnings": [
+      {
+        "file": "src/openms/extern/Quadtree/include/Vector2.h",
+        "line": 13,
+        "column": 26,
+        "message": "template-id not allowed for constructor in C++20 [-Wtemplate-id-cdtor]",
+        "owner": "vendor"
+      },
+      {
+        "file": "src/openms/thirdparty/percolator/ScoreHolder.h",
+        "line": 41,
+        "column": 13,
+        "message": "'OpenMS::Internal::Percolator::ScoreHolder::label' will be initialized after [-Wreorder]",
+        "owner": "vendor"
+      },
+      {
+        "file": "src/openms/thirdparty/percolator/ScoreHolder.h",
+        "line": 40,
+        "column": 19,
+        "message": "  'OpenMS::Internal::Percolator::PSMDescription* OpenMS::Internal::Percolator::ScoreHolder::pPSM' [-Wreorder]",
+        "owner": "vendor"
+      },
+      {
+        "file": "src/openms/thirdparty/percolator/ScoreHolder.h",
+        "line": 43,
+        "column": 3,
+        "message": "  when initialized here [-Wreorder]",
+        "owner": "vendor"
+      },
+      {
+        "file": "src/openms/thirdparty/percolator/ScoreHolder.h",
+        "line": 41,
+        "column": 13,
+        "message": "'OpenMS::Internal::Percolator::ScoreHolder::label' will be initialized after [-Wreorder]",
+        "owner": "vendor"
+      },
+      {
+        "file": "src/openms/thirdparty/percolator/ScoreHolder.h",
+        "line": 40,
+        "column": 19,
+        "message": "  'OpenMS::Internal::Percolator::PSMDescription* OpenMS::Internal::Percolator::ScoreHolder::pPSM' [-Wreorder]",
+        "owner": "vendor"
+      },
+      {
+        "file": "src/openms/thirdparty/percolator/ScoreHolder.h",
+        "line": 50,
+        "column": 3,
+        "message": "  when initialized here [-Wreorder]",
+        "owner": "vendor"
+      },
+      {
+        "file": "src/openms/thirdparty/percolator/SetHandler.h",
+        "line": 95,
+        "column": 3,
+        "message": "type qualifiers ignored on function return type [-Wignored-qualifiers]",
+        "owner": "vendor"
+      }
+    ],
+    "final_incremental_warnings": [],
+    "final_registered_tests": {
+      "passed": 701,
+      "failed": 0,
+      "skipped": 0
+    },
+    "acceptance_summary": [
+      {
+        "label": "install",
+        "command": [
+          "/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/cmake",
+          "--install",
+          "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/build"
+        ],
+        "exit_code": 0,
+        "seconds": 1.234
+      },
+      {
+        "label": "acceptance",
+        "command": [
+          "/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/python",
+          "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/source/tests/installed_sdk_acceptance/run_acceptance.py",
+          "--sdk-prefix",
+          "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/sdk",
+          "--work-dir",
+          "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance",
+          "--dependency-prefix",
+          "/scratch/kohlbach/openms4-5d1e239-20260910/deps",
+          "--expected-revision",
+          "6bfc0e4711105f4eda2fea86812a83af7c7e791f",
+          "--jobs",
+          "32",
+          "--cmake-argument=-DCMAKE_C_COMPILER=/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/x86_64-conda-linux-gnu-cc",
+          "--cmake-argument=-DCMAKE_CXX_COMPILER=/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/x86_64-conda-linux-gnu-c++"
+        ],
+        "exit_code": 0,
+        "seconds": 19.262
+      }
+    ],
+    "acceptance_commands": [
+      {
+        "command": [
+          "cmake",
+          "-S",
+          "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/source/tests/installed_sdk_acceptance",
+          "-B",
+          "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/original-consumer",
+          "-G",
+          "Ninja",
+          "-DCMAKE_BUILD_TYPE=Debug",
+          "-DCMAKE_PREFIX_PATH=/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/sdk;/scratch/kohlbach/openms4-5d1e239-20260910/deps",
+          "-DOpenMS_DIR=/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/sdk/lib/cmake/OpenMS",
+          "-DOPENMS_EXPECTED_PREFIX=/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/sdk",
+          "-DCMAKE_C_COMPILER=/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/x86_64-conda-linux-gnu-cc",
+          "-DCMAKE_CXX_COMPILER=/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/x86_64-conda-linux-gnu-c++",
+          "-DOPENMS_EXPECTED_SOURCE_REVISION=6bfc0e4711105f4eda2fea86812a83af7c7e791f"
+        ],
+        "returncode": 0,
+        "expected_failure": false,
+        "passed": true,
+        "elapsed_seconds": 2.564,
+        "log": "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/01.log"
+      },
+      {
+        "command": [
+          "cmake",
+          "--build",
+          "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/original-consumer",
+          "--config",
+          "Debug",
+          "--parallel",
+          "32"
+        ],
+        "returncode": 0,
+        "expected_failure": false,
+        "passed": true,
+        "elapsed_seconds": 4.729,
+        "log": "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/02.log"
+      },
+      {
+        "command": [
+          "ctest",
+          "--test-dir",
+          "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/original-consumer",
+          "-C",
+          "Debug",
+          "--output-on-failure",
+          "--parallel",
+          "32"
+        ],
+        "returncode": 0,
+        "expected_failure": false,
+        "passed": true,
+        "elapsed_seconds": 0.526,
+        "log": "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/03.log"
+      },
+      {
+        "command": [
+          "cmake",
+          "-S",
+          "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/source/tests/installed_sdk_acceptance",
+          "-B",
+          "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/relocated-consumer",
+          "-G",
+          "Ninja",
+          "-DCMAKE_BUILD_TYPE=Debug",
+          "-DCMAKE_PREFIX_PATH=/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/relocated-sdk;/scratch/kohlbach/openms4-5d1e239-20260910/deps",
+          "-DOpenMS_DIR=/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/relocated-sdk/lib/cmake/OpenMS",
+          "-DOPENMS_EXPECTED_PREFIX=/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/relocated-sdk",
+          "-DCMAKE_C_COMPILER=/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/x86_64-conda-linux-gnu-cc",
+          "-DCMAKE_CXX_COMPILER=/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/x86_64-conda-linux-gnu-c++",
+          "-DOPENMS_EXPECTED_SOURCE_REVISION=6bfc0e4711105f4eda2fea86812a83af7c7e791f"
+        ],
+        "returncode": 0,
+        "expected_failure": false,
+        "passed": true,
+        "elapsed_seconds": 2.689,
+        "log": "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/04.log"
+      },
+      {
+        "command": [
+          "cmake",
+          "--build",
+          "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/relocated-consumer",
+          "--config",
+          "Debug",
+          "--parallel",
+          "32"
+        ],
+        "returncode": 0,
+        "expected_failure": false,
+        "passed": true,
+        "elapsed_seconds": 4.692,
+        "log": "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/05.log"
+      },
+      {
+        "command": [
+          "ctest",
+          "--test-dir",
+          "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/relocated-consumer",
+          "-C",
+          "Debug",
+          "--output-on-failure",
+          "--parallel",
+          "32"
+        ],
+        "returncode": 0,
+        "expected_failure": false,
+        "passed": true,
+        "elapsed_seconds": 0.522,
+        "log": "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/06.log"
+      },
+      {
+        "command": [
+          "cmake",
+          "-S",
+          "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/source/tests/installed_sdk_acceptance",
+          "-B",
+          "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/wrong-revision-consumer",
+          "-G",
+          "Ninja",
+          "-DCMAKE_BUILD_TYPE=Debug",
+          "-DCMAKE_PREFIX_PATH=/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/sdk;/scratch/kohlbach/openms4-5d1e239-20260910/deps",
+          "-DOpenMS_DIR=/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/sdk/lib/cmake/OpenMS",
+          "-DOPENMS_EXPECTED_PREFIX=/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/sdk",
+          "-DCMAKE_C_COMPILER=/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/x86_64-conda-linux-gnu-cc",
+          "-DCMAKE_CXX_COMPILER=/scratch/kohlbach/openms4-5d1e239-20260910/deps/bin/x86_64-conda-linux-gnu-c++",
+          "-DOPENMS_EXPECTED_SOURCE_REVISION=0000000000000000000000000000000000000000"
+        ],
+        "returncode": 1,
+        "expected_failure": true,
+        "passed": true,
+        "elapsed_seconds": 2.641,
+        "log": "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit/acceptance/07.log"
+      }
+    ],
+    "build_info": {
+      "build_type": "Debug",
+      "class_testing_enabled": true,
+      "cxx_compiler_id": "GNU",
+      "cxx_compiler_version": "14.4.0",
+      "cxx_standard": 23,
+      "dependencies": {
+        "arrow": {
+          "target": "Arrow::arrow_shared",
+          "version": "23.0.1"
+        },
+        "boost": {
+          "linkage": "shared",
+          "version": "1.89.0"
+        },
+        "curl": {
+          "version": "8.18.0"
+        },
+        "eigen": {
+          "version": "5.0.1"
+        },
+        "openmp": {
+          "version": "4.5"
+        },
+        "parquet": {
+          "target": "Parquet::parquet_shared",
+          "version": "23.0.1"
+        }
+      },
+      "features": {
+        "hdf5": false,
+        "onnx": false,
+        "openmp": true,
+        "openswath": true,
+        "opentims": false,
+        "tdl": false,
+        "thermo_raw": false,
+        "wnetalign": false
+      },
+      "libstdcxx_cxx11_abi": 1,
+      "msvc_runtime_library": null,
+      "schema_version": 1,
+      "shared_libs": true,
+      "source_dirty": true,
+      "source_revision": "6bfc0e4711105f4eda2fea86812a83af7c7e791f",
+      "standard_library": "libstdc++",
+      "stl_debug": false,
+      "system_name": "Linux",
+      "system_processor": "x86_64",
+      "version": "4.0.0"
+    }
+  },
+  "sdk_contract": {
+    "passed": 17,
+    "seconds": 25.022
+  },
+  "macos": {
+    "scope": "Object compilation only: all 45 changed C/C++ translation units and 3 additional affected-header translation units. No complete macOS SDK link or full scientific test claim.",
+    "translation_units": [
+      {
+        "file": "src/openms/source/FORMAT/HANDLERS/ImzMLHandlerHelper.cpp",
+        "returncode": 0,
+        "seconds": 6.352893292030785
+      },
+      {
+        "file": "src/openms/source/CHEMISTRY/IsoelectricPoint.cpp",
+        "returncode": 0,
+        "seconds": 7.810745708993636
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/QUANTITATION/ItraqConstants.cpp",
+        "returncode": 0,
+        "seconds": 8.136764333001338
+      },
+      {
+        "file": "src/openms/source/COMPARISON/PeakAlignment.cpp",
+        "returncode": 0,
+        "seconds": 11.897383957984857
+      },
+      {
+        "file": "src/openms/source/FORMAT/HANDLERS/UniProtXMLHandler.cpp",
+        "returncode": 0,
+        "seconds": 5.982804582978133
+      },
+      {
+        "file": "src/openms/source/FORMAT/ZipArchiveFile.cpp",
+        "returncode": 0,
+        "seconds": 8.011996584013104
+      },
+      {
+        "file": "src/openms/source/FORMAT/ParamCWLFile.cpp",
+        "returncode": 0,
+        "seconds": 10.530146500037517
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathResultsExporter.cpp",
+        "returncode": 0,
+        "seconds": 19.616164624982048
+      },
+      {
+        "file": "src/openms/source/FEATUREFINDER/MassTraceDetection.cpp",
+        "returncode": 0,
+        "seconds": 19.5286637909594
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/TransitionParquetFile.cpp",
+        "returncode": 0,
+        "seconds": 19.817890624981374
+      },
+      {
+        "file": "src/openms/source/MATH/MISC/BSplineSmoothingSpline.cpp",
+        "returncode": 0,
+        "seconds": 8.49721075000707
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathPercolatorScoring.cpp",
+        "returncode": 0,
+        "seconds": 22.64125016698381
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/ID/Percolator.cpp",
+        "returncode": 0,
+        "seconds": 22.882333582965657
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/DATAACCESS/MRMFeatureAccessOpenMS.cpp",
+        "returncode": 0,
+        "seconds": 24.86183174996404
+      },
+      {
+        "file": "src/openms/source/IONMOBILITY/IMTypesExperiment.cpp",
+        "returncode": 0,
+        "seconds": 12.977629792003427
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/ID/FragmentIndex.cpp",
+        "returncode": 0,
+        "seconds": 28.147914375003893
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/MAPMATCHING/ConsensusMapNormalizerAlgorithmMedian.cpp",
+        "returncode": 0,
+        "seconds": 28.963129625015426
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/AhoCorasickAmbiguous_test.cpp",
+        "returncode": 0,
+        "seconds": 10.828227874997538
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/AASequence_test.cpp",
+        "returncode": 0,
+        "seconds": 14.193075457995292
+      },
+      {
+        "file": "src/openms/source/SYSTEM/JavaInfo.cpp",
+        "returncode": 0,
+        "seconds": 17.802906874974724
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/OpenSwathOSWParquetWriter.cpp",
+        "returncode": 0,
+        "seconds": 36.35604162502568
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/QUANTITATION/IsotopeLabelingMDVs.cpp",
+        "returncode": 0,
+        "seconds": 36.46025095897494
+      },
+      {
+        "file": "src/openms/source/SYSTEM/PythonInfo.cpp",
+        "returncode": 0,
+        "seconds": 19.38994595798431
+      },
+      {
+        "file": "src/openms/source/CHEMISTRY/ProForma.cpp",
+        "returncode": 0,
+        "seconds": 42.408303792006336
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/OpenSwathPercolatorScoring_test.cpp",
+        "returncode": 0,
+        "seconds": 14.93417387502268
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/MRMAssay_test.cpp",
+        "returncode": 0,
+        "seconds": 21.181114042003173
+      },
+      {
+        "file": "src/openms/source/ANALYSIS/OPENSWATH/MRMFeatureFinderScoring.cpp",
+        "returncode": 0,
+        "seconds": 47.129361084022094
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/OpenSwathResultsExporter_test.cpp",
+        "returncode": 0,
+        "seconds": 14.061738082964439
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/ConsensusMapNormalizerAlgorithmMedian_test.cpp",
+        "returncode": 0,
+        "seconds": 26.287037250003777
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/MapAlignmentEvaluationAlgorithm_test.cpp",
+        "returncode": 0,
+        "seconds": 22.143391875026282
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/PEFFFile_test.cpp",
+        "returncode": 0,
+        "seconds": 17.296382917033043
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/PeptideIndexing_test.cpp",
+        "returncode": 0,
+        "seconds": 16.59751333296299
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/ChromatogramProcessor_test.cpp",
+        "returncode": 0,
+        "seconds": 34.736560291959904
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/ProteinModificationSummary_test.cpp",
+        "returncode": 0,
+        "seconds": 9.463510666973889
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/TransformationModelBSpline_test.cpp",
+        "returncode": 0,
+        "seconds": 8.30274041701341
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/TMTSixPlexQuantitationMethod_test.cpp",
+        "returncode": 0,
+        "seconds": 9.615633916982915
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/ZipArchiveFile_test.cpp",
+        "returncode": 0,
+        "seconds": 7.02876474999357
+      },
+      {
+        "file": "tests/runtime/CoreExecutablePath_probe.cpp",
+        "returncode": 0,
+        "seconds": 5.916087041958235
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/TransformationModelLowess_test.cpp",
+        "returncode": 0,
+        "seconds": 8.884534167009406
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/ConsensusMapArrowIO_test.cpp",
+        "returncode": 0,
+        "seconds": 37.00139816699084
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/DefaultChromHandler_test.cpp",
+        "returncode": 0,
+        "seconds": 35.394462542026304
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/Percolator_subprocess_parity_test.cpp",
+        "returncode": 0,
+        "seconds": 16.576596540980972
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/MzMLFile_test.cpp",
+        "returncode": 0,
+        "seconds": 30.725300749996677
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/FeatureMapArrowIO_test.cpp",
+        "returncode": 0,
+        "seconds": 35.08067479199963
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/PSMArrowIO_test.cpp",
+        "returncode": 0,
+        "seconds": 23.72803183295764
+      },
+      {
+        "file": "tests/runtime/ProcessWait_test.cpp",
+        "returncode": 0,
+        "seconds": 7.217561332974583
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/PeptideAndProteinQuant_test.cpp",
+        "returncode": 0,
+        "seconds": 26.694199833029415
+      },
+      {
+        "file": "src/tests/class_tests/openms/source/ProteinGroupArrowExport_test.cpp",
+        "returncode": 0,
+        "seconds": 20.443951416993514
+      }
+    ],
+    "seconds": 66.1540354169556,
+    "warnings_by_owner": {
+      "vendored": 3
+    },
+    "warnings": [
+      {
+        "path": "src/openms/thirdparty/percolator/ScoreHolder.h",
+        "line": 48,
+        "column": 9,
+        "message": "field 'label' will be initialized after field 'pPSM'",
+        "category": "-Wreorder-ctor",
+        "owner": "vendored",
+        "translation_unit": "src/openms/source/ANALYSIS/ID/Percolator.cpp"
+      },
+      {
+        "path": "src/openms/thirdparty/percolator/ScoreHolder.h",
+        "line": 51,
+        "column": 45,
+        "message": "field 'label' will be initialized after field 'pPSM'",
+        "category": "-Wreorder-ctor",
+        "owner": "vendored",
+        "translation_unit": "src/openms/source/ANALYSIS/ID/Percolator.cpp"
+      },
+      {
+        "path": "src/openms/thirdparty/percolator/SetHandler.h",
+        "line": 95,
+        "column": 13,
+        "message": "'const' type qualifier on return type has no effect",
+        "category": "-Wignored-qualifiers",
+        "owner": "vendored",
+        "translation_unit": "src/openms/source/ANALYSIS/ID/Percolator.cpp"
+      }
+    ],
+    "final_delta": {
+      "scope": "Object recompilation of final ZIP test-only delta; other 47 translation units unchanged from fixes-v2 verification. No SDK link/runtime claim.",
+      "file": "src/tests/class_tests/openms/source/ZipArchiveFile_test.cpp",
+      "returncode": 0,
+      "seconds": 2.2143153750221245,
+      "command": [
+        "/usr/bin/c++",
+        "-DBOOST_ALL_NO_LIB",
+        "-DBOOST_REGEX_DYN_LINK",
+        "-DBOOST_REGEX_NO_LIB",
+        "-I/Users/kohlbach/Claude/OpenMS/OpenMS4-Exploration/core-warning-execution/macos-isolated-baseline-build/src/tests/class_tests/openms/include",
+        "-I/Users/kohlbach/Claude/OpenMS/OpenMS4-Exploration/core-warning-execution/macos-baseline-source/src/tests/class_tests/openms/include",
+        "-I/Users/kohlbach/Claude/OpenMS/OpenMS4-Exploration/core-warning-execution/macos-baseline-source/src/testframework/include",
+        "-I/Users/kohlbach/Claude/OpenMS/OpenMS4-Exploration/core-warning-execution/macos-baseline-source/src/openswathalgo/include",
+        "-I/Users/kohlbach/Claude/OpenMS/OpenMS4-Exploration/core-warning-execution/macos-isolated-baseline-build/src/openswathalgo/include",
+        "-isystem",
+        "/Users/kohlbach/Claude/OpenMS/OpenMS4-Exploration/core-warning-execution/macos-baseline-source/src/openms/include",
+        "-isystem",
+        "/Users/kohlbach/Claude/OpenMS/OpenMS4-Exploration/core-warning-execution/macos-isolated-baseline-build/src/openms/include",
+        "-isystem",
+        "/opt/homebrew/include",
+        "-isystem",
+        "/opt/homebrew/include/eigen3",
+        "-isystem",
+        "/opt/homebrew/opt/curl/include",
+        "-isystem",
+        "/opt/homebrew/opt/libomp/include",
+        "-g",
+        "-std=gnu++23",
+        "-fvisibility=hidden",
+        "-fno-color-diagnostics",
+        "-fPIC",
+        "-U__STDCPP_FLOAT16_T__",
+        "-U__STDCPP_FLOAT32_T__",
+        "-U__STDCPP_FLOAT64_T__",
+        "-ffp-contract=off",
+        "-Wall",
+        "-Wextra",
+        "-Wno-sign-conversion",
+        "-Wno-global-constructors",
+        "-Wno-exit-time-destructors",
+        "-Wno-weak-vtables",
+        "-Wno-documentation-unknown-command",
+        "-Wno-undef",
+        "-Wno-documentation",
+        "-Wno-source-uses-openmp",
+        "-Wno-old-style-cast",
+        "-Wno-unknown-warning-option",
+        "-Wno-double-promotion",
+        "-Wno-unused-template",
+        "-Wno-conversion",
+        "-Wno-float-equal",
+        "-Wno-switch-enum",
+        "-Wno-missing-prototypes",
+        "-Wno-missing-variable-declarations",
+        "-Wno-deprecated",
+        "-Wno-covered-switch-default",
+        "-Wno-date-time",
+        "-Wno-missing-noreturn",
+        "-Xclang",
+        "-fopenmp",
+        "-o",
+        "/Users/kohlbach/Claude/OpenMS/OpenMS4-Exploration/core-warning-execution/macos-focused-objects/ZipArchiveFile_test.cpp.o",
+        "-c",
+        "/Users/kohlbach/Claude/OpenMS/OpenMS4-Exploration/core-warning-execution/macos-baseline-source/src/tests/class_tests/openms/source/ZipArchiveFile_test.cpp"
+      ],
+      "patch_sha256": "c538838be7847c859f120155eb098db83a85320a99bd03136886e957ba0029b0",
+      "delta_patch_sha256": "8a99648c100e11a7891a559ad65d192fa9ddc364d26c72dd6b7cb92d34ac3e79",
+      "warnings": [],
+      "log": "/Users/kohlbach/Claude/OpenMS/OpenMS4-Exploration/core-warning-execution/macos-final-ZipArchiveFile_test.log"
+    },
+    "standalone_test": {
+      "name": "ProcessWait_test",
+      "compile_exit": 0,
+      "test_exit": 0,
+      "cases": [
+        "successful child",
+        "exit code 7",
+        "timeout leaves child running"
+      ],
+      "source": "macos-baseline-source/tests/runtime/ProcessWait_test.cpp"
+    },
+    "full_sdk_built": false
+  },
+  "evidence": {
+    "local_directory": "core-warning-execution",
+    "linux_archive": "linux-warning-evidence.tar.gz",
+    "linux_archive_sha256": "a2b59e29fc10f4d64d7cc51df8af579908380ba27825328caba0677d1882b5aa",
+    "remote_directory": "/scratch/kohlbach/openms4-5d1e239-20260910/core-warning-audit"
+  }
+}

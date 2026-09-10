@@ -93,10 +93,9 @@ namespace OpenMS::Internal
     /// Per-feature working state (used between startElement("feature") and endElement("feature")).
     UniProtFeature current_feature_;
 
-    /// Whether the next &lt;name&gt; encountered inside the current &lt;gene&gt; subtree is a primary name.
-    bool gene_name_is_primary_{false};
-    /// Whether the next &lt;name&gt; encountered inside the current &lt;organism&gt; subtree is the scientific name.
-    bool organism_name_is_scientific_{false};
+    // Retained for object layout compatibility; capture_ handles both name selections.
+    [[maybe_unused]] bool gene_name_is_primary_{false};
+    [[maybe_unused]] bool organism_name_is_scientific_{false};
 
     /// Clear all per-entry state so the next &lt;entry&gt; starts fresh.
     void resetEntry_();

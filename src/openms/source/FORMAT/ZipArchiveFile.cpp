@@ -6,6 +6,7 @@
 // $Authors: Justin Sing $
 // --------------------------------------------------------------------------
 
+#include <OpenMS/SYSTEM/PathUtils.h>
 #include <OpenMS/FORMAT/ZipArchiveFile.h>
 
 #include <OpenMS/CONCEPT/Exception.h>
@@ -29,8 +30,8 @@ namespace OpenMS
 void ZipArchiveFile::zipDirectory(const std::string& directory_path, const std::string& output_zip)
 {
 #if defined(OPENMS_HAVE_LIBZIP)
-  const std::filesystem::path dirpath = std::filesystem::u8path(std::string(directory_path));
-  const std::filesystem::path outpath = std::filesystem::u8path(std::string(output_zip));
+  const std::filesystem::path dirpath = OpenMS::to_path(std::string(directory_path));
+  const std::filesystem::path outpath = OpenMS::to_path(std::string(output_zip));
   const std::string output_zip_abs = File::absolutePath(output_zip);
   if (File::exists(output_zip_abs))
   {
@@ -113,7 +114,7 @@ std::string ZipArchiveFile::unzipDirectory(const std::string& input_path, std::u
   }
 
   zip_int64_t num = zip_get_num_entries(za, 0);
-  const std::filesystem::path base_path = std::filesystem::u8path(std::string(unpack_dir)).lexically_normal();
+  const std::filesystem::path base_path = OpenMS::to_path(std::string(unpack_dir)).lexically_normal();
   for (zip_uint64_t i = 0; i < static_cast<zip_uint64_t>(num); ++i)
   {
     const char* name = zip_get_name(za, i, 0);
@@ -121,7 +122,7 @@ std::string ZipArchiveFile::unzipDirectory(const std::string& input_path, std::u
     std::string entry_name(name);
 
     // Protect against path traversal: do not allow absolute paths or '..' to escape the base unpack dir.
-    std::filesystem::path entry_path = std::filesystem::u8path(entry_name);
+    std::filesystem::path entry_path = OpenMS::to_path(entry_name);
     if (entry_path.is_absolute())
     {
       zip_close(za);
@@ -223,22 +224,24 @@ void ZipArchiveFile::addOrReplaceFromFile(const std::string& archive_path, const
   zip_int64_t idx = zip_name_locate(za, entry_name.c_str(), 0);
   if (idx >= 0)
   {
-    if (zip_replace(za, idx, src) < 0)
+    if (zip_file_replace(za, idx, src, 0) < 0)
     {
+      const std::string error = zip_strerror(za);
       zip_source_free(src);
-      zip_close(za);
+      zip_discard(za);
       throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
-                                    "zip_replace failed: " + std::string(zip_strerror(za)), "");
+                                    "zip_file_replace failed: " + error, "");
     }
   }
   else
   {
     if (zip_file_add(za, entry_name.c_str(), src, ZIP_FL_OVERWRITE | ZIP_FL_ENC_UTF_8) < 0)
     {
+      const std::string error = zip_strerror(za);
       zip_source_free(src);
-      zip_close(za);
+      zip_discard(za);
       throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
-                                    "zip_file_add failed: " + std::string(zip_strerror(za)), "");
+                                    "zip_file_add failed: " + error, "");
     }
   }
 
@@ -289,7 +292,7 @@ void ZipArchiveFile::writeSidecarIndex(const std::string& archive_path)
   if (File::isDirectory(archive_path))
   {
     std::vector<std::pair<std::string, uint64_t>> entries;
-    const std::filesystem::path base = std::filesystem::u8path(std::string(archive_path));
+    const std::filesystem::path base = OpenMS::to_path(std::string(archive_path));
     for (auto it = std::filesystem::recursive_directory_iterator(base); it != std::filesystem::recursive_directory_iterator(); ++it)
     {
       if (it->is_directory()) continue;
@@ -368,22 +371,24 @@ void ZipArchiveFile::writeSidecarIndex(const std::string& archive_path)
   zip_int64_t side_idx = zip_name_locate(za2, sidecar_name, 0);
   if (side_idx >= 0)
   {
-    if (zip_replace(za2, side_idx, src) < 0)
+    if (zip_file_replace(za2, side_idx, src, 0) < 0)
     {
+      const std::string error = zip_strerror(za2);
       zip_source_free(src);
-      zip_close(za2);
+      zip_discard(za2);
       throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
-                                    "zip_replace failed for sidecar: " + std::string(zip_strerror(za2)), "");
+                                    "zip_file_replace failed for sidecar: " + error, "");
     }
   }
   else
   {
     if (zip_file_add(za2, sidecar_name, src, ZIP_FL_OVERWRITE | ZIP_FL_ENC_UTF_8) < 0)
     {
+      const std::string error = zip_strerror(za2);
       zip_source_free(src);
-      zip_close(za2);
+      zip_discard(za2);
       throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
-                                    "zip_file_add failed for sidecar: " + std::string(zip_strerror(za2)), "");
+                                    "zip_file_add failed for sidecar: " + error, "");
     }
   }
 
@@ -412,8 +417,8 @@ std::string ZipArchiveFile::extractEntryToTempFile(const std::string& archive_pa
   // treat it as an unpacked layout and return the matching file path directly.
   if (File::isDirectory(archive_path))
   {
-    const std::filesystem::path base = std::filesystem::u8path(std::string(archive_path));
-    const std::filesystem::path entry_path = (base / std::filesystem::u8path(std::string(entry_name))).lexically_normal();
+    const std::filesystem::path base = OpenMS::to_path(std::string(archive_path));
+    const std::filesystem::path entry_path = (base / OpenMS::to_path(std::string(entry_name))).lexically_normal();
     if (!std::filesystem::exists(entry_path))
     {
       throw Exception::FileNotFound(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, entry_path.string());
@@ -453,7 +458,7 @@ std::string ZipArchiveFile::extractEntryToTempFile(const std::string& archive_pa
   const std::string base = temp_dir->getPath();
 
   // construct output path and create parent dirs
-  const std::filesystem::path entry_path = std::filesystem::u8path(std::string(entry_name));
+  const std::filesystem::path entry_path = OpenMS::to_path(std::string(entry_name));
   if (entry_path.is_absolute())
   {
     zip_fclose(zf);
@@ -462,8 +467,8 @@ std::string ZipArchiveFile::extractEntryToTempFile(const std::string& archive_pa
                                   "Zip entry has absolute path", entry_name);
   }
 
-  const std::filesystem::path outpath = (std::filesystem::u8path(std::string(base)) / entry_path).lexically_normal();
-  const std::string base_str = std::filesystem::u8path(std::string(base)).string();
+  const std::filesystem::path outpath = (OpenMS::to_path(std::string(base)) / entry_path).lexically_normal();
+  const std::string base_str = OpenMS::to_path(std::string(base)).string();
   const std::string out_str = outpath.string();
   if (out_str.size() < base_str.size() || out_str.compare(0, base_str.size(), base_str) != 0)
   {

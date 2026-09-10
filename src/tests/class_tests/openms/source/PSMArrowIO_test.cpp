@@ -24,7 +24,6 @@
 #include <parquet/arrow/reader.h>
 
 #include <fstream>
-#include <sstream>
 
 using namespace OpenMS;
 using namespace std;
@@ -94,31 +93,6 @@ namespace
     d.setDiffFormula(EmpiricalFormula(formula));
     d.setDiffMonoMass(EmpiricalFormula(formula).getMonoWeight());
     return d.toDefinitionString();
-  }
-
-  std::string slurp4b(const std::string& path)
-  {
-    std::ifstream in(path);
-    std::stringstream ss;
-    ss << in.rdbuf();
-    return ss.str();
-  }
-
-  bool fileContains4b(const std::string& path, const std::string& needle)
-  {
-    return slurp4b(path).find(needle) != std::string::npos;
-  }
-
-  // first occurrence only; returns false when @p from is absent
-  bool replaceInFile4b(const std::string& path, const std::string& from, const std::string& to)
-  {
-    std::string s = slurp4b(path);
-    const std::size_t pos = s.find(from);
-    if (pos == std::string::npos) return false;
-    s.replace(pos, from.size(), to);
-    std::ofstream out(path);
-    out << s;
-    return true;
   }
 }
 

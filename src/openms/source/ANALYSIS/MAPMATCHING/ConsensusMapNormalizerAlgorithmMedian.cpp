@@ -196,8 +196,8 @@ namespace OpenMS
             std::vector<ProteinHit>::const_iterator pr_hit = const_cast<ProteinIdentification&>(*pr_it).findHit(*acc_it);
             if (pr_hit != pr_it->getHits().end())
             {
-              const char* desc = pr_hit->getDescription().c_str();
-              if (boost::regex_search(desc, m, desc_regexp))
+              const std::string desc = pr_hit->getDescription();
+              if (boost::regex_search(desc.c_str(), m, desc_regexp))
               {
                 return true;
               }

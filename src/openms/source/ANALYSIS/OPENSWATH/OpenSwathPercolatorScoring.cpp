@@ -136,16 +136,9 @@ namespace OpenMS
       {
         out = "var_" + out.substr(8);
       }
-      else if (StringUtils::hasPrefix(out, "var_ms1_"))
+      else if (StringUtils::hasPrefix(out, "var_ms1_") && level != Level::MS1MS2)
       {
-        if (level == Level::MS1MS2)
-        {
-          out = out;
-        }
-        else
-        {
-          out = "var_" + out.substr(8);
-        }
+        out = "var_" + out.substr(8);
       }
       return StringUtils::toLower(out);
     }

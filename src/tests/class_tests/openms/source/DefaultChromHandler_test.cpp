@@ -83,8 +83,8 @@ START_SECTION(std::vector<MSChromatogram> collectIrtChromatogramsForIrt(...))
   std::vector<MSChromatogram> result = handler.collectIrtChromatogramsForIrt(
     swath_maps, irt_transitions, mrm_mapping_param, cp, trafo, false, false);
 
-  // Should return chromatograms (may be empty if mapping fails, which is expected for minimal test data)
-  TEST_EQUAL(result.size() >= 0, true)
+  // No iRT transitions were provided to map the chromatogram.
+  TEST_EQUAL(result.size(), 0)
 }
 END_SECTION
 
@@ -138,8 +138,12 @@ START_SECTION(std::vector<MSChromatogram> extractAndMapChromatogramsForTransitio
   std::vector<MSChromatogram> result = handler.extractAndMapChromatogramsForTransitions(
     swath_maps, transition_exp, cp, mrm_mapping_param);
 
-  // Should return chromatograms (may be empty if mapping fails, which is expected for minimal test data)
-  TEST_EQUAL(result.size() >= 0, true)
+  TEST_EQUAL(result.size(), 1)
+  ABORT_IF(result.size() != 1)
+  TEST_EQUAL(result[0].getNativeID(), "transition_1")
+  TEST_EQUAL(result[0].size(), chrom.size())
+  ABORT_IF(result[0].size() != chrom.size())
+  TEST_REAL_SIMILAR(result[0][1].getIntensity(), 2000.0)
 }
 END_SECTION
 
@@ -265,7 +269,7 @@ START_SECTION(DefaultChromHandler_edge_case_mismatched_transitions)
     swath_maps, transition_exp, cp, mrm_mapping_param);
 
   // Should handle mismatched transitions gracefully
-  TEST_EQUAL(result.size() >= 0, true)  // May return chromatograms or empty
+  TEST_EQUAL(result.size(), 0)
 }
 END_SECTION
 
@@ -354,8 +358,10 @@ START_SECTION(DefaultChromHandler_edge_case_multiple_swath_maps)
   std::vector<MSChromatogram> result = handler.extractAndMapChromatogramsForTransitions(
     swath_maps, transition_exp, cp, mrm_mapping_param);
 
-  // Should handle multiple swath maps
-  TEST_EQUAL(result.size() >= 0, true)
+  TEST_EQUAL(result.size(), 2)
+  ABORT_IF(result.size() != 2)
+  TEST_EQUAL(result[0].getNativeID(), "transition_1")
+  TEST_EQUAL(result[1].getNativeID(), "transition_2")
   TEST_EQUAL(swath_maps.size(), 2)  // Input should remain unchanged
 }
 END_SECTION
@@ -399,28 +405,14 @@ START_SECTION(DefaultChromHandler_edge_case_invalid_parameters)
   transition.product_mz = 550.0;
   transition_exp.transitions.push_back(transition);
 
-  // Invalid parameters (negative RT window)
+  // Reject an invalid mapping flag; RT extraction settings are ignored in MRM mode.
   Param mrm_mapping_param;
+  mrm_mapping_param.setValue("map_multiple_assays", "invalid");
   ChromExtractParams cp;
-  cp.rt_extraction_window = -100.0;  // Invalid negative value
+  cp.rt_extraction_window = -1.0;
 
-  // Test extractAndMapChromatogramsForTransitions with invalid parameters
-  // This should either handle gracefully or throw an exception
-  bool exception_thrown = false;
-  std::vector<MSChromatogram> result;
-  try
-  {
-    result = handler.extractAndMapChromatogramsForTransitions(
-      swath_maps, transition_exp, cp, mrm_mapping_param);
-  }
-  catch (const std::exception& e)
-  {
-    exception_thrown = true;
-    OPENMS_LOG_INFO << "Expected exception caught: " << e.what() << std::endl;
-  }
-
-  // Either should succeed with defaults or throw exception
-  TEST_EQUAL(exception_thrown || result.size() >= 0, true)
+  TEST_EXCEPTION(Exception::MissingInformation, handler.extractAndMapChromatogramsForTransitions(
+    swath_maps, transition_exp, cp, mrm_mapping_param))
 }
 END_SECTION
 
@@ -490,8 +482,11 @@ START_SECTION(DefaultChromHandler_edge_case_mixed_ms1_ms2)
   std::vector<MSChromatogram> result = handler.extractAndMapChromatogramsForTransitions(
     swath_maps, transition_exp, cp, mrm_mapping_param);
 
-  // Should handle mixed data (delegates to DIA handler)
-  TEST_EQUAL(result.size() >= 0, true)
+  // DIA extraction creates a trace for the transition, but the MS2 map has no spectra.
+  TEST_EQUAL(result.size(), 1)
+  ABORT_IF(result.size() != 1)
+  TEST_EQUAL(result[0].getNativeID(), "transition_1")
+  TEST_EQUAL(result[0].empty(), true)
 }
 END_SECTION
 
@@ -536,7 +531,7 @@ START_SECTION(DefaultChromHandler_edge_case_empty_spectrum_access)
     swath_maps, transition_exp, cp, mrm_mapping_param);
 
   // Should handle empty spectrum access gracefully
-  TEST_EQUAL(result.size() >= 0, true)  // May return empty or some default result
+  TEST_EQUAL(result.size(), 0)
 }
 END_SECTION
 

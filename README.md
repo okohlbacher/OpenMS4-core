@@ -49,6 +49,9 @@ An invalid `OPENMS_DATA_PATH` throws `Exception::FileNotFound`; library callers 
 correct the override and retry. Desktop styles and integration metadata are owned
 by the separate desktop package.
 
+The [compiler warning audit](COMPILER_WARNING_AUDIT.md) records the Linux build,
+focused Clang checks, fixes and remaining vendor diagnostics.
+
 ## Install the SDK and optional TestSupport
 
 A default `cmake --install` includes every enabled component, including TestSupport.

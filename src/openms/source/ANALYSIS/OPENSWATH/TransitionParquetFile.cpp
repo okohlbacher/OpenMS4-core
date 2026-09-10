@@ -6,6 +6,7 @@
 // $Authors: Justin Sing $
 // --------------------------------------------------------------------------
 
+#include <OpenMS/SYSTEM/PathUtils.h>
 #include <OpenMS/ANALYSIS/OPENSWATH/TransitionParquetFile.h>
 #include <OpenMS/ANALYSIS/OPENSWATH/OpenSwathLibraryIDNormalizer.h>
 #include <OpenMS/FORMAT/ArrowSchemaRegistry.h>
@@ -726,8 +727,8 @@ namespace OpenMS
       // archive without unzipping/rezipping everything. Use a staging archive
       // and rename into place atomically to avoid destroying the existing
       // archive on partial failures.
-      const std::filesystem::path dirpath = std::filesystem::u8path(std::string(base_dir));
-      const std::filesystem::path outpath = std::filesystem::u8path(std::string(oswpq_path));
+      const std::filesystem::path dirpath = OpenMS::to_path(std::string(base_dir));
+      const std::filesystem::path outpath = OpenMS::to_path(std::string(oswpq_path));
       const std::string output_zip_abs = File::absolutePath(oswpq_path);
       const std::string staging_zip = output_zip_abs + ".tmp";
 
@@ -751,8 +752,8 @@ namespace OpenMS
       {
         File::remove(output_zip_abs);
       }
-      std::filesystem::rename(std::filesystem::u8path(std::string(staging_zip)),
-                              std::filesystem::u8path(std::string(output_zip_abs)));
+      std::filesystem::rename(OpenMS::to_path(std::string(staging_zip)),
+                              OpenMS::to_path(std::string(output_zip_abs)));
     }
   }
 } // namespace OpenMS

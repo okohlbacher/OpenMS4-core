@@ -1459,7 +1459,7 @@ START_SECTION((Thermo metadata survives mzML serialization, sorting, and reloadi
   MzMLFile file;
   string encoded;
   file.storeBuffer(encoded, original);
-  for (const string& accession : {"MS:1000529", "MS:1003379", "MS:1002678", "MS:1002680", "MS:1002743", "MS:1002744", "MS:1002745", "MS:1000516", "MS:1000617", "MS:1003019", "MS:1000821"})
+  for (const char* accession : {"MS:1000529", "MS:1003379", "MS:1002678", "MS:1002680", "MS:1002743", "MS:1002744", "MS:1002745", "MS:1000516", "MS:1000617", "MS:1003019", "MS:1000821"})
   {
     TEST_TRUE(StringUtils::hasSubstring(encoded, accession))
   }

@@ -134,7 +134,8 @@ namespace OpenMS
       int num_interior_knots_ = 0;
       double rss_ = 0.0;
       double s_ = 0.0;
-      int k_ = 3;
+      // Retained for object layout compatibility; fitting currently uses cubic splines.
+      [[maybe_unused]] int k_ = 3;
       std::vector<double> x_;
       std::vector<double> y_;
       

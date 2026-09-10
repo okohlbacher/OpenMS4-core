@@ -384,3 +384,8 @@ add_test(NAME CoreExecutablePath_unicode_and_long
   COMMAND "${CMAKE_COMMAND}" "-DPROBE_EXECUTABLE=$<TARGET_FILE:CoreExecutablePath_probe>"
     "-DWORK_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}"
     -P "${OPENMS_HOST_DIRECTORY}/tests/runtime/CheckExecutablePath.cmake")
+
+add_executable(ProcessWait_test "${OPENMS_HOST_DIRECTORY}/tests/runtime/ProcessWait_test.cpp")
+target_link_libraries(ProcessWait_test PRIVATE OpenMS::Core Threads::Threads)
+add_test(NAME ProcessWait_test COMMAND ProcessWait_test)
+set_tests_properties(ProcessWait_test PROPERTIES TIMEOUT 15)

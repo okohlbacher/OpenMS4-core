@@ -397,6 +397,14 @@ END_SECTION
 //// testing AA
 /////////////////////////////////////
 
+START_SECTION(static AA fromIndex(size_t index))
+{
+  TEST_EQUAL(AA::fromIndex(0).toChar(), 'A')
+  TEST_EQUAL(AA::fromIndex(AA::unambiguousAACount() - 1).toChar(), 'V')
+  TEST_PRECONDITION_VIOLATED(AA::fromIndex(AA::unambiguousAACount()))
+}
+END_SECTION
+
 START_SECTION(constexpr AA())
 {
   // make sure ctor is constexpr

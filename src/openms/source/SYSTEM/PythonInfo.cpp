@@ -12,6 +12,8 @@
 #include <OpenMS/SYSTEM/File.h>
 #include <OpenMS/SYSTEM/PathUtils.h>
 
+#include "ProcessWait.h"
+
 #include <boost/version.hpp>
 
 // Boost.Process v1 compatibility shims removed in Boost 1.88; use v1/ prefix for 1.88+
@@ -83,7 +85,7 @@ namespace OpenMS
         bp::std_err > pipe_err
       );
 
-      bool finished = child.wait_for(std::chrono::seconds(30));
+      bool finished = Internal::waitForProcess(child, std::chrono::seconds(30));
       if (!finished)
       {
         child.terminate();
@@ -117,7 +119,7 @@ namespace OpenMS
         bp::std_err > bp::null
       );
 
-      bool finished = child.wait_for(std::chrono::seconds(30));
+      bool finished = Internal::waitForProcess(child, std::chrono::seconds(30));
       if (!finished)
       {
         child.terminate();
@@ -146,7 +148,7 @@ namespace OpenMS
         bp::std_err > pipe_err
       );
 
-      bool finished = child.wait_for(std::chrono::seconds(30));
+      bool finished = Internal::waitForProcess(child, std::chrono::seconds(30));
       if (finished && child.exit_code() == 0)
       {
         std::string line;

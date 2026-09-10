@@ -85,9 +85,9 @@ namespace OpenMS
     else
     {
       correction_matrix_eigen.resize(correction_matrix.rows(), correction_matrix.cols());
-      for (long int i = 0; i < correction_matrix.rows(); ++i)
+      for (Size i = 0; i < correction_matrix.rows(); ++i)
       {
-        for (long int j = 0; j < correction_matrix.cols(); ++j)
+        for (Size j = 0; j < correction_matrix.cols(); ++j)
         {
           correction_matrix_eigen(i,j) = correction_matrix(i,j);
         }

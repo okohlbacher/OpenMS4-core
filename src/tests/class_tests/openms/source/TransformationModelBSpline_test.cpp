@@ -43,7 +43,7 @@ START_SECTION((TransformationModelBSpline(const DataPoints&, const Param&)))
 {
   TEST_EXCEPTION(Exception::IllegalArgument, TransformationModelBSpline tm(empty, Param())); // need data
   ptr = new TransformationModelBSpline(data, Param());
-  TEST_NOT_EQUAL(ptr, 0)
+  TEST_NOT_EQUAL(ptr, nullptr)
 }
 END_SECTION
 

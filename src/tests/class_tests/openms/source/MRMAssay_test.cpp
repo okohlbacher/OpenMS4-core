@@ -930,8 +930,6 @@ START_SECTION([EXTRA] uisTransitionsLight vs uisTransitions equivalence test)
   std::string in = "MRMAssay_uisTransitions_input_1.TraML";
   traml.load(OPENMS_GET_TEST_DATA_PATH(in), targeted_exp_heavy);
 
-  size_t initial_transitions = targeted_exp_heavy.getTransitions().size();
-
   // Convert to Light for light path
   OpenSwath::LightTargetedExperiment light_exp;
   OpenSwathDataAccessHelper::convertTargetedExp(targeted_exp_heavy, light_exp);

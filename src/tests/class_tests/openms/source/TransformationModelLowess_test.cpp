@@ -46,7 +46,7 @@ START_SECTION((TransformationModelLowess(const DataPoints&, const Param&)))
 {
   TEST_EXCEPTION(Exception::IllegalArgument, TransformationModelLowess tm(empty, params_default)); // need data
   ptr = new TransformationModelLowess(data, params_default);
-  TEST_NOT_EQUAL(ptr, 0)
+  TEST_NOT_EQUAL(ptr, nullptr)
 }
 END_SECTION
 
