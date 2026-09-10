@@ -1,0 +1,440 @@
+// Copyright (c) 2002-present, OpenMS Inc. -- EKU Tuebingen, ETH Zurich, and FU Berlin
+// SPDX-License-Identifier: BSD-3-Clause
+//
+// --------------------------------------------------------------------------
+// $Maintainer: Chris Bielow $
+// $Authors: Andreas Bertsch, Chris Bielow, Marc Sturm $
+// --------------------------------------------------------------------------
+
+#pragma once
+
+#include <OpenMS/DATASTRUCTURES/StringListUtils.h>
+#include <OpenMS/config.h>
+#include <cstdlib>
+#include <mutex>
+
+
+namespace OpenMS
+{
+  class Param;
+
+  /**
+    @brief Basic file handling operations.
+
+    @ingroup System
+  */
+  class OPENMS_DLLAPI File
+  {
+public:
+    /**
+      @brief Class representing a temporary directory
+    
+    */
+    class OPENMS_DLLAPI TempDir
+    {
+    public:
+      
+      /// Construct temporary folder under system temp directory
+      /// If keep_dir is set to true, the folder will not be deleted on destruction of the object.
+      TempDir(bool keep_dir = false);
+
+      /// Construct temporary folder under a custom base directory
+      /// Creates a unique subdirectory with a generated name under base_dir.
+      /// If keep_dir is set to true, the folder will not be deleted on destruction of the object.
+      /// @param base_dir The base directory under which to create the temp folder (e.g., user-specified temp path)
+      /// @param keep_dir If true, the folder will not be deleted on destruction
+      TempDir(const std::string& base_dir, bool keep_dir = false);
+
+      /// Destroy temporary folder (can be prohibited in Constructor)
+      ~TempDir();
+
+      /// delete all means to copy or move a TempDir
+      TempDir(const TempDir&) = delete;
+      TempDir& operator=(const TempDir&) = delete;
+      TempDir(TempDir&&) = delete;
+      TempDir& operator=(TempDir&&) = delete;
+
+      /// Return path to temporary folder
+      const std::string& getPath() const;
+
+    private:
+      std::string temp_dir_;
+      bool keep_dir_;
+    };
+
+    /// Retrieve path of current executable (useful to find other TOPP tools)
+    /// The returned path is either just an EMPTY string if the call to system subroutines failed
+    /// or the complete path including a trailing "/", to enable usage of this function as
+    /// File::getExecutablePath() + "mytool"
+    static std::string getExecutablePath();
+
+    /// Method used to test if a @p file exists.
+    static bool exists(const std::string& file);
+
+    /// Return true if the file does not exist or the file is empty
+    static bool empty(const std::string& file);
+
+    /// Method used to test if a @p file is executable.
+    static bool executable(const std::string& file);
+
+    /// The filesize in bytes (or -1 on error, e.g. if the file does not exist)
+    static UInt64 fileSize(const std::string& file);
+
+    /**
+       @brief Last modification time of @p file, in seconds since the Unix epoch (or -1 on error).
+
+       Reported against the Unix epoch rather than as a std::filesystem::file_time_type, whose
+       clock epoch is implementation-defined: two standard libraries report different numbers for
+       the same file. That distinction only matters once the value leaves the process -- written
+       to a file, or compared against one another machine recorded -- which is exactly what a
+       caller doing change detection tends to do with it.
+    */
+    static Int64 getModificationTime(const std::string& file);
+
+    /**
+       @brief Rename a file
+       
+       If @p from and @p to point to the same file (symlinks are resolved),
+       no action will be taken and true is returned.
+       If the target already exists (and is not identical to the source),
+       this function will fail unless @p overwrite_existing is true.
+       
+       @param[in] from Source filename
+       @param[in] to Target filename
+       @param[in] overwrite_existing Delete already existing target, before renaming
+       @param[in] verbose Print message to OPENMS_LOG_ERROR if something goes wrong.
+       @return True on success
+    */
+    static bool rename(const std::string& from, const std::string& to, bool overwrite_existing = true, bool verbose = true);
+
+    /**
+       @brief Copy directory recursively
+       
+       Copies a source directory to a new target directory (recursive).
+       If the target directory already exists, files will be added.
+       If files from the source already exist in the target, @p option allows for the following behaviour:
+       
+       OVERWRITE: Overwrite the file in the target directory if it already exists.
+       SKIP: Skip the file in the target directory if it already exists.
+       CANCEL: Cancel the copy process if file already exists in target directory - return false.
+
+       @param[in] from_dir Source directory
+       @param[in] to_dir Target directory
+       @param[in] option Specify the copy option (OVERWRITE, SKIP, CANCEL)
+       @return True on success
+    */
+    enum class CopyOptions {OVERWRITE,SKIP,CANCEL};
+    static bool copyDirRecursively(const std::string& from_dir, const std::string& to_dir, File::CopyOptions option = CopyOptions::OVERWRITE);
+
+    /// Copy a file (if it exists). Returns true if successful.
+    static bool copy(const std::string& from, const std::string& to);
+
+    /**
+      @brief Removes a file (if it exists).
+
+      @return Returns true if the file was successfully deleted (or if it did not exist).
+    */
+    static bool remove(const std::string& file);
+
+    /// Removes a directory and all its contents recursively (absolute path). Returns true if successful.
+    static bool removeDirRecursively(const std::string& dir_name);
+
+    /// Removes a directory and all its contents (absolute path). Returns true if successful.
+    static bool removeDir(const std::string& dir_name);
+
+    /// Creates a directory (absolute path or relative to the current working dir), even if subdirectories do not exist. Returns true if successful.
+    /// If the path already exists when this function is called, it will return true.
+    static bool makeDir(const std::string& dir_name);
+
+    /// Replaces the relative path in the argument with the absolute path.
+    static std::string absolutePath(const std::string& file);
+
+    /// Returns the basename of the file (without the path).
+    /// No checking is done on the filesystem, i.e. '/path/some_entity' will return 'some_entity', irrespective of 'some_entity' is a file or a directory.
+    /// However, '/path/some_entity/' will return ''.
+    static std::string basename(const std::string& file);
+
+    /// Returns the basename of the file without any known file extension.
+    /// Delegates to FileHandler::stripExtension(File::basename(file)).
+    /// E.g., "/path/sample.mzML.gz" returns "sample", "/path/data.featureXML" returns "data".
+    /// Unknown extensions are stripped at the last dot: "/path/file.txt" returns "file".
+    /// Directories with dots in the path are handled correctly: "/my.dir/file" returns "file".
+    static std::string stemName(const std::string& file);
+
+    /// Returns the file extension including the leading dot.
+    /// Recognizes compound OpenMS extensions like ".mzML.gz".
+    /// E.g., "/path/sample.mzML.gz" returns ".mzML.gz", "/path/file.txt" returns ".txt".
+    /// Returns empty string if there is no extension: "/path/file" returns "".
+    static std::string extension(const std::string& file);
+
+    /// Returns a sorted list of subdirectory absolute paths (non-recursive) in the given directory.
+    /// Uses '/' separators. Returns an empty list on any error or if the path is not a directory (no throw).
+    static StringList listDirectories(const std::string& dir);
+
+    /// Returns the path of the file (without the file name and without path separator).
+    /// If just a filename is given without any path, then "." is returned.
+    /// No checking is done on the filesystem, i.e. '/path/some_entity' will return '/path', irrespective of 'some_entity' is a file or a directory.
+    /// However, '/path/some_entity/' will return '/path/some_entity'.
+    static std::string path(const std::string& file);
+
+    /// Return true if the file exists and is readable
+    static bool readable(const std::string& file);
+
+    /// Return true if the file is writable
+    static bool writable(const std::string& file);
+
+    /// Return true if the given path specifies a directory
+    static bool isDirectory(const std::string& path);
+
+    /**
+      @brief Looks up the location of the file @p filename
+
+      The following locations are checked in this order:
+      - the directories in @p directories
+      - the directory contained in the environment variable $OPENMS_DATA_PATH
+      - the 'share/OpenMS/' directory of the OpenMS install directory
+
+      @exception FileNotFound is thrown, if the file is not found
+    */
+    static std::string find(const std::string& filename, StringList directories = StringList());
+
+    /**
+      @brief Retrieves a list of files matching @p file_pattern in directory
+             @p dir (returns filenames without paths unless @p full_path is true)
+
+      @return true => there are matching files
+    */
+    static bool fileList(const std::string& dir, const std::string& file_pattern, StringList& output, bool full_path = false);
+
+    /**
+      @brief Resolves a partial file name to a documentation file in the doc-folder.
+
+      Using find() to locate the documentation file under OPENMS_DATA_PATH,
+      OPENMS_SOURCE_PATH, OPENMS_BINARY_PATH + "/../../doc" (or a variation for
+      MacOS packages)
+
+      Will return the filename with the full path to the local documentation. If
+      this call fails, try the web documentation
+      (http://www.openms.de/current_doxygen/) instead.
+     
+      @param[in] filename The doc file name to find.
+      @return The full path to the requested file.
+
+      @exception FileNotFound is thrown, if the file is not found
+    */
+    static std::string findDoc(const std::string& filename);
+    
+    /**
+      @brief Returns a string, consisting of date, time, hostname, process id, and a incrementing number. This can be used for temporary files.
+
+      @param[in] include_hostname add hostname into result - potentially a long string
+      @return a unique name
+    */
+    static std::string getUniqueName(bool include_hostname = true);
+
+    /**
+      @brief Resolve the runtime data directory belonging to the installed core SDK.
+
+      An explicit OPENMS_DATA_PATH environment variable takes precedence and must
+      identify a valid directory. Otherwise the loaded library and executable are
+      probed before compiled-in developer paths. The result is cached on first use.
+    */
+    static std::string getOpenMSDataPath();
+
+    /**
+      @brief Returns a human-readable description of where getOpenMSDataPath() resolved from
+
+      (e.g. "exe-relative (../share/OpenMS)"). Useful for diagnostics.
+    */
+    static const std::string& getOpenMSDataPathSource();
+
+    /// Returns the OpenMS home path (environment variable overwrites the default home path)
+    static std::string getOpenMSHomePath();
+
+    /// @brief Returns the per-user OpenMS configuration directory (the directory that holds OpenMS.ini)
+    ///
+    /// Follows the XDG base directory specification on unix-like systems
+    /// (&lt;XDG_CONFIG_HOME&gt;/OpenMS or &lt;home&gt;/.config/OpenMS) and uses &lt;home&gt;/.OpenMS otherwise.
+    /// The returned path has no trailing separator and the directory is not guaranteed to exist.
+    /// @return String containing the per-user OpenMS configuration directory path
+    static std::string getOpenMSConfigDir();
+
+    /// The current OpenMS temporary data path (for temporary files).
+    /// Looks up the following locations, taking the first one which is non-null:
+    ///   - environment variable OPENMS_TMPDIR
+    ///   - 'temp_dir' in the ~/OpenMS.ini file
+    ///   - System temp directory (usually defined by environment 'TMP' or 'TEMP'
+    static std::string getTempDirectory();
+
+    /// The current OpenMS user data path (for result files)
+    /// Tries to set the user directory in following order:
+    ///   1. OPENMS_HOME_DIR if environmental variable set
+    ///   2. "home_dir" entry in OpenMS.ini
+    ///   3. user home directory
+    static std::string getUserDirectory();
+
+    /// get the system's default OpenMS.ini file in the users home directory (&lt;home&gt;/OpenMS/OpenMS.ini)
+    /// or create/repair it if required
+    /// order:
+    ///   1. &lt;OPENMS_HOME_DIR&gt;/OpenMS/OpenMS.ini if environmental variable set
+    ///   2. user home directory &lt;home&gt;/OpenMS/OpenMS.ini
+    static Param getSystemParameters();
+
+    /// uses File::find() to search for a file names @p db_name
+    /// in the 'id_db_dir' param of the OpenMS system parameters
+    /// @exception FileNotFound is thrown, if the file is not found
+    static std::string findDatabase(const std::string& db_name);
+
+    /**
+      @brief Extract list of directories from a concatenated string (usually $PATH).
+
+      Depending on platform, the components are split based on ":" (Linux/Mac) or ";" (Windows).
+      All paths use the '/' as separator and end in '/'.
+      E.g. for 'PATH=/usr/bin:/home/unicorn' the result is {"/usr/bin/", "/home/unicorn/"}
+            or 'PATH=c:\\temp;c:\\Windows' the result is {"c:/temp/", "c:/Windows/"}
+
+      Uses the value of the $PATH environment variable (or an empty string if $PATH is unset).
+    */
+    static StringList getPathLocations();
+
+    /**
+      @brief Extract list of directories from an explicit concatenated path string.
+
+      Depending on platform, the components are split based on ":" (Linux/Mac) or ";" (Windows).
+      All paths use the '/' as separator and end in '/'.
+      Note: the path string is passed as input to enable proper testing (env vars are usually read-only).
+    */
+    static StringList getPathLocations(const std::string& path);
+
+    /**
+      @brief Searches for an executable with the given name (similar to @em where (Windows) or @em which (Linux/MacOS)
+
+      This function can be used to find the full path+filename to an executable in
+      the PATH environment. Only the @em first hit (by order in PATH) is returned.
+      If the @p exe_filename has a relative or full path which points to an existing file, PATH information will not be used.
+      The function returns true if the filename was found (exists) and false otherwise.
+      Note: this does not require the file to have executable permission set (this is not tested)
+      The returned content of @p exe_filename is only valid if true is returned.
+
+      @param[in,out] exe_filename The executable to search for.
+      @return true if @p exe_filename could be resolved to a full path and it exists
+    */
+    static bool findExecutable(std::string& exe_filename);
+
+    /**
+      @brief Searches for an executable with the given name.
+
+      @param[in] toolName The executable to search for.
+      @exception FileNotFound is thrown, if the tool executable was not found.
+    */
+    static std::string findSiblingTOPPExecutable(const std::string& toolName);
+
+    /**
+      @brief Obtain a temporary filename, ensuring automatic deletion upon exit
+
+      The file is not actually created and only deleted at exit if it exists.
+      
+      However, if 'alternative_file' is given and not empty, no temporary filename
+      is created and 'alternative_file' is returned (and not destroyed upon exit).
+      This is useful if you have an optional
+      output file, which may, or may not be requested, but you need its content regardless,
+      e.g. for intermediate plotting with R.
+      Thus you can just call this function to get a file which can be used and gets automatically
+      destroyed if needed.
+
+      @param[in] alternative_file If this string is not empty, no action is taken and it is used as return value
+      @return Full path to a temporary file
+    */
+    static std::string getTemporaryFile(const std::string& alternative_file = "");
+
+
+    enum class MatchingFileListsStatus 
+    {
+        MATCH = 0,           // Everything matches perfectly
+        ORDER_MISMATCH = 1,  // Same set of files but in wrong order
+        SET_MISMATCH = 2     // Different sets of files (including size mismatch)
+    };
+
+    /**
+      @brief Helper function to test if filenames provided in two StringLists match.
+
+      Passing several InputFilesLists is error-prone as users may provide files in a different order.
+      This helper function performs validation and returns one of three states:
+      - MATCH (0): Files match perfectly (considering basename/extension settings)
+      - ORDER_MISMATCH (1): Same set of files but in different order
+      - SET_MISMATCH (2): Different sets of files (including different counts)
+
+      @param[in] sl1 First StringList with filenames
+      @param[in] sl2 Second StringList with filenames
+      @param[in] basename If set to true, only basenames are compared
+      @param[in] ignore_extension If set to true, extensions are ignored (e.g., useful to compare spectra filenames to ID filenames)
+      @return MatchingFileListsStatus indicating the validation result
+    */
+    static MatchingFileListsStatus validateMatchingFileNames(const StringList& sl1, 
+                                                       const StringList& sl2, 
+                                                       bool basename = true, 
+                                                       bool ignore_extension = true);
+
+private:
+
+    /// get defaults for the system's Temp-path, user home directory etc.
+    static Param getSystemParameterDefaults_();
+
+    /// Check if the given path is a valid OPENMS_DATA_PATH
+    static bool isOpenMSDataPath_(const std::string& path);
+
+    /// Bundles the resolved OpenMS data path with a human-readable description of where it was found (for diagnostics).
+    struct OpenMSDataPath_
+    {
+      std::string path;    ///< the resolved shared-data directory
+      std::string source;  ///< human-readable origin, e.g. "the OPENMS_DATA_PATH environment variable"
+    };
+
+    /// Resolve (once, thread-safe) and return the OpenMS data path together with where it was found.
+    static const OpenMSDataPath_& resolveOpenMSDataPath_();
+
+#ifdef OPENMS_WINDOWSPLATFORM
+    /**
+      @brief Get list of file suffices to try during search on PATH (usually .exe, .bat etc)
+
+      Input could be ".COM;.EXE;.BAT;.CMD;.VBS".
+      If the result does not contain at least ".exe", then we assume the environment variable is broken and return a
+      fallback, i.e. {".exe", ".bat"}.
+
+      Uses the value of the %PATHEXT% environment variable (or an empty string if %PATHEXT% is unset).
+    */
+    static StringList executableExtensions_();
+
+    /**
+      @brief Get list of file suffices to try during search on an explicit PATHEXT-like string.
+
+      Input could be ".COM;.EXE;.BAT;.CMD;.VBS".
+      If the result does not contain at least ".exe", then we assume the input is broken and return a
+      fallback, i.e. {".exe", ".bat"}.
+    */
+    static StringList executableExtensions_(const std::string& ext);
+#endif
+
+    /**
+      @brief Internal helper class, which holds temporary filenames and deletes these files at program exit
+    */
+    class TemporaryFiles_
+    {
+      public:
+        TemporaryFiles_(const TemporaryFiles_&) = delete; // copy is forbidden
+        TemporaryFiles_& operator=(const TemporaryFiles_&) = delete;
+        TemporaryFiles_();
+        /// create a new filename and queue internally for deletion
+        std::string newFile();
+
+        ~TemporaryFiles_();
+      private:
+        StringList filenames_;
+        std::mutex mtx_;
+    };
+
+
+    /// private list of temporary filenames, which are deleted upon program exit
+    static TemporaryFiles_ temporary_files_;
+  };
+}

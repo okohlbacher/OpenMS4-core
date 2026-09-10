@@ -1,0 +1,608 @@
+// Copyright (c) 2002-present, OpenMS Inc. -- EKU Tuebingen, ETH Zurich, and FU Berlin
+// SPDX-License-Identifier: BSD-3-Clause
+//
+// --------------------------------------------------------------------------
+// $Maintainer: Chris Bielow $
+// $Authors: Marc Sturm, Chris Bielow, Clemens Groepl $
+// --------------------------------------------------------------------------
+
+#include <OpenMS/CONCEPT/ClassTest.h>
+#include <OpenMS/TestFileValidation.h>
+#include <OpenMS/test_config.h>
+///////////////////////////
+
+#include <OpenMS/FORMAT/FeatureXMLFile.h>
+#include <OpenMS/KERNEL/FeatureMap.h>
+#include <OpenMS/FORMAT/OPTIONS/FeatureFileOptions.h>
+#include <OpenMS/FORMAT/FileHandler.h>
+#include <OpenMS/METADATA/ProteinIdentification.h>
+#include <OpenMS/DATASTRUCTURES/ListUtils.h>
+#include <OpenMS/CHEMISTRY/AASequence.h>
+#include <OpenMS/CHEMISTRY/EmpiricalFormula.h>
+#include <OpenMS/CHEMISTRY/ModificationsDB.h>
+#include <OpenMS/CHEMISTRY/ResidueModification.h>
+#include <OpenMS/CONCEPT/Constants.h>
+#include <OpenMS/DATASTRUCTURES/DateTime.h>
+#include <OpenMS/KERNEL/MSSpectrum.h>
+#include <OpenMS/KERNEL/MSExperiment.h>
+
+#include <fstream>
+#include <sstream>
+
+using namespace OpenMS;
+using namespace std;
+
+DRange<1> makeRange(double a, double b)
+{
+  DPosition<1> pa(a), pb(b);
+  return DRange<1>(pa, pb);
+}
+
+///////////////////////////
+
+namespace
+{
+  // registers a tool-defined modification; ModificationsDB is process-wide, so every section uses its own name
+  const ResidueModification* defineMod4b(const std::string& id, char origin, const std::string& formula)
+  {
+    ResidueModification d;
+    d.setId(id);
+    d.setOrigin(origin);
+    d.setTermSpecificity(ResidueModification::ANYWHERE);
+    d.setFullId();
+    d.setDiffFormula(EmpiricalFormula(formula));
+    d.setDiffMonoMass(EmpiricalFormula(formula).getMonoWeight());
+    return ModificationsDB::getInstance()->registerDefinition(d);
+  }
+
+  // a definition record for a name that is NOT registered in this process
+  std::string freshRecord4b(const std::string& id, char origin, const std::string& formula)
+  {
+    ResidueModification d;
+    d.setId(id);
+    d.setOrigin(origin);
+    d.setTermSpecificity(ResidueModification::ANYWHERE);
+    d.setFullId();
+    d.setDiffFormula(EmpiricalFormula(formula));
+    d.setDiffMonoMass(EmpiricalFormula(formula).getMonoWeight());
+    return d.toDefinitionString();
+  }
+
+  std::string slurp4b(const std::string& path)
+  {
+    std::ifstream in(path);
+    std::stringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+  }
+
+  bool fileContains4b(const std::string& path, const std::string& needle)
+  {
+    return slurp4b(path).find(needle) != std::string::npos;
+  }
+
+  // first occurrence only; returns false when @p from is absent
+  bool replaceInFile4b(const std::string& path, const std::string& from, const std::string& to)
+  {
+    std::string s = slurp4b(path);
+    const std::size_t pos = s.find(from);
+    if (pos == std::string::npos) return false;
+    s.replace(pos, from.size(), to);
+    std::ofstream out(path);
+    out << s;
+    return true;
+  }
+}
+
+START_TEST(FeatureXMLFile, "$Id$")
+
+/////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////
+
+FeatureXMLFile * ptr = nullptr;
+FeatureXMLFile* nullPointer = nullptr;
+START_SECTION((FeatureXMLFile()))
+{
+  ptr = new FeatureXMLFile();
+  TEST_NOT_EQUAL(ptr, nullPointer)
+}
+END_SECTION
+
+START_SECTION((~FeatureXMLFile()))
+{
+  delete ptr;
+}
+END_SECTION
+
+START_SECTION((Size loadSize(const std::string &filename)))
+{
+  FeatureMap e;
+  FeatureXMLFile dfmap_file;
+  //test exception
+  TEST_EXCEPTION(Exception::FileNotFound, dfmap_file.loadSize("dummy/dummy.MzData"))
+  // real test
+  Size r = dfmap_file.loadSize(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_1.featureXML"));
+  TEST_EQUAL(r, 2);
+  // again, to test if reset internally works
+  r = dfmap_file.loadSize(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_1.featureXML"));
+  TEST_EQUAL(r, 2);
+}
+END_SECTION
+
+START_SECTION((void load(const std::string &filename, FeatureMap&feature_map)))
+{
+  TOLERANCE_ABSOLUTE(0.01)
+
+  FeatureMap e;
+  FeatureXMLFile dfmap_file;
+
+  //test exception
+  TEST_EXCEPTION(Exception::FileNotFound, dfmap_file.load("dummy/dummy.MzData", e))
+
+  // real test
+  dfmap_file.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_1.featureXML"), e);
+  TEST_EQUAL(e.getIdentifier(), "lsid");
+
+  //test DocumentIdentifier addition
+  TEST_STRING_EQUAL(e.getLoadedFilePath(), OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_1.featureXML"));
+  TEST_STRING_EQUAL(FileTypes::typeToName(e.getLoadedFileType()), "featureXML");
+
+  TEST_EQUAL(e.size(), 2)
+  TEST_REAL_SIMILAR(e[0].getRT(), 25)
+  TEST_REAL_SIMILAR(e[0].getMZ(), 0)
+  TEST_REAL_SIMILAR(e[0].getIntensity(), 300)
+  TEST_EQUAL(e[0].getMetaValue("stringparametername"), "stringparametervalue")
+  TEST_EQUAL((UInt)e[0].getMetaValue("intparametername"), 4)
+  TEST_REAL_SIMILAR((double)e[0].getMetaValue("floatparametername"), 4.551)
+  TEST_REAL_SIMILAR(e[1].getRT(), 0)
+  TEST_REAL_SIMILAR(e[1].getMZ(), 35)
+  TEST_REAL_SIMILAR(e[1].getIntensity(), 500)
+  //data processing
+  TEST_EQUAL(e.getDataProcessing().size(), 2)
+  TEST_STRING_EQUAL(e.getDataProcessing()[0].getSoftware().getName(), "Software1")
+  TEST_STRING_EQUAL(e.getDataProcessing()[0].getSoftware().getVersion(), "0.91a")
+  TEST_EQUAL(e.getDataProcessing()[0].getProcessingActions().size(), 1)
+  TEST_EQUAL(e.getDataProcessing()[0].getProcessingActions().count(DataProcessing::DEISOTOPING), 1)
+  TEST_STRING_EQUAL(e.getDataProcessing()[0].getMetaValue("name"), "dataProcessing")
+  TEST_STRING_EQUAL(e.getDataProcessing()[1].getSoftware().getName(), "Software2")
+  TEST_STRING_EQUAL(e.getDataProcessing()[1].getSoftware().getVersion(), "0.92a")
+  TEST_EQUAL(e.getDataProcessing()[1].getProcessingActions().size(), 2)
+  TEST_EQUAL(e.getDataProcessing()[1].getProcessingActions().count(DataProcessing::SMOOTHING), 1)
+  TEST_EQUAL(e.getDataProcessing()[1].getProcessingActions().count(DataProcessing::BASELINE_REDUCTION), 1)
+  //protein identifications
+  TEST_EQUAL(e.getProteinIdentifications().size(), 2)
+  TEST_EQUAL(e.getProteinIdentifications()[0].getHits().size(), 2)
+  TEST_EQUAL(e.getProteinIdentifications()[0].getHits()[0].getSequence(), "ABCDEFG")
+  TEST_EQUAL(e.getProteinIdentifications()[0].getHits()[1].getSequence(), "HIJKLMN")
+  TEST_EQUAL(e.getProteinIdentifications()[1].getHits().size(), 1)
+  TEST_EQUAL(e.getProteinIdentifications()[1].getHits()[0].getSequence(), "OPQREST")
+  //peptide identifications
+  TEST_EQUAL(e[0].getPeptideIdentifications().size(), 2)
+  TEST_EQUAL(e[0].getPeptideIdentifications()[0].getHits().size(), 1)
+  TEST_EQUAL(e[0].getPeptideIdentifications()[0].getHits()[0].getSequence(), AASequence::fromString("A"))
+  TEST_EQUAL(e[0].getPeptideIdentifications()[1].getHits().size(), 2)
+  TEST_EQUAL(e[0].getPeptideIdentifications()[1].getHits()[0].getSequence(), AASequence::fromString("C"))
+  TEST_EQUAL(e[0].getPeptideIdentifications()[1].getHits()[1].getSequence(), AASequence::fromString("D"))
+  TEST_EQUAL(e[1].getPeptideIdentifications().size(), 1)
+  TEST_EQUAL(e[1].getPeptideIdentifications()[0].getHits().size(), 1)
+  TEST_EQUAL(e[1].getPeptideIdentifications()[0].getHits()[0].getSequence(), AASequence::fromString("E"))
+  //unassigned peptide identifications
+  TEST_EQUAL(e.getUnassignedPeptideIdentifications().size(), 2)
+  TEST_EQUAL(e.getUnassignedPeptideIdentifications()[0].getHits().size(), 1)
+  TEST_EQUAL(e.getUnassignedPeptideIdentifications()[0].getHits()[0].getSequence(), AASequence::fromString("F"))
+  TEST_EQUAL(e.getUnassignedPeptideIdentifications()[1].getHits().size(), 2)
+  TEST_EQUAL(e.getUnassignedPeptideIdentifications()[1].getHits()[0].getSequence(), AASequence::fromString("G"))
+  TEST_EQUAL(e.getUnassignedPeptideIdentifications()[1].getHits()[1].getSequence(), AASequence::fromString("H"))
+
+  // test meta values:
+  TEST_EQUAL(e[0].getMetaValue("myIntList") == ListUtils::create<Int>("1,10,12"), true);
+  TEST_EQUAL(e[0].getMetaValue("myDoubleList") == ListUtils::create<double>("1.111,10.999,12.45"), true);
+  TEST_EQUAL(e[0].getMetaValue("myStringList") == ListUtils::create<std::string>("myABC1,Stuff,12"), true);
+  TEST_EQUAL(e[1].getMetaValue("myDoubleList") == ListUtils::create<double>("6.442"), true);
+
+  //test if loading a second file works (initialization)
+  FeatureMap e2;
+  dfmap_file.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_1.featureXML"), e2);
+  std::string tmp_filename;
+  NEW_TMP_FILE(tmp_filename);
+  dfmap_file.store(tmp_filename, e2);
+  TEST_FILE_SIMILAR(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_1.featureXML"), tmp_filename)
+
+  //test of old file with mzData description (version 1.2)
+  //here only the downward-compatibility of the new parser is tested
+  //no exception should be thrown
+  dfmap_file.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_3_old.featureXML"), e);
+  TEST_EQUAL(e.size(), 1)
+
+  //FeatureFileOptions tests
+  dfmap_file.getOptions().setRTRange(makeRange(0, 10));
+  dfmap_file.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_1.featureXML"), e);
+  TEST_EQUAL(e.size(), 1)
+  TEST_REAL_SIMILAR(e[0].getRT(), 0)
+  TEST_REAL_SIMILAR(e[0].getMZ(), 35)
+  TEST_REAL_SIMILAR(e[0].getIntensity(), 500)
+
+  dfmap_file.getOptions() = FeatureFileOptions();
+  dfmap_file.getOptions().setMZRange(makeRange(10, 50));
+  dfmap_file.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_1.featureXML"), e);
+  TEST_EQUAL(e.size(), 1)
+  TEST_REAL_SIMILAR(e[0].getRT(), 0)
+  TEST_REAL_SIMILAR(e[0].getMZ(), 35)
+  TEST_REAL_SIMILAR(e[0].getIntensity(), 500)
+
+  dfmap_file.getOptions() = FeatureFileOptions();
+  dfmap_file.getOptions().setIntensityRange(makeRange(400, 600));
+  dfmap_file.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_1.featureXML"), e);
+  TEST_EQUAL(e.size(), 1)
+  TEST_REAL_SIMILAR(e[0].getRT(), 0)
+  TEST_REAL_SIMILAR(e[0].getMZ(), 35)
+  TEST_REAL_SIMILAR(e[0].getIntensity(), 500)
+  {
+    // convex hulls:
+    dfmap_file.getOptions() = FeatureFileOptions();
+    FeatureMap e_full;
+    dfmap_file.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_2_options.featureXML"), e_full);
+    dfmap_file.getOptions().setLoadConvexHull(false);
+    dfmap_file.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_2_options.featureXML"), e);
+    // delete CH's manually
+    std::vector<ConvexHull2D> empty_hull;
+    for (Size ic = 0; ic < e_full.size(); ++ic)
+      e_full[ic].setConvexHulls(empty_hull);
+    e_full.updateRanges();
+    e.updateRanges();
+    TEST_EQUAL(e_full, e)
+  }
+
+  // subordinates:
+  {
+    dfmap_file.getOptions() = FeatureFileOptions();
+    FeatureMap e_full;
+    dfmap_file.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_2_options.featureXML"), e_full);
+    dfmap_file.getOptions().setLoadSubordinates(false);
+    dfmap_file.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_2_options.featureXML"), e);
+    // delete SO's manually
+    std::vector<Feature> empty_f;
+    for (Size ic = 0; ic < e_full.size(); ++ic)
+      e_full[ic].setSubordinates(empty_f);
+    TEST_EQUAL(e_full, e)
+  }
+}
+END_SECTION
+
+START_SECTION((void store(const std::string &filename, const FeatureMap&feature_map)))
+{
+  FeatureMap map;
+  FeatureXMLFile f;
+
+  f.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_1.featureXML"), map);
+  std::string tmp_filename;
+  NEW_TMP_FILE(tmp_filename);
+  f.store(tmp_filename, map);
+  WHITELIST("?xml-stylesheet")
+  TEST_FILE_SIMILAR(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_1.featureXML"), tmp_filename)
+}
+END_SECTION
+
+START_SECTION([EXTRA] store and load gzip and bzip2 compressed files - round-trip)
+{
+  // XMLFile::save_() compresses on the fly when the filename ends in
+  // ".gz"/".bz2" and load() transparently decompresses. This verifies that a
+  // store->load round-trip through a compressed file preserves the feature
+  // content (mirrors IdXMLFile_test's compressed round-trip).
+  // Note: a full FeatureMap operator== comparison is intentionally avoided
+  // because store() regenerates invalid unique ids on every call, which is
+  // unrelated to compression; instead the actual feature data is checked.
+  FeatureXMLFile f;
+
+  FeatureMap map_original;
+  f.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_1.featureXML"), map_original);
+  TEST_EQUAL(map_original.size() > 0, true) // guard against a vacuous test
+
+  // read the leading bytes of a file to confirm it is really compressed
+  auto first_bytes = [](const std::string& fn, size_t n) -> std::string
+  {
+    std::ifstream is(fn.c_str(), std::ios::in | std::ios::binary);
+    std::string buf(n, '\0');
+    is.read(&buf[0], static_cast<std::streamsize>(n));
+    buf.resize(static_cast<size_t>(is.gcount()));
+    return buf;
+  };
+
+  // compare the feature content (everything except regenerated unique ids)
+  auto check_same_features = [](const FeatureMap& a, const FeatureMap& b)
+  {
+    TEST_EQUAL(a.size(), b.size())
+    for (Size i = 0; i < a.size() && i < b.size(); ++i)
+    {
+      TEST_REAL_SIMILAR(a[i].getRT(), b[i].getRT())
+      TEST_REAL_SIMILAR(a[i].getMZ(), b[i].getMZ())
+      TEST_REAL_SIMILAR(a[i].getIntensity(), b[i].getIntensity())
+      TEST_EQUAL(a[i].getCharge(), b[i].getCharge())
+      TEST_REAL_SIMILAR(a[i].getOverallQuality(), b[i].getOverallQuality())
+    }
+  };
+
+  // gzip round-trip
+  {
+    std::string tmp_gz;
+    NEW_TMP_FILE(tmp_gz);
+    tmp_gz += ".featureXML.gz";
+    f.store(tmp_gz, map_original);
+
+    // the written file must really be gzip-compressed (magic bytes 0x1f 0x8b),
+    // otherwise the round-trip could pass on a plain-text file with a .gz name
+    std::string magic = first_bytes(tmp_gz, 2);
+    TEST_EQUAL(magic.size(), 2)
+    TEST_EQUAL(static_cast<int>(static_cast<unsigned char>(magic[0])), 0x1f)
+    TEST_EQUAL(static_cast<int>(static_cast<unsigned char>(magic[1])), 0x8b)
+
+    FeatureMap map_gz;
+    f.load(tmp_gz, map_gz);
+    check_same_features(map_original, map_gz);
+  }
+
+  // bzip2 round-trip
+  {
+    std::string tmp_bz2;
+    NEW_TMP_FILE(tmp_bz2);
+    tmp_bz2 += ".featureXML.bz2";
+    f.store(tmp_bz2, map_original);
+
+    // the written file must really be bzip2-compressed (magic bytes "BZh")
+    std::string magic = first_bytes(tmp_bz2, 3);
+    TEST_STRING_EQUAL(magic, "BZh")
+
+    FeatureMap map_bz2;
+    f.load(tmp_bz2, map_bz2);
+    check_same_features(map_original, map_bz2);
+  }
+}
+END_SECTION
+
+START_SECTION((FeatureFileOptions & getOptions()))
+{
+  FeatureXMLFile f;
+  FeatureMap e;
+  f.getOptions().setRTRange(makeRange(1.5, 4.5));
+  f.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_2_options.featureXML"), e);
+  TEST_EQUAL(e.size(), 5)
+
+  f.getOptions().setMZRange(makeRange(1025.0, 2000.0));
+  f.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_2_options.featureXML"), e);
+  TEST_EQUAL(e.size(), 3)
+
+  f.getOptions().setIntensityRange(makeRange(290.0, 310.0));
+  f.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_2_options.featureXML"), e);
+  TEST_EQUAL(e.size(), 1)
+
+  f.getOptions().setMetadataOnly(true);
+  f.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_2_options.featureXML"), e);
+  TEST_EQUAL(e.getIdentifier(), "lsid2")
+  TEST_EQUAL(e.size(), 0)
+}
+END_SECTION
+
+START_SECTION([EXTRA] static bool isValid(const std::string& filename))
+{
+  FeatureXMLFile f;
+  TEST_EQUAL(f.isValid(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_1.featureXML"), std::cerr), true);
+  TEST_EQUAL(f.isValid(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_2_options.featureXML"), std::cerr), true);
+
+  FeatureMap e;
+  std::string filename;
+
+  //test if empty file is valid
+  NEW_TMP_FILE(filename)
+  f.store(filename, e);
+  TEST_EQUAL(f.isValid(filename, std::cerr), true);
+
+  //test if full file is valid
+  NEW_TMP_FILE(filename);
+  f.load(OPENMS_GET_TEST_DATA_PATH("FeatureXMLFile_1.featureXML"), e);
+  f.store(filename, e);
+  TEST_EQUAL(f.isValid(filename, std::cerr), true);
+}
+END_SECTION
+
+START_SECTION((const FeatureFileOptions &getOptions() const))
+{
+  FeatureXMLFile f;
+  f.getOptions().setRTRange(makeRange(1.5, 4.5));
+  f.getOptions().setIntensityRange(makeRange(290.0, 310.0));
+
+  const FeatureFileOptions pfo = f.getOptions();
+
+  TEST_EQUAL(pfo.getRTRange(), makeRange(1.5, 4.5))
+  TEST_EQUAL(pfo.getIntensityRange(), makeRange(290.0, 310.0))
+}
+END_SECTION
+
+START_SECTION(( void setOptions(const FeatureFileOptions &) ))
+{
+  FeatureXMLFile f;
+  FeatureFileOptions pfo = f.getOptions();
+  pfo.setMetadataOnly(true);
+  pfo.setLoadConvexHull(false);
+  pfo.setRTRange(makeRange(1.5, 4.5));
+  pfo.setIntensityRange(makeRange(290.0, 310.0));
+
+  f.setOptions(pfo);
+  TEST_EQUAL(pfo.getMetadataOnly(), f.getOptions().getMetadataOnly())
+  TEST_EQUAL(pfo.getLoadConvexHull(), f.getOptions().getLoadConvexHull())
+  TEST_EQUAL(pfo.getRTRange(), f.getOptions().getRTRange())
+  TEST_EQUAL(pfo.getIntensityRange(), f.getOptions().getIntensityRange())
+}
+END_SECTION
+
+START_SECTION([EXTRA])
+{
+  Feature f1;
+  f1.setRT(1001);
+  f1.setMZ(1002);
+  f1.setCharge(1003);
+  Feature f1_cpy(f1);
+  Feature f11;
+  f11.setRT(1101);
+  f11.setMZ(1102);
+  Feature f12;
+  f12.setRT(1201);
+  f12.setMZ(1202);
+  Feature f13;
+  f13.setRT(1301);
+  f13.setMZ(1302);
+  TEST_EQUAL(f1.getSubordinates().empty(), true);
+  f1.getSubordinates().push_back(f11);
+  TEST_EQUAL(f1.getSubordinates().size(), 1);
+  f1.getSubordinates().push_back(f12);
+  TEST_EQUAL(f1.getSubordinates().size(), 2);
+  f1.getSubordinates().push_back(f13);
+  TEST_EQUAL(f1.getSubordinates().size(), 3);
+  TEST_EQUAL(f1.getRT(), 1001);
+  TEST_EQUAL(f1.getSubordinates()[0].getRT(), 1101);
+  TEST_EQUAL(f1.getSubordinates()[1].getRT(), 1201);
+  TEST_EQUAL(f1.getSubordinates()[2].getRT(), 1301);
+  const Feature& f1_cref = f1;
+  TEST_EQUAL(f1_cref.getMZ(), 1002);
+  TEST_EQUAL(f1_cref.getSubordinates()[0].getMZ(), 1102);
+  TEST_EQUAL(f1_cref.getSubordinates()[1].getMZ(), 1202);
+  TEST_EQUAL(f1_cref.getSubordinates()[2].getMZ(), 1302);
+  TEST_NOT_EQUAL(f1_cref, f1_cpy);
+  Feature f1_cpy2(f1);
+  TEST_EQUAL(f1_cpy2, f1);
+  f1.getSubordinates().clear();
+  TEST_EQUAL(f1_cref, f1_cpy);
+
+  Feature f2;
+  f2.setRT(1001);
+  f2.setMZ(1002);
+  f2.setCharge(1003);
+  TEST_NOT_EQUAL(f1_cpy2.getSubordinates().empty(), true);
+  f2.setSubordinates(f1_cpy2.getSubordinates());
+  TEST_EQUAL(f2, f1_cpy2);
+
+  std::string filename;
+  NEW_TMP_FILE(filename);
+  FeatureXMLFile f;
+  FeatureMap e;
+  e.push_back(f1);
+  e.push_back(f2);
+
+  // this will print the number of newly assigned unique ids
+  STATUS(e.applyMemberFunction(&UniqueIdInterface::ensureUniqueId));
+
+  f.store(filename, e);
+  FeatureMap e2;
+  f.load(filename, e2);
+  e.updateRanges();
+  TEST_TRUE(e == e2);
+  std::string filename2;
+  NEW_TMP_FILE(filename2);
+  f.store(filename2, e2);
+
+}
+END_SECTION
+
+
+
+START_SECTION([EXTRA] store/load - tool-defined modifications on assigned and unassigned identifications travel with their definitions)
+{
+  TEST_TRUE(defineMod4b("TestFXML:Assigned", 'K', "C2H2O") != nullptr)
+  TEST_TRUE(defineMod4b("TestFXML:Unassigned", 'R', "CH2") != nullptr)
+  FeatureMap map;
+  map.ensureUniqueId();
+  ProteinIdentification prot;
+  prot.setIdentifier("run4b");
+  prot.setDateTime(DateTime::now());
+  map.getProteinIdentifications().push_back(prot);
+
+  Feature f;
+  f.setRT(100.0);
+  f.setMZ(500.0);
+  f.setIntensity(1000.0);
+  f.ensureUniqueId();
+  PeptideIdentification pa;
+  pa.setIdentifier("run4b");
+  PeptideHit ha;
+  ha.setSequence(AASequence::fromString("PEPK(TestFXML:Assigned)IDE"));
+  pa.insertHit(ha);
+  f.getPeptideIdentifications().push_back(pa);
+  map.push_back(f);
+
+  PeptideIdentification pu;
+  pu.setIdentifier("run4b");
+  PeptideHit hu;
+  hu.setSequence(AASequence::fromString("PEPR(TestFXML:Unassigned)IDE"));
+  pu.insertHit(hu);
+  map.getUnassignedPeptideIdentifications().push_back(pu);
+
+  std::string tmp_filename;
+  NEW_TMP_FILE(tmp_filename)
+  FeatureXMLFile().store(tmp_filename, map);
+  TEST_TRUE(fileContains4b(tmp_filename, "name=\"modification_definitions\""))
+  TEST_TRUE(fileContains4b(tmp_filename, "1|TestFXML:Assigned|TestFXML:Assigned (K)|"))
+  TEST_TRUE(fileContains4b(tmp_filename, "1|TestFXML:Unassigned|TestFXML:Unassigned (R)|"))
+
+  FeatureMap in;
+  FeatureXMLFile().load(tmp_filename, in);
+  TEST_EQUAL(in.size(), 1)
+  TEST_EQUAL(in.getUnassignedPeptideIdentifications().size(), 1)
+  if (in.size() == 1 && !in[0].getPeptideIdentifications().empty() && !in[0].getPeptideIdentifications()[0].getHits().empty())
+  {
+    TEST_EQUAL(in[0].getPeptideIdentifications()[0].getHits()[0].getSequence().toString(), "PEPK(TestFXML:Assigned)IDE")
+  }
+  if (in.getUnassignedPeptideIdentifications().size() == 1 && !in.getUnassignedPeptideIdentifications()[0].getHits().empty())
+  {
+    TEST_EQUAL(in.getUnassignedPeptideIdentifications()[0].getHits()[0].getSequence().toString(), "PEPR(TestFXML:Unassigned)IDE")
+  }
+}
+END_SECTION
+
+START_SECTION([EXTRA] load - definitions are registered before the sequences are parsed)
+{
+  const ModificationsDB* db = ModificationsDB::getInstance();
+  TEST_FALSE(db->hasDefinedModification("TestFXML:Fresh"))
+  FeatureMap map;
+  map.ensureUniqueId();
+  ProteinIdentification prot;
+  prot.setIdentifier("run4b_fresh");
+  prot.setDateTime(DateTime::now());
+  ProteinIdentification::SearchParameters sp;
+  sp.setMetaValue(Constants::UserParam::MODIFICATION_DEFINITIONS, freshRecord4b("TestFXML:Fresh", 'K', "C2H2O"));
+  prot.setSearchParameters(sp);
+  map.getProteinIdentifications().push_back(prot);
+  Feature f;
+  f.setRT(100.0);
+  f.setMZ(500.0);
+  f.setIntensity(1000.0);
+  f.ensureUniqueId();
+  PeptideIdentification pep;
+  pep.setIdentifier("run4b_fresh");
+  PeptideHit hit;
+  hit.setSequence(AASequence::fromString("PEPTKIDE"));
+  pep.insertHit(hit);
+  f.getPeptideIdentifications().push_back(pep);
+  map.push_back(f);
+
+  std::string tmp_filename;
+  NEW_TMP_FILE(tmp_filename)
+  FeatureXMLFile().store(tmp_filename, map);
+  TEST_FALSE(db->hasDefinedModification("TestFXML:Fresh")) // storing registers nothing
+  // a hit using the not-yet-registered name, as a file from another process would carry it
+  TEST_TRUE(replaceInFile4b(tmp_filename, "sequence=\"PEPTKIDE\"", "sequence=\"PEPTK(TestFXML:Fresh)IDE\""))
+
+  FeatureMap in;
+  FeatureXMLFile().load(tmp_filename, in);
+  TEST_TRUE(db->hasDefinedModification("TestFXML:Fresh"))
+  if (in.size() == 1 && !in[0].getPeptideIdentifications().empty() && !in[0].getPeptideIdentifications()[0].getHits().empty())
+  {
+    TEST_EQUAL(in[0].getPeptideIdentifications()[0].getHits()[0].getSequence().toString(), "PEPTK(TestFXML:Fresh)IDE")
+  }
+}
+END_SECTION
+
+/////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////
+/// check the temporary files written above against their XML schema (types without a validator are skipped)
+VALIDATE_TMP_FILES
+
+END_TEST

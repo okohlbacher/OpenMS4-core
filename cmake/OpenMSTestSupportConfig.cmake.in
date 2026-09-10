@@ -1,0 +1,7 @@
+# Optional component, loaded only by find_package(OpenMS COMPONENTS TestSupport).
+include("${CMAKE_CURRENT_LIST_DIR}/OpenMSTestSupportTargets.cmake")
+set(OpenMS_TEST_SUPPORT_SOURCE "${CMAKE_CURRENT_LIST_DIR}/TestSupport/OpenMSTestSupport.cpp")
+set(OpenMS_TEST_SUPPORT_INCLUDE_DIR "${CMAKE_CURRENT_LIST_DIR}/TestSupport/include")
+set(OpenMS_TEST_CONFIG_TEMPLATE "${OpenMS_TEST_SUPPORT_INCLUDE_DIR}/OpenMS/test_config.h.in")
+set(OpenMS_TEST_DATA_DIR "${OpenMS_DATA_DIR}/test-data/core")
+set(OpenMS_TestSupport_FOUND TRUE)

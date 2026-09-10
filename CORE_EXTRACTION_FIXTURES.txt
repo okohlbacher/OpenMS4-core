@@ -1,0 +1,4 @@
+FeatureFinderMetabo_6_input.mzML
+THIRDPARTY/CometAdapter_4_out.idXML
+THIRDPARTY/FidoAdapter_4_output.idXML
+THIRDPARTY/PercolatorAdapter_1.idXML

@@ -1,0 +1,674 @@
+// Copyright (c) 2002-present, OpenMS Inc. -- EKU Tuebingen, ETH Zurich, and FU Berlin
+// SPDX-License-Identifier: BSD-3-Clause
+//
+// --------------------------------------------------------------------------
+// $Maintainer: Timo Sachsenberg $
+// $Authors: Clemens Groepl, Johannes Junker, Mathias Walzer, Chris Bielow $
+// --------------------------------------------------------------------------
+
+///////////////////////////
+// This one is going to be tested.
+#include <OpenMS/MATH/StatisticFunctions.h>
+#include <OpenMS/MATH/MathFunctions.h>
+#include <OpenMS/DATASTRUCTURES/ListUtils.h>
+#include <boost/math/special_functions/fpclassify.hpp>
+///////////////////////////
+
+#include <OpenMS/CONCEPT/ClassTest.h>
+#include <OpenMS/test_config.h>
+
+#include <list>
+
+using namespace OpenMS;
+using namespace OpenMS::Math;
+
+/////////////////////////////////////////////////////////////
+
+START_TEST( StatisticFunctions, "$Id$" );
+
+/////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////
+
+START_SECTION([EXTRA](template <typename IteratorType> static double sum(IteratorType begin, IteratorType end)))
+{
+	int x[] = {-1, 0, 1, 2, 3};
+	TEST_EQUAL(int(Math::sum(x, x + 5)), 5);
+	TEST_EQUAL(int(Math::sum(x, x)), 0);
+
+	DoubleList y;
+	y.push_back(-1.0);
+  y.push_back(-0.5);
+  y.push_back(0.0);
+  y.push_back(0.5);
+  y.push_back(1.0);
+  y.push_back(1.5);
+  y.push_back(2.0);
+	TEST_REAL_SIMILAR(Math::sum(y.begin(), y.end()), 3.5);
+}
+END_SECTION
+
+START_SECTION([EXTRA](template <typename IteratorType> static double mean(IteratorType begin, IteratorType end)))
+{
+	int x[] = {-1, 0, 1, 2, 3};
+	TEST_EQUAL(Math::mean(x, x + 5), 1);
+	TEST_EXCEPTION(Exception::InvalidRange, Math::mean(x, x));
+
+	DoubleList y = ListUtils::create<double>("-1.0,-0.5,0.0,0.5,1.0,1.5,2.0");
+	TEST_REAL_SIMILAR(Math::mean(y.begin(), y.end()), 0.5);
+}
+END_SECTION
+
+START_SECTION([EXTRA](template <typename IteratorType> static double median(IteratorType begin, IteratorType end, bool sorted = false)))
+{
+	int x[] = {-1, 0, 1, 2, 3};
+	TEST_REAL_SIMILAR(Math::median(x, x + 5, true), 1.0);
+  int x2[] = {-1, 0, 1, 2, 3, 4}; // (1+2)/2
+  TEST_REAL_SIMILAR(Math::median(x2, x2 + 6, true), 1.5);
+	TEST_EXCEPTION(Exception::InvalidRange, Math::median(x, x));
+
+  // unsorted
+	DoubleList y = ListUtils::create<double>("1.0,-0.5,2.0,0.5,-1.0,1.5,0.0");
+	TEST_REAL_SIMILAR(Math::median(y.begin(), y.end()), 0.5);
+	y.push_back(-1.5); // even length
+	TEST_REAL_SIMILAR(Math::median(y.begin(), y.end()), 0.25);
+
+  // sorted
+  DoubleList z_odd = ListUtils::create<double>("-1.0,-0.5,0.0,0.5,1.0,1.5,2.0");
+  TEST_REAL_SIMILAR(Math::median(z_odd.begin(), z_odd.end(), true), 0.5);
+  DoubleList z_even = ListUtils::create<double>("-1.5,-1.0,-0.5,0.0,0.5,1.0,1.5,2.0");
+  TEST_REAL_SIMILAR(Math::median(z_even.begin(), z_even.end(), true), 0.25);
+}
+END_SECTION
+
+START_SECTION([EXTRA](template <typename IteratorType> double MAD(IteratorType begin, IteratorType end, double median_of_numbers)))
+{
+  int x[] = {-1, 0, 1, 2, 3};
+  TEST_EQUAL(Math::MAD(x, x + 5, 1), 1);   // median{2, 1, 0, 1, 2}
+  int x2[] = {-1, 0, 1, 2, 3, 4}; // median = 1.5 --> median{2.5, 1.5, 0.5, 0.5, 1.5, 2.5}
+  TEST_REAL_SIMILAR(Math::MAD(x2, x2 + 6, true), 1.5);
+  
+  DoubleList z_odd = ListUtils::create<double>("-1.0,-0.5,0.0,0.5,1.0,1.5,2.0"); // median{1.5, 1, 0.5, 0, 0.5, 1, 1.5} == median{0, 0.5, 0.5, 1, 1, 1.5 ,1.5}
+  TEST_REAL_SIMILAR(Math::MAD(z_odd.begin(), z_odd.end(), 0.5), 1);
+  DoubleList z_even = ListUtils::create<double>("-1.5,-1.0,-0.5,0.0,0.5,1.0,1.5,2.0"); // median{2, 1.5, 1, 0.5, 0, 0.5, 1, 1.5} == median{0, 0.5, 0.5, 1, 1, 1.5 , 1.5, 2}
+  TEST_REAL_SIMILAR(Math::MAD(z_even.begin(), z_even.end(), 0.5), 1);
+}
+END_SECTION
+
+START_SECTION([EXTRA](template <typename IteratorType> double MeanAbsoluteDeviation(IteratorType begin, IteratorType end, double mean_of_numbers)))
+{
+  int x1[] = {-1, 0, 1, 2, 3}; // mean = 1
+  TEST_EQUAL(Math::MeanAbsoluteDeviation(x1, x1 + 5, 1), 1.2);
+  
+  int x2[] = {-1, 0, 1, 2, 3, 4}; // mean = 1.5
+  TEST_REAL_SIMILAR(Math::MeanAbsoluteDeviation(x2, x2 + 6, 1.5), 1.5);
+  
+  // single element test
+  int x3[] = {-1}; // mean = -1
+  TEST_REAL_SIMILAR(Math::MeanAbsoluteDeviation(x3, x3 + 1, -1.0), 0.0);
+  
+  // empty range	
+  int x4[] = {1}; // mean = 1
+  TEST_EQUAL(std::isnan(Math::MeanAbsoluteDeviation(x4, x4, 1)), true); // NaN
+  
+  DoubleList z_odd = ListUtils::create<double>("-1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0"); // mean = 0.5
+  TEST_REAL_SIMILAR(Math::MeanAbsoluteDeviation(z_odd.begin(), z_odd.end(), 0.5), 0.857142);
+  
+  DoubleList z_even = ListUtils::create<double>("-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0"); // mean = 0.25
+  TEST_REAL_SIMILAR(Math::MeanAbsoluteDeviation(z_even.begin(), z_even.end(), 0.25), 1);
+}
+END_SECTION
+
+START_SECTION([EXTRA](template <typename IteratorType> static double absdev(IteratorType begin, IteratorType end, double mean = std::numeric_limits<double>::max())))
+{
+  // absdev is the mean absolute deviation: it must accumulate |x - mean|.
+  // (A previous bug accumulated the signed (x - mean), which sums to ~0 for the mean.)
+  int x1[] = {-1, 0, 1, 2, 3}; // mean = 1
+  TEST_REAL_SIMILAR(Math::absdev(x1, x1 + 5, 1.0), 1.2);
+  TEST_REAL_SIMILAR(Math::absdev(x1, x1 + 5), 1.2); // mean computed internally (== 1)
+
+  // symmetric data around the mean: the signed sum is exactly 0, the absolute deviation is clearly non-zero
+  DoubleList sym = ListUtils::create<double>("-2.0, -1.0, 1.0, 2.0"); // mean = 0
+  TEST_REAL_SIMILAR(Math::absdev(sym.begin(), sym.end(), 0.0), 1.5);
+
+  // single element -> 0
+  int x3[] = {-1};
+  TEST_REAL_SIMILAR(Math::absdev(x3, x3 + 1, -1.0), 0.0);
+
+  // empty range -> InvalidRange (documented contract, enforced via checkIteratorsNotNULL)
+  int empty[] = {0};
+  TEST_EXCEPTION(Exception::InvalidRange, Math::absdev(empty, empty));
+}
+END_SECTION
+
+START_SECTION([EXTRA](template< typename IteratorType1, typename IteratorType2 > static RealType meanSquareError( IteratorType1 begin_a, const IteratorType1 end_a, IteratorType2 begin_b, const IteratorType2 end_b )))
+{
+	std::list<double> numbers1(20, 1.5);
+	std::list<double> numbers2(20, 1.3);
+	double result = 0;
+
+	TOLERANCE_ABSOLUTE(0.000001);
+	result = Math::meanSquareError(numbers1.begin(), numbers1.end(), numbers2.begin(), numbers2.end());
+	TEST_REAL_SIMILAR(result, 0.04);
+}
+END_SECTION
+
+START_SECTION([EXTRA](template< typename IteratorType1, typename IteratorType2 > static RealType classificationRate( IteratorType1 begin_a, const IteratorType1 end_a, IteratorType2 begin_b, const IteratorType2 end_b )))
+{
+	std::vector<double> numbers1(20, 1);
+	std::vector<double> numbers2(20, 1);
+	double result = 0;
+
+	numbers1.resize(40, -1);
+	numbers2.resize(40, -1);
+
+	numbers1[2] = -1;
+	numbers1[7] = -1;
+	numbers1[11] = -1;
+	numbers1[15] = -1;
+	numbers1[17] = -1;
+	numbers1[25] = 1;
+	numbers1[27] = 1;
+	numbers1[29] = 1;
+	numbers1[31] = 1;
+	numbers1[37] = 1;
+
+	result = Math::classificationRate(numbers1.begin(), numbers1.end(), numbers2.begin(), numbers2.end());
+	TEST_REAL_SIMILAR(result, 0.75);
+}
+END_SECTION
+
+START_SECTION([EXTRA](template< typename IteratorType1, typename IteratorType2 > static RealType pearsonCorrelationCoefficient( const IteratorType1 begin_a, const IteratorType1 end_a, const IteratorType2 begin_b, const IteratorType2 end_b )))
+{
+	std::vector<double> numbers1(20, 1.5);
+	std::vector<double> numbers2(20, 1.3);
+	double result = 0;
+
+	numbers1[0] = 0.1;
+	numbers2[0] = 0.5;
+	numbers1[1] = 0.2;
+	numbers2[1] = 0.7;
+	numbers1[2] = 0.01;
+	numbers2[2] = 0.03;
+	numbers1[3] = 1.7;
+	numbers2[3] = 1.0;
+	numbers1[4] = 3.2;
+	numbers2[4] = 4.0;
+
+	result = Math::pearsonCorrelationCoefficient(numbers1.begin(), numbers1.end(), numbers2.begin(), numbers2.end());
+	TEST_REAL_SIMILAR(result, 0.897811);
+
+// ************ TEST for nan *****************
+	std::vector<float> vv1,vv2;
+	vv1.push_back(1);
+	vv1.push_back(1);
+	vv1.push_back(1);
+	vv1.push_back(1);
+	vv1.push_back(1);
+
+	vv2.push_back(1);
+	vv2.push_back(2);
+	vv2.push_back(3);
+	vv2.push_back(4);
+	vv2.push_back(5);
+
+	result = Math::pearsonCorrelationCoefficient(vv1.begin(), vv1.end(), vv2.begin(), vv2.end());
+	if (std::isnan(result) ) result = -1.0;
+
+	TEST_REAL_SIMILAR(result, -1.0);
+// ************ TEST for nan *****************
+
+	std::vector<float> v1,v2;
+	v1.push_back(1);
+	v1.push_back(2);
+	v1.push_back(3);
+	v1.push_back(4);
+	v1.push_back(5);
+
+	v2.push_back(1);
+	v2.push_back(2);
+	v2.push_back(3);
+	v2.push_back(4);
+	v2.push_back(5);
+
+	TEST_REAL_SIMILAR(Math::pearsonCorrelationCoefficient(v1.begin(), v1.end(), v2.begin(), v2.end()),1);
+
+	v2.clear();
+	v2.push_back(-1);
+	v2.push_back(-2);
+	v2.push_back(-3);
+	v2.push_back(-4);
+	v2.push_back(-5);
+
+
+	TEST_REAL_SIMILAR(Math::pearsonCorrelationCoefficient(v1.begin(), v1.end(), v2.begin(), v2.end()),-1);
+
+
+	v1.clear();
+	v2.clear();
+
+	v1.push_back(0.3716803f);
+	v1.push_back(0.2778111f);
+	v1.push_back(0.8152372f);
+	v1.push_back(0.7715097f);
+	v1.push_back(0.0163179f);
+	v1.push_back(-0.4898738f);
+	v1.push_back(-0.6060137f);
+	v1.push_back(-0.8882970f);
+	v1.push_back(0.2913591f);
+	v1.push_back(-0.3661791f);
+	v1.push_back(0.1320750f);
+	v1.push_back(0.2637229f);
+	v1.push_back(-0.7390226f);
+	v1.push_back(-0.0395929f);
+	v1.push_back(0.3387334f);
+	v1.push_back(0.8598541f);
+	v1.push_back(0.7388236f);
+	v1.push_back(-0.5928083f);
+	v1.push_back(0.9226006f);
+	v1.push_back(-0.3571427f);
+
+	v2.push_back(0.6396969f);
+	v2.push_back(0.7942405f);
+	v2.push_back(-0.6364473f);
+	v2.push_back(-0.6845633f);
+	v2.push_back(-0.6908862f);
+	v2.push_back(-0.5034169f);
+	v2.push_back(0.5745298f);
+	v2.push_back(-0.1247591f);
+	v2.push_back(-0.5129564f);
+	v2.push_back(0.0745857f);
+	v2.push_back(0.0733665f);
+	v2.push_back(-0.0118882f);
+	v2.push_back(0.1763471f);
+	v2.push_back(0.1027599f);
+	v2.push_back(-0.9737805f);
+	v2.push_back(0.8747677f);
+	v2.push_back(0.9479392f);
+	v2.push_back(0.0843604f);
+	v2.push_back(-0.3518961f);
+	v2.push_back(-0.3034039f);
+
+	TEST_REAL_SIMILAR(Math::pearsonCorrelationCoefficient(v1.begin(), v1.end(), v2.begin(), v2.end()),0);
+
+	v1.clear();
+	v2.clear();
+
+	v1.push_back(-0.1833341f);
+	v1.push_back(0.6564449f);
+	v1.push_back(0.8725039f);
+	v1.push_back(0.3610921f);
+	v1.push_back(0.7926144f);
+	v1.push_back(0.1833341f);
+	v1.push_back(-0.6564449f);
+	v1.push_back(-0.4141061f);
+	v1.push_back(-0.8725039f);
+	v1.push_back(0.8269985f);
+	v1.push_back(-0.5878715f);
+	v1.push_back(-0.2950443f);
+	v1.push_back(-0.3610921f);
+	v1.push_back(-0.8269985f);
+	v1.push_back(-0.0470327f);
+	v1.push_back(0.4141061f);
+	v1.push_back(0.0470327f);
+	v1.push_back(0.2950443f);
+	v1.push_back(-0.7926144f);
+	v1.push_back(0.5878715f);
+
+	v2.push_back(0.0336114f);
+	v2.push_back(0.4309199f);
+	v2.push_back(0.7612631f);
+	v2.push_back(0.1303875f);
+	v2.push_back(0.6282377f);
+	v2.push_back(0.0336114f);
+	v2.push_back(0.4309199f);
+	v2.push_back(0.1714839f);
+	v2.push_back(0.7612631f);
+	v2.push_back(0.6839264f);
+	v2.push_back(0.3455929f);
+	v2.push_back(0.0870511f);
+	v2.push_back(0.1303875f);
+	v2.push_back(0.6839264f);
+	v2.push_back(0.0022121f);
+	v2.push_back(0.1714839f);
+	v2.push_back(0.0022121f);
+	v2.push_back(0.0870511f);
+	v2.push_back(0.6282377f);
+	v2.push_back(0.3455929f);
+
+	TEST_REAL_SIMILAR(Math::pearsonCorrelationCoefficient(v1.begin(), v1.end(), v2.begin(), v2.end()),0);
+}
+END_SECTION
+
+START_SECTION([EXTRA](static void computeRank(std::vector<double>& w)))
+{
+  std::vector<double> numbers1(10, 1.5);
+
+  numbers1[0] = 1.4;
+  numbers1[1] = 0.2;
+  numbers1[2] = 0.01;
+  numbers1[3] = 1.7;
+  numbers1[4] = 3.2;
+  numbers1[5] = 2.2;
+
+  TEST_REAL_SIMILAR(numbers1[0], 1.4);
+  TEST_REAL_SIMILAR(numbers1[5], 2.2);
+  TEST_REAL_SIMILAR(numbers1[6], 1.5);
+  TEST_REAL_SIMILAR(numbers1[9], 1.5);
+
+  Math::computeRank(numbers1);
+
+  TEST_REAL_SIMILAR(numbers1[0], 3);
+  TEST_REAL_SIMILAR(numbers1[1], 2);
+  TEST_REAL_SIMILAR(numbers1[2], 1);
+  TEST_REAL_SIMILAR(numbers1[3], 8);
+  TEST_REAL_SIMILAR(numbers1[4], 10);
+  TEST_REAL_SIMILAR(numbers1[5], 9);
+  TEST_REAL_SIMILAR(numbers1[6], 5.5);
+  TEST_REAL_SIMILAR(numbers1[7], 5.5);
+  TEST_REAL_SIMILAR(numbers1[8], 5.5);
+  TEST_REAL_SIMILAR(numbers1[9], 5.5);
+}
+END_SECTION
+
+START_SECTION([EXTRA](template< typename IteratorType1, typename IteratorType2 > static RealType rankCorrelationCoefficient( const IteratorType1 begin_a, const IteratorType1 end_a, const IteratorType2 begin_b, const IteratorType2 end_b )))
+{
+  std::vector<double> numbers1(10, 1.5);
+  std::vector<double> numbers2(10, 1.3);
+  std::vector<double> numbers3(10, 0.42);
+  std::vector<double> numbers4(10, 0.0);
+  double result = 0;
+
+  for (Size i = 0; i < numbers4.size(); ++i)
+  {
+    numbers4[i] = (double)(i+1);
+  }
+
+  numbers1[0] = 0.4;
+  numbers2[0] = 0.5;
+  numbers1[1] = 0.2;
+  numbers2[1] = 0.7;
+  numbers1[2] = 0.01;
+  numbers2[2] = 0.03;
+  numbers1[3] = 1.7;
+  numbers2[3] = 1.0;
+  numbers1[4] = 3.2;
+  numbers2[4] = 4.0;
+  numbers1[5] = 2.2;
+  numbers2[5] = 3.0;
+
+  result = Math::rankCorrelationCoefficient(numbers1.begin(), numbers1.end(), numbers2.begin(), numbers2.end());
+  TEST_REAL_SIMILAR(result, 0.858064516129032);
+
+  result = Math::rankCorrelationCoefficient(numbers1.begin(), numbers1.end(),
+																						numbers2.rbegin(), numbers2.rend());
+  TEST_REAL_SIMILAR(result, 0.303225806451613);
+
+  result = Math::rankCorrelationCoefficient(numbers3.begin(), numbers3.end(), numbers4.begin(), numbers4.end());
+  TEST_REAL_SIMILAR(result, 0.0);
+
+  result = Math::rankCorrelationCoefficient(numbers3.begin(), numbers3.end(), numbers3.begin(), numbers3.end());
+  TEST_REAL_SIMILAR(result, 0.0);
+
+  result = Math::rankCorrelationCoefficient(numbers4.begin(), numbers4.end(), numbers4.begin(), numbers4.end());
+  TEST_REAL_SIMILAR(result, 1.0);
+
+  result = Math::rankCorrelationCoefficient(numbers4.begin(), numbers4.end(), numbers4.rbegin(), numbers4.rend());
+  TEST_REAL_SIMILAR(result, -1.0);
+}
+END_SECTION
+
+START_SECTION([EXTRA](static double quantile1st/quantile3rd(IteratorType begin, IteratorType end, bool sorted)))
+{
+  std::vector<int> x = {3,6,7,8,8,10,13,15,16,20};
+  std::vector<int> y = {3,6,7,8,8,10,13,15,16};
+
+  TEST_REAL_SIMILAR(Math::quantile1st(x.begin(), x.end(), true), 6.5);
+  TEST_REAL_SIMILAR(Math::median(x.begin(), x.end(), true), 9.0);
+  TEST_REAL_SIMILAR(Math::quantile3rd(x.begin(), x.end(), true), 15.5);
+  TEST_REAL_SIMILAR(Math::quantile1st(y.begin(), y.end(), true),6.5);
+  TEST_REAL_SIMILAR(Math::median(y.begin(), y.end(), true), 8.0);
+  TEST_REAL_SIMILAR(Math::quantile3rd(y.begin(), y.end(), true), 14.0);
+
+  // --- small ranges (issue #9659): quantile1st/quantile3rd must be total for n >= 1 ---
+  // n == 1: first and third quantile both collapse to the single value
+  std::vector<double> n1{5.0};
+  TEST_REAL_SIMILAR(Math::quantile1st(n1.begin(), n1.end(), true), 5.0);
+  TEST_REAL_SIMILAR(Math::quantile3rd(n1.begin(), n1.end(), true), 5.0);
+  // n == 2: Q1 == min, Q3 == max (the median-of-halves convention)
+  std::vector<double> n2{1.0, 3.0};
+  TEST_REAL_SIMILAR(Math::quantile1st(n2.begin(), n2.end(), true), 1.0);
+  TEST_REAL_SIMILAR(Math::quantile3rd(n2.begin(), n2.end(), true), 3.0);
+  // unsorted input is sorted internally before the min/max is taken
+  std::vector<double> n2u{3.0, 1.0};
+  TEST_REAL_SIMILAR(Math::quantile1st(n2u.begin(), n2u.end()), 1.0);
+  TEST_REAL_SIMILAR(Math::quantile3rd(n2u.begin(), n2u.end()), 3.0);
+  // n == 3 and n == 4 already returned min/max before the fix; pin that continuity
+  std::vector<double> n3{1.0, 2.0, 3.0};
+  TEST_REAL_SIMILAR(Math::quantile1st(n3.begin(), n3.end(), true), 1.0);
+  TEST_REAL_SIMILAR(Math::quantile3rd(n3.begin(), n3.end(), true), 3.0);
+  std::vector<double> n4{1.0, 2.0, 3.0, 4.0};
+  TEST_REAL_SIMILAR(Math::quantile1st(n4.begin(), n4.end(), true), 1.0);
+  TEST_REAL_SIMILAR(Math::quantile3rd(n4.begin(), n4.end(), true), 4.0);
+  // empty range still throws
+  std::vector<double> none;
+  TEST_EXCEPTION(Exception::InvalidRange, Math::quantile1st(none.begin(), none.end(), true));
+  TEST_EXCEPTION(Exception::InvalidRange, Math::quantile3rd(none.begin(), none.end(), true));
+}
+END_SECTION
+
+START_SECTION([EXTRA](template <typename T> struct SummaryStatistics))
+{
+  // issue #9659: SummaryStatistics must not throw for n == 1 or n == 2
+  // n == 1: every quantile collapses to the single value; variance reported as 0 (as in the empty case)
+  std::vector<double> one{5.0};
+  Math::SummaryStatistics<std::vector<double>> s1(one);
+  TEST_EQUAL(s1.count, 1)
+  TEST_REAL_SIMILAR(s1.mean, 5.0)
+  TEST_REAL_SIMILAR(s1.variance, 0.0)
+  TEST_REAL_SIMILAR(s1.min, 5.0)
+  TEST_REAL_SIMILAR(s1.lowerq, 5.0)
+  TEST_REAL_SIMILAR(s1.median, 5.0)
+  TEST_REAL_SIMILAR(s1.upperq, 5.0)
+  TEST_REAL_SIMILAR(s1.max, 5.0)
+
+  // n == 2: lowerq == min, upperq == max, median == mean of the two
+  std::vector<double> two{1.0, 3.0};
+  Math::SummaryStatistics<std::vector<double>> s2(two);
+  TEST_EQUAL(s2.count, 2)
+  TEST_REAL_SIMILAR(s2.mean, 2.0)
+  TEST_REAL_SIMILAR(s2.variance, 2.0) // sample variance: ((1-2)^2 + (3-2)^2) / (2-1) == 2
+  TEST_REAL_SIMILAR(s2.min, 1.0)
+  TEST_REAL_SIMILAR(s2.lowerq, 1.0)
+  TEST_REAL_SIMILAR(s2.median, 2.0)
+  TEST_REAL_SIMILAR(s2.upperq, 3.0)
+  TEST_REAL_SIMILAR(s2.max, 3.0)
+
+  // n == 3: sanity check that the 3+ path is unaffected
+  std::vector<double> three{1.0, 2.0, 3.0};
+  Math::SummaryStatistics<std::vector<double>> s3(three);
+  TEST_EQUAL(s3.count, 3)
+  TEST_REAL_SIMILAR(s3.lowerq, 1.0)
+  TEST_REAL_SIMILAR(s3.median, 2.0)
+  TEST_REAL_SIMILAR(s3.upperq, 3.0)
+
+  // empty: all fields zero, no throw
+  std::vector<double> none;
+  Math::SummaryStatistics<std::vector<double>> s0(none);
+  TEST_EQUAL(s0.count, 0)
+  TEST_REAL_SIMILAR(s0.variance, 0.0)
+  TEST_REAL_SIMILAR(s0.lowerq, 0.0)
+  TEST_REAL_SIMILAR(s0.upperq, 0.0)
+}
+END_SECTION
+
+START_SECTION([EXTRA](template <typename IteratorType> static double quantile(IteratorType begin, IteratorType end, double q)))
+{
+  std::vector<int> v{1,2,3,4}; // already sorted
+  TEST_REAL_SIMILAR(Math::quantile(v.begin(), v.end(), 0.0), 1.0);
+  TEST_REAL_SIMILAR(Math::quantile(v.begin(), v.end(), 1.0), 4.0);
+  // Type-7 median (even length): pos = 0.5*(n-1) = 1.5 -> 2.5
+  TEST_REAL_SIMILAR(Math::quantile(v.begin(), v.end(), 0.5), 2.5);
+  TEST_REAL_SIMILAR(Math::quantile(v.begin(), v.end(), 0.25), 1.75);
+  TEST_REAL_SIMILAR(Math::quantile(v.begin(), v.end(), 0.75), 3.25);
+
+  std::vector<double> empty;
+  TEST_EXCEPTION(Exception::InvalidRange, Math::quantile(empty.begin(), empty.end(), 0.5));
+  TEST_EXCEPTION(Exception::InvalidValue, Math::quantile(v.begin(), v.end(), -0.1));
+  TEST_EXCEPTION(Exception::InvalidValue, Math::quantile(v.begin(), v.end(),  1.1));
+}
+END_SECTION
+
+START_SECTION([EXTRA](template <typename IteratorType> double tukeyUpperFence(IteratorType begin, IteratorType end, double k)))
+{
+  // v = 1..9 → Q1=3, Q3=7, IQR=4 → UF = 7 + 1.5*4 = 13
+  std::vector<int> v = {1,2,3,4,5,6,7,8,9};
+  TEST_REAL_SIMILAR(Math::tukeyUpperFence(v.begin(), v.end(), 1.5), 13.0);
+
+  // too few valid values → +inf
+  std::vector<double> tiny = {1.0, std::numeric_limits<double>::quiet_NaN()};
+  TEST_EQUAL(std::isinf(Math::tukeyUpperFence(tiny.begin(), tiny.end(), 1.5)), true);
+}
+END_SECTION
+
+START_SECTION([EXTRA](template <typename IteratorType> double tailFractionAbove(IteratorType begin, IteratorType end, double threshold)))
+{
+  std::vector<int> v = {1,2,3,4,5,6,7,8,9};
+  // values > 7 are {8,9} → 2/9
+  double r = Math::tailFractionAbove(v.begin(), v.end(), 7.0);
+  TOLERANCE_ABSOLUTE(1e-12);
+  TEST_REAL_SIMILAR(r, 2.0/9.0);
+
+  // threshold above max → 0
+  TEST_REAL_SIMILAR(Math::tailFractionAbove(v.begin(), v.end(), 10.0), 0.0);
+}
+END_SECTION
+
+START_SECTION([EXTRA](template <typename IteratorType> double winsorizedQuantile(IteratorType begin, IteratorType end, double q, double upper_fence)))
+{
+  // Example: v = {1,2,3,100}
+  // Raw q=0.75 (Type-7): pos=2.25 → 0.75*3 + 0.25*100 = 27.25
+  // UF computed externally: Q1=1.75, Q3=27.25, IQR=25.5 → UF=65.5
+  std::vector<double> v = {1.0, 2.0, 3.0, 100.0};
+  const double uf = 65.5;
+
+  const double raw_q = Math::quantile(v.begin(), v.end(), 0.75);
+  TEST_REAL_SIMILAR(raw_q, 27.25);
+
+  const double win_q = Math::winsorizedQuantile(v.begin(), v.end(), 0.75, uf);
+  TEST_REAL_SIMILAR(win_q, 18.625); // pos=2.25 between 3 and 65.5 → 0.75*3 + 0.25*65.5
+
+  // If UF is +inf, falls back to raw quantile
+  const double win_inf = Math::winsorizedQuantile(v.begin(), v.end(), 0.75, std::numeric_limits<double>::infinity());
+  TEST_REAL_SIMILAR(win_inf, raw_q);
+}
+END_SECTION
+
+START_SECTION([EXTRA](template <typename IteratorType> double adaptiveQuantile(IteratorType begin, IteratorType end, double q, double k, double r_sparse, double r_dense, double* out_half_raw, double* out_half_rob, double* out_upper_fence, double* out_tail_frac)))
+{
+  TOLERANCE_ABSOLUTE(1e-9);
+
+  // --- Case A: sparse tail -> prefer robust (w=0)
+  // Base: 0..9 repeated 20 times (200 values), plus one outlier 1000 (r ≈ 0.005 < 1%)
+  std::vector<double> a;
+  a.reserve(201);
+  for (int rep = 0; rep < 20; ++rep)
+    for (int z = 0; z <= 9; ++z) a.push_back(static_cast<double>(z));
+  a.push_back(1000.0);
+
+  const double qA = 0.997; // forces interpolation with the last value present
+  Math::AdaptiveQuantileResult ada_A = Math::adaptiveQuantile(a.begin(), a.end(), qA,
+                                              /*k=*/1.5, /*r_sparse=*/0.01, /*r_dense=*/0.10);
+
+  // Tail is sparse → expect robust to win and adaptive == robust (within tol),
+  // and robust << raw because 1000 is capped at UF ~ 15.
+  TEST_TRUE(ada_A.tail_fraction < 0.01);
+  TEST_REAL_SIMILAR(ada_A.blended, ada_A.half_rob);
+  TEST_TRUE(ada_A.half_raw > ada_A.half_rob);
+
+  // --- Case B: dense tail -> prefer raw (w=1)
+  // Add many outliers: 30 values of 1000 → r ≳ 0.13 > 0.10
+  std::vector<double> b = a;
+  for (int i=0; i<29; ++i) b.push_back(1000.0); // total outliers now 30
+  Math::AdaptiveQuantileResult ada_B = Math::adaptiveQuantile(b.begin(), b.end(), qA,
+                                              1.5, 0.01, 0.10);
+  TEST_TRUE(ada_B.tail_fraction > 0.10);
+  TEST_REAL_SIMILAR(ada_B.blended, ada_B.half_raw);
+  TEST_TRUE(ada_B.half_raw >= ada_B.half_rob);
+
+  // --- Case C: intermediate tail density -> interpolation between robust and raw
+  // Make about ~5% tail: add 10 outliers to the base (200 base + 10 outliers = 210, r≈0.0476)
+  std::vector<double> c;
+  c.reserve(210);
+  for (int rep = 0; rep < 20; ++rep)
+    for (int z = 0; z <= 9; ++z) c.push_back(static_cast<double>(z));
+  for (int i=0; i<10; ++i) c.push_back(1000.0);
+
+  Math::AdaptiveQuantileResult ada_C = Math::adaptiveQuantile(c.begin(), c.end(), qA,
+                                              1.5, 0.01, 0.10);
+
+  // Expected linear weight w = (r - r_sparse) / (r_dense - r_sparse)
+  const double w = std::max(0.0, std::min(1.0, (ada_C.tail_fraction - 0.01) / (0.10 - 0.01)));
+  const double expected_blend = (1.0 - w) * ada_C.half_rob + w * ada_C.half_raw;
+
+  TEST_TRUE(ada_C.tail_fraction > 0.01 && ada_C.tail_fraction < 0.10);
+  TEST_REAL_SIMILAR(ada_C.blended, expected_blend);
+  TEST_TRUE(ada_C.half_rob <= ada_C.blended && ada_C.blended <= ada_C.half_raw);
+}
+END_SECTION
+
+START_SECTION([EXTRA](template <typename IteratorType1, typename IteratorType2> static double rootMeanSquareError(IteratorType1 begin_a, IteratorType1 end_a, IteratorType2 begin_b, IteratorType2 end_b)))
+{
+  using OpenMS::Math::meanSquareError;
+  using OpenMS::Math::rootMeanSquareError;
+
+  // Simple hand-checkable case: constant offset of -0.5
+  std::vector<double> a{1.0, 2.0, 3.0};
+  std::vector<double> b{1.5, 2.5, 3.5};
+
+  const double mse  = meanSquareError(a.begin(), a.end(), b.begin(), b.end());
+  const double rmse = rootMeanSquareError(a.begin(), a.end(), b.begin(), b.end());
+
+  TEST_REAL_SIMILAR(mse, 0.25);
+  TEST_REAL_SIMILAR(rmse, std::sqrt(0.25));
+
+  // Residuals vs zero baseline equals sqrt(mean of squares)
+  std::vector<double> errs{-2.0, 0.0, 2.0};
+  std::vector<double> zeros(errs.size(), 0.0);
+  TEST_REAL_SIMILAR(
+    rootMeanSquareError(errs.begin(), errs.end(), zeros.begin(), zeros.end()),
+    std::sqrt((4.0 + 0.0 + 4.0) / 3.0)
+  );
+
+  // Exceptions: mismatched length and empty ranges
+  std::vector<double> shortv{1.0, 2.0};
+  TEST_EXCEPTION(Exception::InvalidRange,
+                 rootMeanSquareError(errs.begin(), errs.end(), shortv.begin(), shortv.end()));
+  std::vector<double> empty;
+  TEST_EXCEPTION(Exception::InvalidRange,
+                 rootMeanSquareError(empty.begin(), empty.end(), empty.begin(), empty.end()));
+}
+END_SECTION
+
+START_SECTION((template<typename IteratorType1, typename IteratorType2> static void checkIteratorsAreValid))
+{
+  std::vector<int> v1 = {1, 2, 3};
+  std::vector<int> v2 = {10, 20, 30};
+
+  // Case 1: Both iterators at begin (not at end) --> OK
+  checkIteratorsAreValid(v1.begin(), v1.end(), v2.begin(), v2.end());
+
+  // Case 2: Both iterators at end --> OK
+  checkIteratorsAreValid(v1.end(), v1.end(), v2.end(), v2.end());
+
+  // Case 3: One iterator at end, other not --> should throw
+  TEST_EXCEPTION(Exception::InvalidRange, checkIteratorsAreValid(v1.begin(), v1.end(), v2.end(), v2.end()));
+
+  // Case 4: Reverse mismatch (other one at end) --> should throw
+  TEST_EXCEPTION(Exception::InvalidRange, checkIteratorsAreValid(v1.end(), v1.end(), v2.begin(), v2.end()));
+}
+END_SECTION
+
+/////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////
+
+END_TEST
