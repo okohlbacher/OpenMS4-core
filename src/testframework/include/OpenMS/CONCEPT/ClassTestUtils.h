@@ -9,10 +9,10 @@
 #pragma once
 
 // Standard-library-only utilities owned by the class-test framework (no libOpenMS
-// dependency). Two mirror libOpenMS behavior and must not drift:
-//  * detail::appendNumeric <-> StringUtils' appendNumeric (StringUtils.cpp): so
-//    TEST_EQUAL(std::string, <number>) formats exactly like StringUtils::toStr().
-//  * writtenDigits <-> OpenMS::writtenDigits (OpenMS/CONCEPT/Types.h).
+// dependency). Numeric formatting is shared with StringUtils; writtenDigits
+// mirrors OpenMS::writtenDigits (OpenMS/CONCEPT/Types.h).
+
+#include <OpenMS/CONCEPT/Detail/NumericFormatting.h>
 
 #include <charconv>
 #include <cmath>
@@ -123,98 +123,6 @@ namespace OpenMS
           return out;
         }
 
-        /// Append a double/float/long double via std::to_chars. VERBATIM copy of
-        /// appendNumeric in StringUtils.cpp -- must format exactly like
-        /// StringUtils::toStr(); keep in sync, do not "improve". NaN -> "NaN",
-        /// inf -> "inf"/"-inf"; trailing zeros trimmed, one digit kept after '.'.
-        template <typename T>
-        inline void appendNumeric(T value, std::string& target, int precision, bool fixed_format)
-        {
-          if (std::isnan(value)) { target += "NaN"; return; }
-          if (std::isinf(value)) { target += (value < T(0)) ? "-inf" : "inf"; return; }
-          char buf[64];
-          std::to_chars_result fc;
-
-          // Determine format: use scientific for extreme values or when fixed_format is requested
-          // but the value is too small/large for fixed notation
-          T abs_val = (value < 0) ? -value : value;
-          bool use_scientific = fixed_format
-            ? (abs_val != T(0) && (abs_val >= T(1e4) || abs_val < T(1e-2)))
-            : (abs_val != T(0) && (abs_val >= T(1e4) || abs_val < T(1e-2)));
-
-          if (use_scientific)
-          {
-            if (fixed_format)
-            {
-              fc = std::to_chars(buf, buf + sizeof(buf), value, std::chars_format::scientific, 3);
-            }
-            else
-            {
-              // Shortest round-trip representation (no explicit precision): the unique shortest
-              // decimal that round-trips back to the same double, hence platform-independent.
-              fc = std::to_chars(buf, buf + sizeof(buf), value, std::chars_format::scientific);
-            }
-          }
-          else if (fixed_format)
-          {
-            fc = std::to_chars(buf, buf + sizeof(buf), value, std::chars_format::fixed, precision);
-          }
-          else
-          {
-            fc = std::to_chars(buf, buf + sizeof(buf), value, std::chars_format::fixed, precision);
-          }
-
-          if (fc.ec == std::errc{})
-          {
-            const char* end = fc.ptr;
-
-            // For scientific notation: post-process "1.234e+04" into the historical "1.234e04"
-            const char* e_pos = reinterpret_cast<const char*>(std::memchr(buf, 'e', end - buf));
-            if (e_pos)
-            {
-              const char* e_orig = e_pos; // save before mantissa trimming
-
-              // Trim trailing zeros from mantissa (before 'e')
-              const char* dot = reinterpret_cast<const char*>(std::memchr(buf, '.', e_orig - buf));
-              if (dot)
-              {
-                while (e_pos > dot + 1 && *(e_pos - 1) == '0') --e_pos;
-                if (e_pos == dot + 1) e_pos = dot + 2; // keep at least one digit after dot
-              }
-              target.append(buf, static_cast<size_t>(e_pos - buf));
-              if (!dot) target += ".0";
-              target += 'e';
-
-              // Fix exponent format: "+04" -> "04" (remove '+', keep '-' and zero-padding).
-              const char* exp_start = e_orig + 1; // skip 'e'
-              if (exp_start < end && *exp_start == '+')
-                ++exp_start; // skip '+'
-              size_t exp_len = static_cast<size_t>(end - exp_start);
-              target.append(exp_start, exp_len);
-              return;
-            }
-
-            // For fixed notation: trim trailing zeros after decimal point
-            const char* dot = reinterpret_cast<const char*>(std::memchr(buf, '.', end - buf));
-            if (dot)
-            {
-              while (end > dot + 1 && *(end - 1) == '0') --end;
-              if (end == dot + 1) end = dot + 2; // keep at least one digit after dot
-            }
-            else if constexpr (std::is_floating_point_v<T>)
-            {
-              target.append(buf, static_cast<size_t>(end - buf));
-              target += ".0";
-              return;
-            }
-            target.append(buf, static_cast<size_t>(end - buf));
-          }
-          else
-          {
-            target += std::to_string(static_cast<double>(value));
-          }
-        }
-
         ///@name Stringification for TEST_EQUAL(std::string, x). Mirrors the
         /// StringUtils::toStr overloads, so TEST_EQUAL(some_string, 114) compares
         /// against "114" and doubles keep full precision.
@@ -236,7 +144,7 @@ namespace OpenMS
           }
           else if constexpr (std::is_floating_point_v<T>)
           {
-            appendNumeric(v, r, std::numeric_limits<T>::digits10, false); // full precision, like toStr(v, true)
+            NumericFormatting::appendNumeric(v, r, std::numeric_limits<T>::digits10, false); // full precision, like toStr(v, true)
           }
           else
           {

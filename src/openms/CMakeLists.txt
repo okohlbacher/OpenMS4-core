@@ -302,6 +302,7 @@ openms_add_library(TARGET_NAME  OpenMS
                    INTERNAL_INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/include
                                      ${CMAKE_CURRENT_BINARY_DIR}/include
                    PRIVATE_INCLUDES ${OPENMS_ONNX_PRIVATE_INCLUDES}
+                                    ${OPENMS_HOST_DIRECTORY}/src/common/include
                    EXTERNAL_INCLUDES
                    LINK_LIBRARIES OpenSwathAlgo
                                   ${OPENMS_DEP_LIBRARIES}

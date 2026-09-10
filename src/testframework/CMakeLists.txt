@@ -35,6 +35,7 @@ add_library(OpenMSTestFramework STATIC ${OpenMSTestFramework_sources} ${OpenMSTe
 
 target_include_directories(OpenMSTestFramework PUBLIC
                            "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>"
+                           "$<BUILD_INTERFACE:${OPENMS_HOST_DIRECTORY}/src/common/include>"
                            "$<INSTALL_INTERFACE:${INSTALL_INCLUDE_DIR}>"
                            "$<INSTALL_INTERFACE:${INSTALL_CMAKE_DIR}/TestSupport/include>")
 
@@ -56,6 +57,9 @@ if(OPENMS_BUILD_TEST_SUPPORT)
     ARCHIVE DESTINATION ${INSTALL_LIB_DIR} COMPONENT TestSupport)
   install(DIRECTORY include/OpenMS/ DESTINATION ${INSTALL_INCLUDE_DIR}/OpenMS
     COMPONENT TestSupport FILES_MATCHING PATTERN "*.h")
+  install(DIRECTORY "${OPENMS_HOST_DIRECTORY}/src/common/include/OpenMS/"
+    DESTINATION ${INSTALL_INCLUDE_DIR}/OpenMS COMPONENT TestSupport
+    FILES_MATCHING PATTERN "*.h")
   install(EXPORT OpenMSTestSupportTargets NAMESPACE OpenMS::
     DESTINATION ${INSTALL_CMAKE_DIR} COMPONENT TestSupport)
   install(FILES "${OPENMS_HOST_DIRECTORY}/src/tests/class_tests/openms/source/OpenMSTestSupport.cpp"
