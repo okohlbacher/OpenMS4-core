@@ -10,20 +10,7 @@
 cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 project("OpenMS_class_tests")
 
-#------------------------------------------------------------------------------
-# set new CMAKE_RUNTIME_OUTPUT_DIRECTORY for tests and remember old setting
-set(_TMP_CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
-
-#------------------------------------------------------------------------------
-# add OpenSWATHAlgo specific tests
+# Keep test executables in the common build/bin directory beside Core's DLLs.
+# External dependency DLLs are supplied by the active dependency environment.
 add_subdirectory(openswathalgo)
-
-#------------------------------------------------------------------------------
-# add OpenMS specific tests
 add_subdirectory(openms)
-
-
-#------------------------------------------------------------------------------
-# restore old CMAKE_RUNTIME_OUTPUT_DIRECTORY
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${_TMP_CMAKE_RUNTIME_OUTPUT_DIRECTORY})

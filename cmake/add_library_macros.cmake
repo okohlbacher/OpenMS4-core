@@ -16,28 +16,6 @@ include(GenerateExportHeader)
 option(ENABLE_UNITYBUILD "Enables unity builds for all libraries." OFF)
 
 #------------------------------------------------------------------------------
-## Copy the DLL produced by the given target to the class-test binary path.
-## @param targetname The target to modify.
-## @note This macro will do nothing outside of Windows since the linker will find the libs.
-macro(copy_dll_to_extern_bin targetname)
-  if (WIN32 AND ENABLE_CLASS_TESTING)
-    get_property(_copy_dll_is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-    if(_copy_dll_is_multi_config)
-      file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/src/tests/class_tests/bin/$<CONFIG>/$<TARGET_FILE_NAME:${targetname}>" DLL_TEST_TARGET)
-      file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/src/tests/class_tests/bin/$<CONFIG>" DLL_TEST_TARGET_PATH)
-    else()
-      file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/src/tests/class_tests/bin/$<TARGET_FILE_NAME:${targetname}>" DLL_TEST_TARGET)
-      file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/src/tests/class_tests/bin/" DLL_TEST_TARGET_PATH)
-    endif()
-    add_custom_command(TARGET ${targetname}
-            POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${DLL_TEST_TARGET_PATH}"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:${targetname}> ${DLL_TEST_TARGET}
-            )
-  endif()
-endmacro()
-
-#------------------------------------------------------------------------------
 # openms_add_library()
 # Create an OpenMS library, install it, register for export of targets, and
 # export all required variables for later usage in the build system.
@@ -148,57 +126,6 @@ function(openms_add_library)
   # register for export
   openms_register_export_target(${openms_add_library_TARGET_NAME})
 
-  #------------------------------------------------------------------------------
-  # On Windows, place core DLLs beside class tests and keep native dependencies
-  # beside the library. Library-only builds do not create test directories.
-  # Copy target DLLs themselves
-  copy_dll_to_extern_bin(${openms_add_library_TARGET_NAME})
-  # Copy dependencies
-  if(WIN32)
-    # CMake resolves the runtime dependencies of the core library.
-    # This stores the command as a list
-    set(has_dll_dep
-            $<BOOL:$<TARGET_RUNTIME_DLLS:${openms_add_library_TARGET_NAME}>>
-            )
-    set(none_command
-            ${CMAKE_COMMAND} -E echo
-            )
-    ## TODO check if we can use create_symlink instead
-    set(copy_dlls_to_output_folder
-            ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_RUNTIME_DLLS:${openms_add_library_TARGET_NAME}>
-            $<TARGET_FILE_DIR:${openms_add_library_TARGET_NAME}>
-            )
-
-    get_property(is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-    if(is_multi_config)
-      file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/src/tests/class_tests/bin/$<CONFIG>/" DLL_TEST_TARGET_PATH)
-    else()
-      file(TO_NATIVE_PATH "${OPENMS_HOST_BINARY_DIRECTORY}/src/tests/class_tests/bin/" DLL_TEST_TARGET_PATH)
-    endif()
-
-    set(copy_dlls_to_test_folder
-            ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_RUNTIME_DLLS:${openms_add_library_TARGET_NAME}>
-            ${DLL_TEST_TARGET_PATH}
-            )
-
-    set(_openms_copy_test_dependencies "${none_command}")
-    if(ENABLE_CLASS_TESTING)
-      set(_openms_copy_test_dependencies "${copy_dlls_to_test_folder}")
-    endif()
-    foreach(command IN ITEMS "${copy_dlls_to_output_folder}" "${_openms_copy_test_dependencies}")
-      set(if_runtime_dlls_copy
-              $<IF:${has_dll_dep},${command},${none_command}>
-              )
-      add_custom_command(TARGET ${openms_add_library_TARGET_NAME} POST_BUILD
-              COMMAND "${if_runtime_dlls_copy}"
-              COMMAND_EXPAND_LISTS
-              )
-    endforeach()
-
-
-  endif()
   #------------------------------------------------------------------------------
   # Status message for configure output
   message(STATUS "Adding library ${openms_add_library_TARGET_NAME} - SUCCESS")
