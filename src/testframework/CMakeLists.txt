@@ -35,9 +35,13 @@ add_library(OpenMSTestFramework STATIC ${OpenMSTestFramework_sources} ${OpenMSTe
 
 target_include_directories(OpenMSTestFramework PUBLIC
                            "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>"
-                           "$<INSTALL_INTERFACE:${INSTALL_INCLUDE_DIR}>")
+                           "$<INSTALL_INTERFACE:${INSTALL_INCLUDE_DIR}>"
+                           "$<INSTALL_INTERFACE:${INSTALL_CMAKE_DIR}/TestSupport/include>")
 
 target_compile_features(OpenMSTestFramework PUBLIC cxx_std_23)
+if(OPENMS_STL_DEBUG_ENABLED)
+  target_compile_definitions(OpenMSTestFramework PUBLIC "$<$<CONFIG:Debug>:_GLIBCXX_DEBUG>")
+endif()
 
 openms_add_library_compiler_flags(OpenMSTestFramework)
 

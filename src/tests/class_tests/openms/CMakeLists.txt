@@ -373,3 +373,22 @@ add_test(NAME CoreDataPath_invalid_override
     "-DPROBE_ARGUMENTS=${_data_override}"
     "-DINVALID_OVERRIDE=${CMAKE_CURRENT_BINARY_DIR}/missing-data-override"
     -P "${OPENMS_HOST_DIRECTORY}/tests/installed_sdk_acceptance/ExpectInvalidDataOverride.cmake")
+
+add_test(NAME CoreDataPath_exception_retry
+  COMMAND CoreDataPath_probe "${_data_override}" --retry)
+set_tests_properties(CoreDataPath_exception_retry PROPERTIES
+  ENVIRONMENT "OPENMS_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/missing-data-override")
+
+# The same probes run against the build and the installed SDK.
+find_package(Threads REQUIRED)
+add_executable(CoreIdentity_probe "${OPENMS_HOST_DIRECTORY}/tests/installed_sdk_acceptance/identity.cpp")
+target_link_libraries(CoreIdentity_probe PRIVATE OpenMS::Core Threads::Threads)
+add_test(NAME CoreIdentity_concurrent
+  COMMAND CoreIdentity_probe "${OPENMS_HOST_BINARY_DIRECTORY}/identity/$<CONFIG>/OpenMSBuildInfo.json"
+    "${OPENMS_SOURCE_REVISION}" "$<BOOL:${OPENMS_SOURCE_DIRTY}>")
+add_executable(CoreExecutablePath_probe "${OPENMS_HOST_DIRECTORY}/tests/runtime/CoreExecutablePath_probe.cpp")
+target_link_libraries(CoreExecutablePath_probe PRIVATE OpenMS::Core)
+add_test(NAME CoreExecutablePath_unicode_and_long
+  COMMAND "${CMAKE_COMMAND}" "-DPROBE_EXECUTABLE=$<TARGET_FILE:CoreExecutablePath_probe>"
+    "-DWORK_DIRECTORY=${CMAKE_CURRENT_BINARY_DIR}"
+    -P "${OPENMS_HOST_DIRECTORY}/tests/runtime/CheckExecutablePath.cmake")

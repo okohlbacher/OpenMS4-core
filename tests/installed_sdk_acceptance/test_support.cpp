@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // $Maintainer: OpenMS Team $
 #include <OpenMS/CONCEPT/ClassTest.h>
+#include <OpenMS/TestFileValidation.h>
 #include <OpenMS/CONCEPT/UniqueIdGenerator.h>
 #include <OpenMS/FORMAT/FASTAFile.h>
 #include <OpenMS/test_config.h>

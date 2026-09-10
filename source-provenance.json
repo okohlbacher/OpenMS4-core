@@ -694,16 +694,6 @@
       "path": "cmake/compiler_flags.cmake"
     },
     {
-      "upstream": "cmake/cwl_generation.cmake",
-      "package": "core",
-      "path": "cmake/cwl_generation.cmake"
-    },
-    {
-      "upstream": "cmake/doc_macros.cmake",
-      "package": "core",
-      "path": "cmake/doc_macros.cmake"
-    },
-    {
       "upstream": "cmake/export_macros.cmake",
       "package": "core",
       "path": "cmake/export_macros.cmake"
@@ -759,41 +749,6 @@
       "path": "cmake/knime/binaries_win.ini"
     },
     {
-      "upstream": "cmake/knime/change_exec_name_in_ctd.cmake",
-      "package": "core",
-      "path": "cmake/knime/change_exec_name_in_ctd.cmake"
-    },
-    {
-      "upstream": "cmake/knime/common.cmake",
-      "package": "core",
-      "path": "cmake/knime/common.cmake"
-    },
-    {
-      "upstream": "cmake/knime/compress_payload.cmake",
-      "package": "core",
-      "path": "cmake/knime/compress_payload.cmake"
-    },
-    {
-      "upstream": "cmake/knime/configure_plugin_properties.cmake",
-      "package": "core",
-      "path": "cmake/knime/configure_plugin_properties.cmake"
-    },
-    {
-      "upstream": "cmake/knime/copy_binaries_ini.cmake",
-      "package": "core",
-      "path": "cmake/knime/copy_binaries_ini.cmake"
-    },
-    {
-      "upstream": "cmake/knime/copy_searchengines.cmake",
-      "package": "core",
-      "path": "cmake/knime/copy_searchengines.cmake"
-    },
-    {
-      "upstream": "cmake/knime/copy_share.cmake",
-      "package": "core",
-      "path": "cmake/knime/copy_share.cmake"
-    },
-    {
       "upstream": "cmake/knime/feature.properties.in",
       "package": "core",
       "path": "cmake/knime/feature.properties.in"
@@ -807,11 +762,6 @@
       "upstream": "cmake/knime/icons/splash.png",
       "package": "core",
       "path": "cmake/knime/icons/splash.png"
-    },
-    {
-      "upstream": "cmake/knime/knime_copy_deps.cmake",
-      "package": "core",
-      "path": "cmake/knime/knime_copy_deps.cmake"
     },
     {
       "upstream": "cmake/knime/libplugin.properties.in",
@@ -834,19 +784,9 @@
       "path": "cmake/knime/plugin.properties.in"
     },
     {
-      "upstream": "cmake/knime/remove_parameter_from_ctd.cmake",
-      "package": "core",
-      "path": "cmake/knime/remove_parameter_from_ctd.cmake"
-    },
-    {
       "upstream": "cmake/knime/updatesite.properties.in",
       "package": "core",
       "path": "cmake/knime/updatesite.properties.in"
-    },
-    {
-      "upstream": "cmake/knime_package_support.cmake",
-      "package": "core",
-      "path": "cmake/knime_package_support.cmake"
     },
     {
       "upstream": "cmake/messages.cmake",
@@ -857,46 +797,6 @@
       "upstream": "cmake/multithreading.cmake",
       "package": "core",
       "path": "cmake/multithreading.cmake"
-    },
-    {
-      "upstream": "cmake/package_components.cmake",
-      "package": "core",
-      "path": "cmake/package_components.cmake"
-    },
-    {
-      "upstream": "cmake/package_deb.cmake",
-      "package": "core",
-      "path": "cmake/package_deb.cmake"
-    },
-    {
-      "upstream": "cmake/package_definitions.cmake",
-      "package": "core",
-      "path": "cmake/package_definitions.cmake"
-    },
-    {
-      "upstream": "cmake/package_dragndrop_dmg.cmake",
-      "package": "core",
-      "path": "cmake/package_dragndrop_dmg.cmake"
-    },
-    {
-      "upstream": "cmake/package_general.cmake",
-      "package": "core",
-      "path": "cmake/package_general.cmake"
-    },
-    {
-      "upstream": "cmake/package_mac_productbuild.cmake",
-      "package": "core",
-      "path": "cmake/package_mac_productbuild.cmake"
-    },
-    {
-      "upstream": "cmake/package_nsis.cmake",
-      "package": "core",
-      "path": "cmake/package_nsis.cmake"
-    },
-    {
-      "upstream": "cmake/package_rpm.cmake",
-      "package": "core",
-      "path": "cmake/package_rpm.cmake"
     },
     {
       "upstream": "cmake/setup_lib_find_paths.cmake",
@@ -1082,36 +982,6 @@
       "upstream": "share/OpenMS/CV/unit.obo",
       "package": "core",
       "path": "share/OpenMS/CV/unit.obo"
-    },
-    {
-      "upstream": "share/OpenMS/DESKTOP/TOPPAS.appdata.xml",
-      "package": "core",
-      "path": "share/OpenMS/DESKTOP/TOPPAS.appdata.xml"
-    },
-    {
-      "upstream": "share/OpenMS/DESKTOP/TOPPAS.desktop",
-      "package": "core",
-      "path": "share/OpenMS/DESKTOP/TOPPAS.desktop"
-    },
-    {
-      "upstream": "share/OpenMS/DESKTOP/TOPPView.appdata.xml",
-      "package": "core",
-      "path": "share/OpenMS/DESKTOP/TOPPView.appdata.xml"
-    },
-    {
-      "upstream": "share/OpenMS/DESKTOP/TOPPView.desktop",
-      "package": "core",
-      "path": "share/OpenMS/DESKTOP/TOPPView.desktop"
-    },
-    {
-      "upstream": "share/OpenMS/DESKTOP/readme.txt",
-      "package": "core",
-      "path": "share/OpenMS/DESKTOP/readme.txt"
-    },
-    {
-      "upstream": "share/OpenMS/GUISTYLE/qtStyleSheet.qss",
-      "package": "core",
-      "path": "share/OpenMS/GUISTYLE/qtStyleSheet.qss"
     },
     {
       "upstream": "share/OpenMS/MAPPING/TraML-mapping.xml",
@@ -28799,16 +28669,6 @@
       "path": "tools/update_header_dates.sh"
     },
     {
-      "upstream": "tools/update_ini_files_OpenMS_version.sh",
-      "package": "core",
-      "path": "tools/update_ini_files_OpenMS_version.sh"
-    },
-    {
-      "upstream": "tools/update_version_numbers.sh",
-      "package": "core",
-      "path": "tools/update_version_numbers.sh"
-    },
-    {
       "upstream": "tools/valgrind/openms_external.supp",
       "package": "core",
       "path": "tools/valgrind/openms_external.supp"
@@ -29048,5 +28908,9 @@
       "package": "core",
       "path": "vcpkg.json"
     }
-  ]
+  ],
+  "extraction_changes": {
+    "desktop_resources": "GUISTYLE/qtStyleSheet.qss and DESKTOP metadata transferred to openms4-desktop; desktop embeds the stylesheet in its Qt resource archive.",
+    "obsolete_orchestration": "Unreachable suite packaging, KNIME, CWL/documentation build modules and monorepo version-editing scripts removed; preserved in superproject legacy."
+  }
 }

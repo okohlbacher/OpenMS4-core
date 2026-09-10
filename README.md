@@ -41,6 +41,14 @@ External Percolator comparisons use `-DPERCOLATOR_BINARY_FOR_TEST=/absolute/path
 or PATH discovery; unavailable subprocess checks are reported explicitly. The
 in-process scientific tests remain in Core.
 
+Git builds observe the full commit and staged, unstaged and non-ignored untracked
+changes. Add `-DOPENMS_REQUIRE_CLEAN_SOURCE=ON` for a publishable clean build.
+Reconfigure after source identity changes. Source archives must explicitly provide
+`-DOPENMS_SOURCE_REVISION=<40-character-commit> -DOPENMS_SOURCE_DIRTY=OFF` (or `ON`).
+An invalid `OPENMS_DATA_PATH` throws `Exception::FileNotFound`; library callers may
+correct the override and retry. Desktop styles and integration metadata are owned
+by the separate desktop package.
+
 ## Install the SDK and optional TestSupport
 
 A default `cmake --install` includes every enabled component, including TestSupport.
@@ -55,7 +63,9 @@ done
 
 Consumers then use `find_package(OpenMS 4.0.0 EXACT CONFIG REQUIRED)` and link
 `OpenMS::Core`. Its package configuration records the exact Core source revision,
-public dependency versions and enabled features. Core runtime data is versioned
+public dependency versions and enabled features. `VersionInfo::getSourceRevision()`,
+`isSourceDirty()` and `getBuildInfo()` expose the loaded library identity;
+`OpenMS_BUILD_INFO_FILE` locates the matching JSON, including compiler/runtime ABI. Core runtime data is versioned
 under `share/OpenMS/4.0.0`; `OpenMS_DATA_DIR` exposes its location.
 
 Install the optional development component after checking the SDK without it:

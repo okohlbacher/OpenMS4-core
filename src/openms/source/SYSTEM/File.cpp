@@ -30,6 +30,7 @@
 #include <filesystem>
 #include <fstream>
 #include <set>
+#include <sstream>
 #include <vector>
 
 #include <sys/stat.h>  // for stat()/_wstat64() in getModificationTime()
@@ -101,46 +102,56 @@ namespace OpenMS{
   }
   std::string File::getExecutablePath()
   {
-    // see http://stackoverflow.com/questions/1023306/finding-current-executables-path-without-proc-self-exe/1024937#1024937 for more OS' (if needed)
-    // Use immediately evaluated lambda to protect static variable from concurrent access.
-    static const std::string spath = [&]() -> std::string {
-        std::string rpath;
-
-        char path[1024]; // maximum path length
-
+    static const std::string spath = []() -> std::string
+    {
+      fs::path executable;
 #ifdef OPENMS_WINDOWSPLATFORM
-        int size = sizeof(path);
-        if (GetModuleFileNameA(NULL, path, size))
-#elif  defined(__APPLE__)
-        uint size = sizeof(path);
-        if (_NSGetExecutablePath(path, &size) == 0)
-#else // LINUX
-        // note: implementation as suggested by readlink man page
-        ssize_t len = ::readlink("/proc/self/exe", path, sizeof(path)-1);
-        if (len != -1) //add 0 terminator at end
+      std::vector<wchar_t> buffer(256);
+      for (;;)
+      {
+        const DWORD count = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (count == 0) { return {}; }
+        if (count < buffer.size())
         {
-          path[len] = '\0';
+          executable = std::wstring(buffer.data(), count);
+          break;
         }
-
-        if (len != -1)
+        buffer.resize(buffer.size() * 2);
+      }
+#elif defined(__APPLE__)
+      std::vector<char> buffer(256);
+      for (;;)
+      {
+        uint32_t size = static_cast<uint32_t>(buffer.size());
+        if (_NSGetExecutablePath(buffer.data(), &size) == 0)
+        {
+          executable = buffer.data();
+          break;
+        }
+        if (size <= buffer.size()) { return {}; }
+        buffer.resize(size);
+      }
+#else
+      std::vector<char> buffer(256);
+      for (;;)
+      {
+        const ssize_t count = ::readlink("/proc/self/exe", buffer.data(), buffer.size());
+        if (count < 0) { return {}; }
+        if (static_cast<Size>(count) < buffer.size())
+        {
+          executable = std::string(buffer.data(), static_cast<Size>(count));
+          break;
+        }
+        buffer.resize(buffer.size() * 2);
+      }
 #endif
-        {
-          rpath = File::path(std::string(path));
-          if (File::exists(rpath)) // check if directory exists
-          {
-            // ensure path ends with a "/", such that we can just write path + "ToolX", and to not worry about if its empty or a path.
-            StringUtils::ensureLastChar(rpath, '/');
-          }
-          else
-          {
-            std::cerr << "Path '" << rpath << "' extracted from Executable Path '" << path << "' does not exist! Returning empty string!\n";
-            rpath = "";
-          }
-        } else {
-          std::cerr << "Cannot get Executable Path! Not using a path prefix!\n";
-        }
-
-        return rpath;
+      std::error_code error;
+      const auto directory = executable.parent_path();
+      if (!fs::is_directory(directory, error)) { return {}; }
+      const auto utf8 = directory.generic_u8string();
+      std::string result(reinterpret_cast<const char*>(utf8.data()), utf8.size());
+      StringUtils::ensureLastChar(result, '/');
+      return result;
     }();
     return spath;
   }
@@ -772,22 +783,18 @@ namespace OpenMS{
       // make its a proper path:
       StringUtils::substitute(path, "\\", "/"); StringUtils::ensureLastChar(path, '/'); path = StringUtils::chop(path, 1);
 
-      if (!path_checked) // - now we're in big trouble as './share' is not were its supposed to be...
-      { // - do NOT use OPENMS_LOG_ERROR or similar for the messages below! (it might not even usable at this point)
-        std::cerr << "OpenMS FATAL ERROR!\n  Cannot find shared data! OpenMS cannot function without it!\n";
+      if (!path_checked)
+      {
+        // Logging singletons may themselves need data: construct the diagnostic locally.
+        std::ostringstream diagnostic;
+        diagnostic << "OpenMS FATAL ERROR!\n  Cannot find shared data! OpenMS cannot function without it!\n";
         if (from_env)
         {
-          std::string p = getenv("OPENMS_DATA_PATH");
-          std::cerr << "  The environment variable 'OPENMS_DATA_PATH' currently points to '" << p << "', which is incorrect!\n";
+          diagnostic << "  The environment variable 'OPENMS_DATA_PATH' currently points to '"
+                     << getenv("OPENMS_DATA_PATH") << "', which is incorrect!\n";
         }
-  #ifdef OPENMS_WINDOWSPLATFORM
-        std::string share_dir = R"(c:\Program Files\OpenMS\share\OpenMS)";
-  #else
-        std::string share_dir = "/usr/share/OpenMS";
-  #endif
-        std::cerr << "  To resolve this, set the environment variable 'OPENMS_DATA_PATH' to the OpenMS share directory (e.g., '" + share_dir + "').\n";
-        std::cerr << "Exiting now.\n";
-        exit(1);
+        diagnostic << "  To resolve this, set the environment variable 'OPENMS_DATA_PATH' to the OpenMS share directory.\n";
+        throw Exception::FileNotFound(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, path, diagnostic.str());
       }
       return OpenMSDataPath_{path, found_path_from};
     }();

@@ -15,6 +15,7 @@
 #include <OpenMS/DATASTRUCTURES/ListUtils.h>
 #include <OpenMS/FORMAT/ParamXMLFile.h>
 #include <OpenMS/FORMAT/MzMLFile.h>
+#include <memory>
 
 ///////////////////////////
 
@@ -26,12 +27,12 @@ START_TEST(FLASHDeconvAlgorithm, "$Id$")
 using namespace OpenMS;
 using namespace std;
 
-FLASHDeconvAlgorithm* ptr = nullptr;
+std::unique_ptr<FLASHDeconvAlgorithm> ptr;
 FLASHDeconvAlgorithm* null_ptr = nullptr;
 
 START_SECTION(FLASHDeconvAlgorithm())
-  ptr = new FLASHDeconvAlgorithm();
-  TEST_NOT_EQUAL(ptr, null_ptr)
+  ptr = std::make_unique<FLASHDeconvAlgorithm>();
+  TEST_NOT_EQUAL(ptr.get(), null_ptr)
 END_SECTION
 
 START_SECTION(FLASHDeconvAlgorithm(const FLASHDeconvAlgorithm& source))
@@ -46,10 +47,10 @@ FLASHDeconvAlgorithm copy;
 END_SECTION
 
 START_SECTION(~FLASHDeconvAlgorithm())
-  delete ptr;
+  ptr.reset();
 END_SECTION
 
-ptr = new FLASHDeconvAlgorithm();
+ptr = std::make_unique<FLASHDeconvAlgorithm>();
 START_SECTION(FLASHDeconvAlgorithm(FLASHDeconvAlgorithm&& source))
   FLASHDeconvAlgorithm temp;
   temp.setParameters(ptr->getParameters());
@@ -68,7 +69,7 @@ END_SECTION
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 
-ptr = new FLASHDeconvAlgorithm();
+ptr = std::make_unique<FLASHDeconvAlgorithm>();
 Param params;
 START_SECTION(std::vector<double> getTolerances())
   params.setValue("SD:tol", ListUtils::create<double>("10.0,5.0"));
@@ -112,8 +113,8 @@ END_SECTION
 
 // Decoy Averagine needs to be handled differently if FDR is reported
 START_SECTION(FLASHHelperClasses::PrecalculatedAveragine getDecoyAveragine())
-  params.setValue("FD:report_FD", true);
-  ptr = new FLASHDeconvAlgorithm();  
+  params.setValue("report_FDR", "true");
+  ptr = std::make_unique<FLASHDeconvAlgorithm>();
   ptr->setParameters(params);
   ptr->run(input, deconvolved_spectra, deconvolved_features);
   TEST_NOT_EQUAL(ptr->getDecoyAveragine().getMaxIsotopeIndex(), 0);
@@ -137,10 +138,10 @@ std::vector<DeconvolvedSpectrum> default_spectra;
 std::vector<FLASHHelperClasses::MassFeature> default_features;
 algo_default.run(input, default_spectra, default_features);
 
-// FDR-reporting result (report_FD = true)
+// FDR-reporting result (report_FDR = true)
 FLASHDeconvAlgorithm algo_fdr;
 Param algo_fdr_params;
-algo_fdr_params.setValue("FD:report_FD", "true");
+algo_fdr_params.setValue("report_FDR", "true");
 algo_fdr.setParameters(algo_fdr_params);
 std::vector<DeconvolvedSpectrum> fdr_spectra;
 std::vector<FLASHHelperClasses::MassFeature> fdr_features;
@@ -216,19 +217,19 @@ START_SECTION(Spectrum merging - merging method parameter validation)
   Param merge_params;
 
   // Test merging_method = 0 (no merging)
-  merge_params.setValue("FD:merging_method", 0);
+  merge_params.setValue("merging_method", 0);
   algo.setParameters(merge_params);
-  TEST_EQUAL(algo.getParameters().exists("FD:merging_method"), true)
+  TEST_EQUAL(static_cast<int>(algo.getParameters().getValue("merging_method")), 0)
 
   // Test merging_method = 1 (Gaussian)
-  merge_params.setValue("FD:merging_method", 1);
+  merge_params.setValue("merging_method", 1);
   algo.setParameters(merge_params);
-  TEST_EQUAL(algo.getParameters().exists("FD:merging_method"), true)
+  TEST_EQUAL(static_cast<int>(algo.getParameters().getValue("merging_method")), 1)
 
   // Test merging_method = 2 (block)
-  merge_params.setValue("FD:merging_method", 2);
+  merge_params.setValue("merging_method", 2);
   algo.setParameters(merge_params);
-  TEST_EQUAL(algo.getParameters().exists("FD:merging_method"), true)
+  TEST_EQUAL(static_cast<int>(algo.getParameters().getValue("merging_method")), 2)
 END_SECTION
 
 START_SECTION(Spectrum merging - effect on output with no merging)
@@ -240,17 +241,42 @@ END_SECTION
 START_SECTION(Spectrum merging - Gaussian merging mode)
   FLASHDeconvAlgorithm algo_gaussian;
   Param gaussian_params;
-  gaussian_params.setValue("FD:merging_method", 1);
+  gaussian_params.setValue("merging_method", 1);
   algo_gaussian.setParameters(gaussian_params);
 
   std::vector<DeconvolvedSpectrum> gaussian_spectra;
   std::vector<FLASHHelperClasses::MassFeature> gaussian_features;
 
-  algo_gaussian.run(input, gaussian_spectra, gaussian_features);
+  // Merging mutates its input; preserve the shared fixture for subsequent modes.
+  PeakMap gaussian_input = input;
+  algo_gaussian.run(gaussian_input, gaussian_spectra, gaussian_features);
+  TEST_FALSE(gaussian_spectra.empty())
+  TEST_TRUE(gaussian_input.getSpectra() != input.getSpectra())
+END_SECTION
 
-  // With Gaussian merging, we should have some output
-  // (exact count depends on merging parameters)
-  TEST_NOT_EQUAL(gaussian_spectra.size(), 0)
+START_SECTION(Spectrum merging - block mode combines MS1 scans)
+  PeakMap block_input;
+  for (const auto& spectrum : input)
+  {
+    if (spectrum.getMSLevel() == 1 && !spectrum.empty())
+    {
+      block_input.push_back(spectrum);
+      block_input.push_back(spectrum);
+      block_input.back().setRT(spectrum.getRT() + 1.0);
+      block_input.back().setNativeID("scan=999999");
+      break;
+    }
+  }
+  TEST_EQUAL(block_input.size(), 2)
+  FLASHDeconvAlgorithm block_algorithm;
+  Param block_parameters;
+  block_parameters.setValue("merging_method", 2);
+  block_algorithm.setParameters(block_parameters);
+  std::vector<DeconvolvedSpectrum> block_spectra;
+  std::vector<FLASHHelperClasses::MassFeature> block_features;
+  block_algorithm.run(block_input, block_spectra, block_features);
+  TEST_EQUAL(block_input.size(), 1)
+  TEST_EQUAL(block_spectra.size(), 1)
 END_SECTION
 
 /////////////////////////////////////////////////////////////
@@ -266,6 +292,26 @@ START_SECTION(FDR - report_FDR parameter toggling)
   auto& decoy_avg_fdr = algo_fdr.getDecoyAveragine();
   TEST_NOT_EQUAL(decoy_avg_fdr.getMaxIsotopeIndex(), 0)
   TEST_FALSE(decoy_avg_fdr.get(500.0).getContainer().empty())
+  TEST_EQUAL(&algo_default.getAveragine(), &decoy_avg_no_fdr)
+  TEST_NOT_EQUAL(&algo_fdr.getAveragine(), &decoy_avg_fdr)
+  Size default_decoys = 0;
+  Size reported_decoys = 0;
+  for (const auto& spectrum : default_spectra)
+  {
+    for (const auto& peak_group : spectrum)
+    {
+      default_decoys += peak_group.getTargetDecoyType() != PeakGroup::target;
+    }
+  }
+  for (const auto& spectrum : fdr_spectra)
+  {
+    for (const auto& peak_group : spectrum)
+    {
+      reported_decoys += peak_group.getTargetDecoyType() != PeakGroup::target;
+    }
+  }
+  TEST_EQUAL(default_decoys, 0)
+  TEST_TRUE(reported_decoys > 0)
 END_SECTION
 
 START_SECTION(FDR - noise decoy weight validation)
@@ -294,7 +340,7 @@ START_SECTION(FDR - decoy generation consistency)
   // shared algo_fdr run (regression guard for deterministic decoy generation).
   FLASHDeconvAlgorithm algo2;
   Param fdr_params;
-  fdr_params.setValue("FD:report_FD", "true");
+  fdr_params.setValue("report_FDR", "true");
   algo2.setParameters(fdr_params);
 
   std::vector<DeconvolvedSpectrum> spectra2;

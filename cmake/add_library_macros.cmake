@@ -140,6 +140,9 @@ function(openms_add_library)
   target_include_directories(${openms_add_library_TARGET_NAME} SYSTEM PRIVATE ${openms_add_library_PRIVATE_INCLUDES})
   
   target_compile_features(${openms_add_library_TARGET_NAME} PUBLIC cxx_std_23)
+  if(OPENMS_STL_DEBUG_ENABLED)
+    target_compile_definitions(${openms_add_library_TARGET_NAME} PUBLIC "$<$<CONFIG:Debug>:_GLIBCXX_DEBUG>")
+  endif()
 
   # Add compiler flags using the new helper function
   openms_add_library_compiler_flags(${openms_add_library_TARGET_NAME})

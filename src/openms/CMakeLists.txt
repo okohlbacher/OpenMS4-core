@@ -366,10 +366,9 @@ if(WITH_WNETALIGN)
   target_compile_definitions(OpenMS PRIVATE LEMON_ONLY_TEMPLATES OPENMS_HAS_WNETALIGN)
 endif()
 
-## Enable test-only hooks when class tests are being built.
-if(ENABLE_CLASS_TESTING)
-  target_compile_definitions(OpenMS PRIVATE OPENMS_ENABLE_TESTING_HOOKS=1)
-endif()
+# Build identity is generated for the selected configuration, including multi-config builds.
+target_include_directories(OpenMS PRIVATE "${OPENMS_HOST_BINARY_DIRECTORY}/identity/$<CONFIG>")
+add_dependencies(OpenMS openms_source_identity)
 
 #------------------------------------------------------------------------------
 # since the share basically belongs to OpenMS core we control its installation

@@ -142,7 +142,7 @@ the authors tag in the respective file header.
 Experimental Core SDK extraction
 --------------------------------
 Oliver Kohlbacher directed this private OpenMS 4 package experiment. Refactoring,
-build/test preparation and documentation were developed with AI assistance from
+build/test preparation, review-driven SDK fixes and documentation were developed with AI assistance from
 Codex. Claude Fable 5.1, Kimi and Vibe CLI reviews informed the decomposition plan.
 The upstream author list and per-file attribution above remain unchanged; AI tools
 are recorded as assistance, not as additional human contributors.

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // $Maintainer: OpenMS Team $
 #include <OpenMS/SYSTEM/File.h>
+#include <OpenMS/CONCEPT/Exception.h>
 #include <filesystem>
 #include <iostream>
 #if defined(_WIN32)
@@ -10,7 +11,7 @@
   #include <dlfcn.h>
 #endif
 
-int main(int argc, char** argv)
+int main(int argc, char** argv) try
 {
   if (argc != 3) { return 2; }
   const auto expected_data = std::filesystem::canonical(argv[1]);
@@ -47,4 +48,10 @@ int main(int argc, char** argv)
     return 5;
   }
   return 0;
+}
+
+catch (const OpenMS::Exception::FileNotFound& error)
+{
+  std::cerr << error.getMessage() << "\nExiting now.\n";
+  return 1;
 }

@@ -237,7 +237,10 @@ public:
 
       An explicit OPENMS_DATA_PATH environment variable takes precedence and must
       identify a valid directory. Otherwise the loaded library and executable are
-      probed before compiled-in developer paths. The result is cached on first use.
+      probed before compiled-in developer paths. Successful resolution is cached.
+      Failed resolution can be retried after correcting the environment.
+
+      @throws Exception::FileNotFound if the override or all candidate data paths are invalid.
     */
     static std::string getOpenMSDataPath();
 
@@ -245,6 +248,7 @@ public:
       @brief Returns a human-readable description of where getOpenMSDataPath() resolved from
 
       (e.g. "exe-relative (../share/OpenMS)"). Useful for diagnostics.
+      @throws Exception::FileNotFound if no valid runtime data directory can be resolved.
     */
     static const std::string& getOpenMSDataPathSource();
 

@@ -50,7 +50,7 @@ superproject; version and source commit alone do not establish ABI compatibility
 Metadata includes `OpenMS_VERSION`, full `OpenMS_SOURCE_REVISION`,
 `OpenMS_CXX_STANDARD`, `OpenMS_CXX_COMPILER_ID`, `OpenMS_CXX_COMPILER_VERSION`,
 `OpenMS_BUILD_TYPE`, `OpenMS_SHARED_LIBS`, `OpenMS_ADDCXX_FLAGS`,
-`OpenMS_TESTING_HOOKS`, and `OpenMS_WITH_*` feature settings. Consumer variables such
+`OpenMS_CLASS_TESTING_ENABLED`, `OpenMS_SOURCE_DIRTY`, `OpenMS_BUILD_INFO_FILE`, and `OpenMS_WITH_*` feature settings. Consumer variables such
 as `WITH_GUI`, `WITH_HDF5`, and `BUILD_TOPP_TOOLS` are left untouched.
 
 A package Git checkout records its own full HEAD. Source archive builders must
@@ -79,7 +79,7 @@ An explicit `OPENMS_DATA_PATH` is authoritative and an invalid override fails.
 Otherwise the loaded core library determines the versioned data location before
 executable-relative and compiled-in developer fallbacks. This enables Python and
 executables installed in separate prefixes to use the SDK's data after relocation.
-The value is cached on first use. Installed RPATH defaults are library-relative and
+Successful resolution is cached. Failure throws `Exception::FileNotFound` with the diagnostic; correcting the override permits retry. Executables and bindings own their error-reporting boundary. Installed RPATH defaults are library-relative and
 do not include the build directory. Product executable discovery remains in CLI.
 
 ## Portable build profile
@@ -136,7 +136,41 @@ The SDK also installs `OpenMSDataConfig.cmake` under `lib/cmake/OpenMSData`.
 `find_package(OpenMSData 4.0.0 EXACT CONFIG REQUIRED COMPONENTS TestSupport)` exposes
 core version/revision, runtime/test-data directories, and feature metadata without
 loading native dependencies or enabling a compiler language. Requiring TestSupport
-fails if the class-fixture directory is absent. This supports fixture-only and
+fails if the `MSPGenericFile_input.msp` fixture sentinel is absent, including an empty fixture directory. This supports fixture-only and
 suite acceptance harnesses; compiled consumers continue to use `OpenMS` targets.
 Its mock metadata test checks relocation with OpenMP recorded as enabled and
 missing/present optional fixture components, without discovering native libraries.
+
+## Adversarial-review implementation
+
+Runtime `VersionInfo::getSourceRevision()`, `isSourceDirty()` and `getBuildInfo()`
+expose full source identity and the exact installed `OpenMSBuildInfo.json` text.
+The JSON records the selected configuration, compiler, architecture, C++ standard,
+shared/static mode, actual standard-library and runtime ABI, features and discovered
+dependency versions. `getVersion()`, `getVersionStruct()` and `getTime()` use
+thread-safe local static initialization. A fresh-process concurrent probe compares
+the runtime identity with generated/installed metadata.
+
+Git dirtiness includes staged, unstaged and non-ignored untracked inputs; clean
+release enforcement is opt-in through `OPENMS_REQUIRE_CLEAN_SOURCE`. Archives must
+explicitly assert revision and dirty state. A pre-build guard rejects source
+identity changes since configuration. It does not attest unchanged dirty contents;
+clean builds are required for reproducible publication.
+
+Repeated SDK discovery skips already-imported native dependencies while still
+processing newly requested components. Both SDK configurations validate the fixture
+sentinel. TestFramework exposes its installed TestSupport include directory, making
+`OpenMS/TestFileValidation.h` available through the target. The obsolete class-test
+hook macro was removed; class testing is recorded as metadata only.
+
+Executable path discovery grows native buffers and preserves UTF-8. GCC Debug STL
+mode uses `-D_GLIBCXX_DEBUG` and propagates the public ABI requirement to SDK and test
+framework consumers. FLASHDeconv tests use the actual FDR/merging parameters and
+assert decoy and merged-spectrum outcomes; native results belong in the validation
+report, not an inference from source checks.
+
+Unreachable suite packaging, KNIME, CWL/documentation orchestration and two
+monorepo version-editing scripts were removed (1,697 lines, retained in the
+superproject legacy tree). Desktop now owns GUISTYLE and DESKTOP resources. Its
+embedded stylesheet resource passed an independent native relocation probe;
+full desktop application validation remains a separate product responsibility.

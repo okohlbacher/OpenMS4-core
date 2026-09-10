@@ -249,19 +249,10 @@ endif()
 set(OPENMS_PACKAGE_VERSION_FULLSTRING "${OPENMS_PACKAGE_VERSION}")
 set(OPENMS_PACKAGE_VERSION_PRERELEASE_IDENTIFIER "experimental")
 set(OPENMS_SOURCE_REVISION "" CACHE STRING "Exact 40-character package source revision for archive builds")
-if(NOT OPENMS_SOURCE_REVISION AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
-  find_package(Git QUIET)
-  if(GIT_FOUND)
-    execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse HEAD
-      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-      OUTPUT_VARIABLE OPENMS_SOURCE_REVISION OUTPUT_STRIP_TRAILING_WHITESPACE
-      RESULT_VARIABLE _openms_revision_result)
-  endif()
-endif()
-string(LENGTH "${OPENMS_SOURCE_REVISION}" _openms_revision_length)
-if(NOT _openms_revision_length EQUAL 40 OR OPENMS_SOURCE_REVISION MATCHES "[^0-9a-fA-F]")
-  message(FATAL_ERROR "Provide OPENMS_SOURCE_REVISION as the exact package commit when building a source archive.")
-endif()
+set(OPENMS_SOURCE_DIRTY "" CACHE STRING "Explicit ON/OFF source cleanliness assertion for archives")
+option(OPENMS_REQUIRE_CLEAN_SOURCE "Reject source changes, including non-ignored untracked files" OFF)
+include(cmake/OpenMSSourceIdentity.cmake)
+openms_source_identity("${CMAKE_CURRENT_SOURCE_DIR}" OPENMS_SOURCE_REVISION OPENMS_SOURCE_DIRTY)
 
 #------------------------------------------------------------------------------
 # Unsupported systems
@@ -484,10 +475,6 @@ endif()
 #------------------------------------------------------------------------------
 # The actual OpenMS code (headers and source files)
 #------------------------------------------------------------------------------
-add_subdirectory(src)
-
-#------------------------------------------------------------------------------
-# Install the namespaced core SDK. No product sources are added here.
 set(OPENMS_WITH_OPENSWATH ON)
 if(DISABLE_OPENSWATH)
   set(OPENMS_WITH_OPENSWATH OFF)
@@ -495,6 +482,11 @@ endif()
 if(NOT Boost_VERSION_STRING)
   set(Boost_VERSION_STRING "${Boost_VERSION}")
 endif()
+include(cmake/OpenMSRuntimeABI.cmake)
+include(cmake/OpenMSBuildInfo.cmake)
+add_subdirectory(src)
+
+# Install the namespaced Core SDK, without product sources.
 openms_export_targets()
 install_export_targets()
 message(STATUS "Configured OpenMS core SDK ${OPENMS_PACKAGE_VERSION} at ${OPENMS_SOURCE_REVISION}")

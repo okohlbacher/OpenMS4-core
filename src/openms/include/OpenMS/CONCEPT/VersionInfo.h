@@ -142,6 +142,26 @@ public:
     */
     static std::string getRevision();
 
+    /** @brief Return the full 40-character source commit recorded in this binary. */
+    static std::string getSourceRevision();
+
+    /**
+      @brief Whether the source tree differed from the recorded commit when configured.
+
+      Includes non-ignored untracked files. Source archives require an explicit cleanliness assertion. This flag does not
+      attest the integrity of dependencies or identify individual uncommitted edits.
+    */
+    static bool isSourceDirty();
+
+    /**
+      @brief Return JSON build identity from the loaded library (schema version 1).
+
+      Includes source identity, actual build configuration, compiler/platform,
+      public dependency versions/linkage and compiled feature choices. It contains
+      no build-machine paths and is not a substitute for artifact hashes.
+    */
+    static std::string getBuildInfo();
+
     /**
       @brief Return the branch name from revision control system, e.g. git.
 

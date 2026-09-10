@@ -126,9 +126,39 @@ endforeach()
     def test_optional_test_support_component(self):
         shutil.copyfile(ROOT / "cmake/OpenMSTestSupportConfig.cmake.in", self.config / "OpenMSTestSupportConfig.cmake")
         (self.config / "OpenMSTestSupportTargets.cmake").write_text("add_library(OpenMS::TestFramework INTERFACE IMPORTED)\n")
+        fixture_dir = self.prefix / "share/OpenMS/4.0.0/test-data/core"
+        fixture_dir.mkdir(parents=True)
+        result = self._consumer(components="Core TestSupport")
+        self.assertNotEqual(result.returncode, 0, "Empty fixtures must be rejected")
+        self.assertIn("MSPGenericFile_input.msp", result.stdout)
+        (fixture_dir / "MSPGenericFile_input.msp").write_text("fixture sentinel\n")
         result = self._consumer('''if(NOT TARGET OpenMS::TestFramework OR NOT OpenMS_TEST_DATA_DIR STREQUAL "${OpenMS_DATA_DIR}/test-data/core")
 message(FATAL_ERROR "Test support contract missing")
 endif()''', components="Core TestSupport")
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_repeated_find_can_add_test_support_without_rediscovering_dependencies(self):
+        # Model a native package whose imported-tool declaration cannot run twice.
+        dependency = self.dependencies / "CURL/CURLConfig.cmake"
+        dependency.write_text(dependency.read_text() + '''
+get_property(seen GLOBAL PROPERTY CURL_ALREADY_IMPORTED)
+if(seen)
+  message(FATAL_ERROR "CURL dependency was rediscovered")
+endif()
+set_property(GLOBAL PROPERTY CURL_ALREADY_IMPORTED TRUE)
+''')
+        shutil.copyfile(ROOT / "cmake/OpenMSTestSupportConfig.cmake.in", self.config / "OpenMSTestSupportConfig.cmake")
+        (self.config / "OpenMSTestSupportTargets.cmake").write_text("add_library(OpenMS::TestFramework INTERFACE IMPORTED)\n")
+        fixture_dir = self.prefix / "share/OpenMS/4.0.0/test-data/core"
+        fixture_dir.mkdir(parents=True)
+        (fixture_dir / "MSPGenericFile_input.msp").write_text("sentinel\n")
+        result = self._consumer('''
+find_package(OpenMS 4.0.0 EXACT REQUIRED CONFIG COMPONENTS TestSupport)
+find_package(OpenMS 4.0.0 EXACT REQUIRED CONFIG COMPONENTS TestSupport)
+if(NOT OpenMS_TestSupport_FOUND OR NOT TARGET OpenMS::TestFramework)
+  message(FATAL_ERROR "Repeated discovery failed to load requested component")
+endif()
+''')
         self.assertEqual(result.returncode, 0, result.stdout)
 
     def test_wrong_core_version_is_rejected(self):
@@ -242,6 +272,10 @@ endif()
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0, "Missing test fixtures must be rejected")
             (relocated / "share/OpenMS/4.0.0/test-data/core").mkdir(parents=True)
+            result = subprocess.run(arguments + ["-DREQUEST_COMPONENTS=COMPONENTS;TestSupport"],
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0, "Empty fixtures must be rejected")
+            (relocated / "share/OpenMS/4.0.0/test-data/core/MSPGenericFile_input.msp").write_text("fixture sentinel\n")
             result = subprocess.run(arguments + ["-DREQUEST_COMPONENTS=COMPONENTS;TestSupport"],
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

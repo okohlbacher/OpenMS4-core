@@ -36,6 +36,12 @@ if(CMAKE_BUILD_TYPE AND OpenMS_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES AND
   message(FATAL_ERROR "Match the SDK build type ${OpenMS_BUILD_TYPE}; do not mix binary configurations.")
 endif()
 
+find_package(Threads REQUIRED)
+add_executable(sdk_identity identity.cpp)
+target_link_libraries(sdk_identity PRIVATE OpenMS::Core Threads::Threads)
+add_test(NAME sdk_runtime_identity COMMAND sdk_identity "${OpenMS_BUILD_INFO_FILE}"
+  "${OpenMS_SOURCE_REVISION}" "$<BOOL:${OpenMS_SOURCE_DIRTY}>")
+
 foreach(probe IN ITEMS api eigen arrow data)
   add_executable(sdk_${probe} ${probe}.cpp)
   # Eigen and Arrow are deliberately not rediscovered or linked separately.

@@ -9,14 +9,11 @@
 #------------------------------------------------------------------------------
 # This cmake file enables the STL debug mode
 
-if (CMAKE_COMPILER_IS_GNUCXX)
-	if ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
-		# add compiler flag
-  	add_compile_options(/D_GLIBCXX_DEBUG)
-  	message(STATUS "STL debug mode: ${STL_DEBUG}")
-  else()
-    message(WARNING "STL debug mode is supported for OpenMS debug mode only")
-  endif()
+set(OPENMS_STL_DEBUG_ENABLED OFF)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  # PUBLIC target propagation is added on OpenMS; internal targets share the mode.
+  add_compile_definitions("$<$<CONFIG:Debug>:_GLIBCXX_DEBUG>")
+  set(OPENMS_STL_DEBUG_ENABLED ON)
 else()
-  message(WARNING "STL debug mode is supported for compiler GCC only")
+  message(FATAL_ERROR "STL_DEBUG requires GCC and libstdc++; disable it with other compilers")
 endif()

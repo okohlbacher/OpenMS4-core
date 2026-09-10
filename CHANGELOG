@@ -29,6 +29,18 @@ Core SDK boundary:
   - Resolve runtime data relative to the loaded Core library, with an explicit
     OPENMS_DATA_PATH override taking precedence and invalid overrides failing clearly.
 
+Review-driven SDK fixes:
+  - Expose full loaded source revision, dirty state and matching installed/runtime
+    build JSON with compiler/runtime ABI; make VersionInfo initialization thread-safe.
+  - Guard stale source identity and optionally require a clean checkout, including
+    non-ignored untracked inputs; archives require explicit provenance assertions.
+  - Make repeated package discovery idempotent and reject missing fixture sentinels.
+    Export TestFileValidation.h through TestSupport's include interface.
+  - Make data discovery failures catchable/retryable, grow executable path buffers,
+    propagate GCC STL-debug ABI flags, and verify real FLASH FDR/merging outcomes.
+  - Remove unreachable monorepo release/build modules and transfer desktop-owned
+    stylesheet and integration metadata to the desktop package.
+
 Build and tests:
   - Add the core-debug profile for a shared Debug SDK and scientific class tests using
     installed dependencies; optional reader/model/alignment integrations remain opt-in.
