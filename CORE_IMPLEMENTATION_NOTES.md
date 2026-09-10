@@ -71,7 +71,7 @@ do not include the build directory. Product executable discovery remains in CLI.
 
 ## Validation performed without building OpenMS
 
-`python3 -m unittest discover -s tests/sdk_contract -v` passed **9 tests**:
+`python3 -m unittest discover -s tests/sdk_contract -v` passed **10 tests**:
 source/header and class-test registration closure; no core-to-CLI includes; local
 fixture closure; mock installed-SDK discovery with preserved consumer options;
 optional/missing TestSupport; rejection of wrong core/Arrow versions; and rejection
@@ -102,3 +102,14 @@ compiled core. Existing CTD/CWL round-trip tests cover serializer compatibility.
 
 Full project configuration, compilation, and binary tests remain intentionally
 unperformed under the repository's explicit no-build constraint.
+
+## Compiler-free data metadata
+
+The SDK also installs `OpenMSDataConfig.cmake` under `lib/cmake/OpenMSData`.
+`find_package(OpenMSData 4.0.0 EXACT CONFIG REQUIRED COMPONENTS TestSupport)` exposes
+core version/revision, runtime/test-data directories, and feature metadata without
+loading native dependencies or enabling a compiler language. Requiring TestSupport
+fails if the class-fixture directory is absent. This supports fixture-only and
+suite acceptance harnesses; compiled consumers continue to use `OpenMS` targets.
+The metadata relocation/native-independence regression check passed with OpenMP
+recorded as enabled, and checks missing/present optional fixture components.

@@ -31,6 +31,20 @@ macro(openms_export_targets )
     PATH_VARS INSTALL_SHARE_DIR INSTALL_LIB_DIR INSTALL_DOC_DIR INSTALL_BIN_DIR
   )
 
+  # Data-only consumers must not initialize compiler or native dependency discovery.
+  set(_openms_data_config_dir "lib/cmake/OpenMSData")
+  configure_package_config_file(
+    "${OPENMS_HOST_DIRECTORY}/cmake/OpenMSDataConfig.cmake.in"
+    "${PROJECT_BINARY_DIR}/OpenMSDataConfig.cmake"
+    INSTALL_DESTINATION ${_openms_data_config_dir}
+    PATH_VARS INSTALL_SHARE_DIR)
+  write_basic_package_version_file(
+    "${PROJECT_BINARY_DIR}/OpenMSDataConfigVersion.cmake"
+    VERSION ${OPENMS_PACKAGE_VERSION} COMPATIBILITY ExactVersion ARCH_INDEPENDENT)
+  install(FILES "${PROJECT_BINARY_DIR}/OpenMSDataConfig.cmake"
+                "${PROJECT_BINARY_DIR}/OpenMSDataConfigVersion.cmake"
+    DESTINATION ${_openms_data_config_dir} COMPONENT cmake)
+
   # write OpenMSConfigVersion.cmake
   write_basic_package_version_file(
     "${PROJECT_BINARY_DIR}/OpenMSConfigVersion.cmake"

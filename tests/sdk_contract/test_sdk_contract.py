@@ -191,5 +191,61 @@ endforeach()
             self.assertEqual(result.returncode, 0, result.stdout)
 
 
+@unittest.skipUnless(CMAKE, "CMake is required for data metadata tests")
+class DataMetadataTests(unittest.TestCase):
+    def test_relocated_metadata_needs_no_native_dependencies(self):
+        with tempfile.TemporaryDirectory(prefix="openms-data-metadata-") as temporary:
+            directory = Path(temporary)
+            original = directory / "original"
+            config = original / "lib/cmake/OpenMSData"
+            config.mkdir(parents=True)
+            data = original / "share/OpenMS/4.0.0"
+            data.mkdir(parents=True)
+            script = directory / "generate.cmake"
+            script.write_text(f'''include(CMakePackageConfigHelpers)
+set(CMAKE_INSTALL_PREFIX "{original}")
+set(INSTALL_SHARE_DIR "share/OpenMS/4.0.0")
+set(OPENMS_PACKAGE_VERSION "4.0.0")
+set(OPENMS_SOURCE_REVISION "{'b' * 40}")
+set(OPENMP_FOUND ON)
+set(OPENMS_WITH_OPENSWATH ON)
+configure_package_config_file("{ROOT}/cmake/OpenMSDataConfig.cmake.in"
+ "{config}/OpenMSDataConfig.cmake" INSTALL_DESTINATION lib/cmake/OpenMSData
+ PATH_VARS INSTALL_SHARE_DIR)
+write_basic_package_version_file("{config}/OpenMSDataConfigVersion.cmake"
+ VERSION 4.0.0 COMPATIBILITY ExactVersion ARCH_INDEPENDENT)
+''')
+            result = subprocess.run([CMAKE, "-P", str(script)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            relocated = directory / "relocated"
+            original.rename(relocated)
+            consumer = directory / "consumer"
+            consumer.mkdir()
+            (consumer / "CMakeLists.txt").write_text(f'''cmake_minimum_required(VERSION 3.24)
+project(DataOnly LANGUAGES NONE)
+find_package(OpenMSData 4.0.0 EXACT CONFIG REQUIRED ${{REQUEST_COMPONENTS}})
+if(NOT OpenMS_DATA_DIR STREQUAL "{relocated}/share/OpenMS/4.0.0")
+  message(FATAL_ERROR "Non-relocatable core data")
+endif()
+if(NOT OpenMSData_SOURCE_REVISION STREQUAL "{'b' * 40}" OR NOT OpenMS_WITH_OPENMP)
+  message(FATAL_ERROR "Missing core identity/features")
+endif()
+if(TARGET OpenMS::Core OR TARGET OpenMP::OpenMP_CXX)
+  message(FATAL_ERROR "Data metadata discovered native targets")
+endif()
+''')
+            arguments = [CMAKE, "-S", str(consumer), "-B", str(directory / "build"),
+                         f"-DCMAKE_PREFIX_PATH={relocated}"]
+            result = subprocess.run(arguments, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            result = subprocess.run(arguments + ["-DREQUEST_COMPONENTS=COMPONENTS;TestSupport"],
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0, "Missing test fixtures must be rejected")
+            (relocated / "share/OpenMS/4.0.0/test-data/core").mkdir(parents=True)
+            result = subprocess.run(arguments + ["-DREQUEST_COMPONENTS=COMPONENTS;TestSupport"],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
