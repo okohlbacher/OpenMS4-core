@@ -1,13 +1,23 @@
-name: Windows Arrow diagnosis
+name: Windows SDK stress diagnosis
 on:
-  push:
-    branches: ['codex/windows-arrow-diagnosis']
+  workflow_dispatch:
+    inputs:
+      sdk_run_id:
+        description: 'Native Core CI run supplying the Windows SDK archive'
+        type: string
+        required: true
 permissions:
   contents: read
+  actions: read
 jobs:
   probe:
     runs-on: windows-2022
-    timeout-minutes: 15
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      OPENMS_SDK_RUN_ID: ${{ inputs.sdk_run_id }}
+      PYTHONUTF8: '1'
+      OMP_NUM_THREADS: '1'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -21,9 +31,15 @@ jobs:
           generate-run-shell: false
           cache-environment: true
           cache-environment-key: core-windows-x64
-      - run: micromamba run -n core-ci python tools/arrow-diagnosis/run.py
+      - run: >-
+          micromamba run -n core-ci python tools/ci/run.py
+          --platform windows-x64 --jobs 4
+          --work-dir '${{ runner.temp }}/core-sdk'
       - if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
-          name: windows-arrow-diagnosis
-          path: tools/arrow-diagnosis/results.json
+          name: windows-sdk-stress
+          path: |
+            ${{ runner.temp }}/core-sdk/results/
+            ${{ runner.temp }}/core-sdk/acceptance/*.log
+            ${{ runner.temp }}/core-sdk/acceptance/results.json
