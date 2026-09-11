@@ -5,9 +5,15 @@ on:
     branches: ['**']
   pull_request:
   workflow_dispatch:
+    inputs:
+      sdk_run_id:
+        description: "Existing Core CI run: accept its SDK archives without rebuilding (optional)"
+        type: string
+        required: false
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   native:
@@ -42,6 +48,8 @@ jobs:
             packages: glpk=5.*
             jobs: 4
     env:
+      GH_TOKEN: ${{ github.token }}
+      OPENMS_SDK_RUN_ID: ${{ inputs.sdk_run_id }}
       PYTHONUTF8: '1'
       OMP_NUM_THREADS: '1'
       OPENMS_RUN_SLOW_TESTS: '1'
@@ -63,7 +71,8 @@ jobs:
           micromamba run -n core-ci python tools/ci/run.py
           --platform ${{ matrix.platform }} --jobs ${{ matrix.jobs }}
           --work-dir "${{ runner.temp }}/core-sdk"
-      - name: Upload tested SDK
+      - name: Upload SDK archive for qualification or diagnostics
+        if: always() && inputs.sdk_run_id == ''
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: sdk-${{ matrix.platform }}

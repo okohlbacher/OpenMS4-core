@@ -125,6 +125,13 @@ builds independent consumers against both the extracted and relocated SDK. The
 checks exercise public APIs, mzML/Parquet round trips, runtime data, TestSupport
 and rejection of an incorrect Core revision. Logs record test results and timings.
 
+The manual Core SDK workflow accepts an optional `sdk_run_id` to rerun installed
+and relocated consumer checks against archives from that CI run, without
+rebuilding Core. Archive checksums and source identity are checked before use.
+Windows also repeats the Parquet consumer 50 times per installation to detect
+intermittent failures. Archives retained from failed jobs are diagnostic outputs;
+only a successful full branch-push run qualifies a release.
+
 After branch CI succeeds, tags beginning with `core-v` publish its exact tested
 archives as experimental GitHub release assets. Tagging reuses those artifacts
 without rebuilding them; the release job checks the full source revision and

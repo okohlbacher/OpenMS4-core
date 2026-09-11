@@ -89,6 +89,11 @@ def main() -> None:
             environment["PATH"] = str(prefix / "bin") + os.pathsep + environment.get("PATH", "")
         run(["ctest", "--test-dir", str(build), "-C", args.configuration,
              "--output-on-failure", "--parallel", str(args.jobs)], environment=environment)
+        if os.name == "nt":
+            # The Windows Parquet probe failed intermittently after relocation.
+            run(["ctest", "--test-dir", str(build), "-C", args.configuration,
+                 "--output-on-failure", "--no-tests=error", "-R", "^sdk_arrow$", "--repeat", "until-fail:50"],
+                environment=environment)
     configure(sdk, "wrong-revision-consumer", wrong_revision=True)
     print(f"Installed SDK acceptance passed. Results: {work / 'results.json'}")
 

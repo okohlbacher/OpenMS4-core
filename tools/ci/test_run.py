@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from run import package_sdk
+from run import extract_sdk, package_sdk
 from verify_release import PLATFORMS, verify
 
 
@@ -52,6 +52,11 @@ class DeploymentArchiveTest(unittest.TestCase):
             archive = root / "dist/test-sdk.tar.gz"
             self.assertEqual(archive.with_suffix(".gz.sha256").read_text(),
                              f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  test-sdk.tar.gz\n")
+
+            archive.write_bytes(archive.read_bytes() + b"corruption")
+            with self.assertRaisesRegex(ValueError, "Checksum mismatch"):
+                extract_sdk(archive, root / "invalid")
+            self.assertFalse((root / "invalid").exists())
 
 
 if __name__ == "__main__":
