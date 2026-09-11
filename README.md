@@ -146,9 +146,15 @@ The repository also ships a source-built Homebrew formula for Apple Silicon and
 Intel macOS. Install it directly with:
 
 ```sh
+brew trust --formula okohlbacher/openms4-core/openms4-core
 brew tap okohlbacher/openms4-core https://github.com/okohlbacher/OpenMS4-core
 brew install openms4-core
 ```
+
+Trust the formula before tapping: recent Homebrew refuses to read an untrusted
+tap, so the `brew tap` itself fails if the trust step comes second. Run
+`brew update` first if the tap was added before the formula existed; a stale tap
+clone reports the formula as unavailable.
 
 CI builds the formula and its installed-package consumer test on both macOS
 architectures. Core release jobs attach the formula beside the five native SDK

@@ -2,6 +2,8 @@ class Openms4Core < Formula
   desc "Core C++ SDK for mass-spectrometry software"
   homepage "https://github.com/okohlbacher/OpenMS4-core"
   url "https://github.com/okohlbacher/OpenMS4-core/archive/refs/tags/core-v4.0.0-ci.1.tar.gz"
+  # The tag name is not a bare version, so Homebrew would otherwise detect "1".
+  version "4.0.0-ci.1"
   sha256 "7516b9ae2330a15dd3968ffd6a2028f6e407d8b44d47dcb5dcce2fe03dc1e939"
   license "BSD-3-Clause"
 
