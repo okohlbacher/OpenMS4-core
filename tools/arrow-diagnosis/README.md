@@ -23,3 +23,21 @@ The manual workflow now accepts a native Core CI run ID, verifies/downloads that
 Windows SDK, and exercises the original quiet SDK probe for 1,000 consecutive
 CTest runs at each original/relocated prefix. The first failure fails acceptance;
 this is not retry-until-success. Diagnostic runs cannot qualify a release.
+
+## File ownership reproduction (2026-09-11)
+
+The actual Core `82ce5b3` Windows SDK reproduced the original quiet probe's
+`0xc0000409` failure in run
+https://github.com/okohlbacher/OpenMS4-core/actions/runs/34571493775 : 1,000 original
+prefix runs passed, then the relocated probe failed after 478 passes. Native CI's
+instrumented probe identified the exception as an immediate file deletion blocked
+by an open handle. Using the same SDK and exact dependency packages, explicitly
+closing a caller-owned input after `ParquetFile::readTable(infile)` passed 1,000
+runs per prefix in
+https://github.com/okohlbacher/OpenMS4-core/actions/runs/34571563778 .
+
+Core commit `8497608a214903a0f4536a582e70632ee0aca783` applies explicit closure to
+the filename overload, delegates table reading to the shared-file overload, and
+adds deletion, caller ownership and read-error cleanup regressions. The quiet
+original probe is restored here to validate the resulting Windows SDK archive;
+this diagnostic branch still does not qualify a release by itself.
