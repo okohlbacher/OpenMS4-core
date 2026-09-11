@@ -1,3 +1,4 @@
+#include "reader.h"
 #include <arrow/api.h>
 #include <arrow/io/file.h>
 #include <arrow/io/api.h>
@@ -45,19 +46,7 @@ void trace()
   }
 #endif
 }
-std::shared_ptr<arrow::Table> read(const std::string& file, bool prebuffer)
-{
-  auto input = arrow::io::ReadableFile::Open(file).ValueOrDie();
-  parquet::arrow::FileReaderBuilder builder;
-  check(builder.Open(input));
-  parquet::ArrowReaderProperties properties;
-  properties.set_pre_buffer(prebuffer);
-  builder.properties(properties);
-  auto reader = builder.Build().ValueOrDie();
-  std::shared_ptr<arrow::Table> table;
-  check(reader->ReadTable(&table));
-  return table;
-}
+
 int main(int argc, char** argv)
 {
   std::set_terminate([] { std::cerr << "TERMINATE at " << current_stage << '\n' << std::flush; trace(); std::abort(); });
