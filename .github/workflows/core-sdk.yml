@@ -113,5 +113,6 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: '1'
           HOMEBREW_NO_INSTALL_CLEANUP: '1'
         run: |
-          brew install --formula --build-from-source ./packaging/homebrew/Formula/openms4-core.rb
-          brew test openms4-core
+          brew tap okohlbacher/openms4-core https://github.com/okohlbacher/OpenMS4-core
+          brew install --formula --build-from-source okohlbacher/openms4-core/openms4-core
+          brew test okohlbacher/openms4-core/openms4-core

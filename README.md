@@ -146,7 +146,8 @@ The repository also ships a source-built Homebrew formula for Apple Silicon and
 Intel macOS. Install it directly with:
 
 ```sh
-brew install --formula https://raw.githubusercontent.com/okohlbacher/OpenMS4-core/codex/package-split/packaging/homebrew/Formula/openms4-core.rb
+brew tap okohlbacher/openms4-core https://github.com/okohlbacher/OpenMS4-core
+brew install openms4-core
 ```
 
 CI builds the formula and its installed-package consumer test on both macOS
