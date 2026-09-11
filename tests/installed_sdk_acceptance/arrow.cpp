@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // $Maintainer: OpenMS Team $
 #include <OpenMS/FORMAT/ParquetFile.h>
+#include <arrow/io/file.h>
 #include <filesystem>
 
 int main()
@@ -13,7 +14,9 @@ int main()
   const auto table = arrow::Table::Make(arrow::schema({arrow::field("mz", arrow::float64())}), {array});
   const std::string filename = "sdk-roundtrip.parquet";
   OpenMS::ParquetFile::writeTable(table, filename);
-  const auto restored = OpenMS::ParquetFile::readTable(filename);
+  const auto infile = arrow::io::ReadableFile::Open(filename).ValueOrDie();
+  const auto restored = OpenMS::ParquetFile::readTable(infile);
+  OpenMS::ParquetFile::appendOrThrow(infile->Close(), "input file");
   const auto rows = OpenMS::ParquetFile::rowCount(filename);
   std::filesystem::remove(filename);
   if (rows != 2 || restored->num_columns() != 1) { return 1; }
