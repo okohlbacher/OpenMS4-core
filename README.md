@@ -128,7 +128,7 @@ and rejection of an incorrect Core revision. Logs record test results and timing
 The manual Core SDK workflow accepts an optional `sdk_run_id` to rerun installed
 and relocated consumer checks against archives from that CI run, without
 rebuilding Core. Archive checksums and source identity are checked before use.
-Windows also repeats the Parquet consumer 50 times per installation to detect
+Windows also repeats the Parquet consumer 1,000 times per installation to detect
 intermittent failures. Archives retained from failed jobs are diagnostic outputs;
 only a successful full branch-push run qualifies a release.
 

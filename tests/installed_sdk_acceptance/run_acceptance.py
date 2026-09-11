@@ -90,9 +90,9 @@ def main() -> None:
         run(["ctest", "--test-dir", str(build), "-C", args.configuration,
              "--output-on-failure", "--parallel", str(args.jobs)], environment=environment)
         if os.name == "nt":
-            # The Windows Parquet probe failed intermittently after relocation.
+            # The original Windows reader failed after 478 successful relocated runs.
             run(["ctest", "--test-dir", str(build), "-C", args.configuration,
-                 "--output-on-failure", "--no-tests=error", "-R", "^sdk_arrow$", "--repeat", "until-fail:50"],
+                 "--output-on-failure", "--no-tests=error", "-R", "^sdk_arrow$", "--repeat", "until-fail:1000"],
                 environment=environment)
     configure(sdk, "wrong-revision-consumer", wrong_revision=True)
     print(f"Installed SDK acceptance passed. Results: {work / 'results.json'}")
