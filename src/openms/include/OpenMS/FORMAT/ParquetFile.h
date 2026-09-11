@@ -102,18 +102,26 @@ namespace OpenMS
       @brief Read a Parquet file into an Arrow Table.
 
       The table is returned with chunks combined into single arrays per column.
+      The input file is closed before returning; the table remains usable after
+      the file is removed or replaced.
 
       @param[in] filename  Input Parquet file path
 
       @return Shared pointer to the Arrow Table
 
-      @throws Exception::InvalidValue if reading fails
+      @throws Exception::InvalidValue if opening, reading or closing fails
     */
     static std::shared_ptr<arrow::Table> readTable(const std::string& filename);
     /**
       @brief Read a Parquet file from an Arrow RandomAccessFile into an Arrow Table.
 
       Allows reading Parquet data directly from an in-archive RandomAccessFile (e.g. libzip-backed).
+      The caller retains ownership; this overload does not close the input file.
+      The table is returned with chunks combined into single arrays per column.
+
+      @param[in] infile Input file, already open for reading
+      @return Shared pointer to the Arrow Table
+      @throws Exception::InvalidValue if reading fails
     */
     static std::shared_ptr<arrow::Table> readTable(const std::shared_ptr<arrow::io::RandomAccessFile>& infile);
 

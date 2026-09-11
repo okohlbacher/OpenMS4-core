@@ -104,47 +104,27 @@ namespace OpenMS
     }
     const std::shared_ptr<arrow::io::ReadableFile>& infile = *infile_result;
 
-    auto reader_result = parquet::arrow::OpenFile(infile, arrow::default_memory_pool());
-    if (!reader_result.ok())
-    {
-      throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
-                                    "Failed to create parquet reader", filename);
-    }
-    std::unique_ptr<parquet::arrow::FileReader> reader = std::move(reader_result.ValueOrDie());
-
     std::shared_ptr<arrow::Table> table;
-    auto read_status = reader->ReadTable(&table);
-    if (!read_status.ok())
+    try
+    {
+      table = readTable(infile);
+    }
+    catch (...)
+    {
+      // Preserve the read error while releasing the file owned by this overload.
+      (void)infile->Close();
+      throw;
+    }
+
+    // Arrow's asynchronous read tasks can retain shared ownership after ReadTable
+    // returns. Close our file explicitly so it can immediately be replaced on Windows.
+    const auto close_status = infile->Close();
+    if (!close_status.ok())
     {
       throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
-                                    "Failed to read parquet table", filename);
+                                    "Failed to close parquet input file", filename);
     }
-
-    // Only combine chunks when necessary: if every column already has a single chunk,
-    // avoid CombineChunks() which copies data and doubles memory usage for large tables.
-    bool need_combine = false;
-    for (int i = 0; i < static_cast<int>(table->num_columns()); ++i)
-    {
-      const auto& col = table->column(i);
-      if (col->num_chunks() > 1)
-      {
-        need_combine = true;
-        break;
-      }
-    }
-    if (!need_combine)
-    {
-      return table;
-    }
-
-    auto combined = table->CombineChunks(arrow::default_memory_pool());
-    if (!combined.ok())
-    {
-      throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
-                                    "Failed to combine parquet chunks", filename);
-    }
-
-    return *combined;
+    return table;
   }
 
   std::shared_ptr<arrow::Table> ParquetFile::readTable(const std::shared_ptr<arrow::io::RandomAccessFile>& infile)

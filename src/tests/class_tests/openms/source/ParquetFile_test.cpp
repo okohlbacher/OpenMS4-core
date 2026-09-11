@@ -16,6 +16,8 @@
 
 #include <arrow/api.h>
 #include <arrow/io/file.h>
+#include <filesystem>
+#include <fstream>
 
 using namespace OpenMS;
 using namespace std;
@@ -72,6 +74,9 @@ START_SECTION((static std::shared_ptr<arrow::Table> readTable(const std::string&
   ParquetFile::writeTable(table, fn);
 
   auto rt = ParquetFile::readTable(fn);
+  // The returned table must not keep the filename-based reader open.
+  const bool removed = std::filesystem::remove(fn);
+  TEST_EQUAL(removed, true)
   TEST_NOT_EQUAL(rt, nullptr)
   TEST_EQUAL(rt->num_rows(), 2)
   TEST_EQUAL(rt->num_columns(), 3)
@@ -100,9 +105,28 @@ START_SECTION((static std::shared_ptr<arrow::Table> readTable(const std::shared_
   TEST_EQUAL(maybe_file.ok(), true)
   std::shared_ptr<arrow::io::RandomAccessFile> raf = *maybe_file;
   auto rt = ParquetFile::readTable(raf);
+  TEST_EQUAL(raf->closed(), false)
+  const auto close_status = raf->Close();
+  TEST_EQUAL(close_status.ok(), true)
+  const bool removed = std::filesystem::remove(fn);
+  TEST_EQUAL(removed, true)
   TEST_NOT_EQUAL(rt, nullptr)
   TEST_EQUAL(rt->num_rows(), 2)
   TEST_EQUAL(ParquetFile::getString(ParquetFile::getColumn(rt, "name"), 0), "alpha")
+}
+END_SECTION
+
+START_SECTION(readTable releases an owned file when reading fails)
+{
+  std::string fn;
+  NEW_TMP_FILE(fn)
+  {
+    std::ofstream output(fn, std::ios::binary);
+    output << "not a Parquet file";
+  }
+  TEST_EXCEPTION(Exception::InvalidValue, ParquetFile::readTable(fn))
+  const bool removed = std::filesystem::remove(fn);
+  TEST_EQUAL(removed, true)
 }
 END_SECTION
 

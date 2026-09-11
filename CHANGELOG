@@ -1,5 +1,6 @@
 OpenMS 4 Core SDK build and delivery
 -----------------------------------
+- Close filename-owned Parquet inputs before returning, preserve caller-owned input streams, and test immediate deletion and read-error cleanup.
 - Remove unused suite packaging/build scripts and Boost date_time/iostreams linkage.
 - Replace custom unity generation with native CMake and retain two Core presets.
 - Prefer native curl libraries on macOS and fix relocated Windows SDK acceptance.
