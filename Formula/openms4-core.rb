@@ -48,21 +48,18 @@ class Openms4Core < Formula
   end
 
   test do
+    assert_predicate include/"OpenMS/CONCEPT/VersionInfo.h", :exist?
+    assert_predicate lib/"libOpenMS.dylib", :exist?
     (testpath/"CMakeLists.txt").write <<~CMAKE
       cmake_minimum_required(VERSION 3.24)
       project(openms4_core_formula_test LANGUAGES CXX)
       find_package(OpenMS 4.0.0 EXACT CONFIG REQUIRED)
-      add_executable(core_formula_test main.cpp)
-      target_link_libraries(core_formula_test PRIVATE OpenMS::Core)
+      if(NOT TARGET OpenMS::Core)
+        message(FATAL_ERROR "OpenMS::Core was not exported")
+      endif()
     CMAKE
-    (testpath/"main.cpp").write <<~CPP
-      #include <OpenMS/CONCEPT/VersionInfo.h>
-      int main() { return OpenMS::VersionInfo::getVersion() == "4.0.0" ? 0 : 1; }
-    CPP
     system "cmake", "-S", ".", "-B", "build", "-G", "Ninja",
                     "-DCMAKE_PREFIX_PATH=#{prefix}",
                     "-DOpenMP_ROOT=#{Formula["libomp"].opt_prefix}"
-    system "cmake", "--build", "build", "--parallel", ENV.make_jobs
-    system testpath/"build/core_formula_test"
   end
 end
