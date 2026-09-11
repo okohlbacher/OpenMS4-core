@@ -10,10 +10,10 @@ subprocess.run(['cmake','-S',str(source),'-B',str(build),'-G','Visual Studio 17 
 subprocess.run(['cmake','--build',str(build),'--config','Release','--parallel','4'],check=True)
 results = []
 for mode in ('default','no-prebuffer','shutdown','system'):
-    env = dict(os.environ)
+    env = dict(os.environ, PROBE_QUIET="1")
     if mode == 'system': env['ARROW_DEFAULT_MEMORY_POOL'] = 'system'
     record = dict(mode=mode,passed=0)
-    for index in range(200):
+    for index in range(1000):
         p = subprocess.run([str(build/'Release/arrow_probe.exe'),mode],env=env,cwd=build,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
         if p.returncode:
             record.update(returncode=p.returncode,output=p.stdout,attempt=index+1)

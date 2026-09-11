@@ -15,6 +15,12 @@
 #include <dbghelp.h>
 #endif
 
+const char* current_stage = "entry";
+void stage(const char* name)
+{
+  current_stage = name;
+  if (!std::getenv("PROBE_QUIET")) std::cerr << name << '\n' << std::flush;
+}
 void check(const arrow::Status& status)
 {
   if (!status.ok()) throw std::runtime_error(status.ToString());
@@ -54,44 +60,44 @@ std::shared_ptr<arrow::Table> read(const std::string& file, bool prebuffer)
 }
 int main(int argc, char** argv)
 {
-  std::set_terminate([] { std::cerr << "TERMINATE\n" << std::flush; trace(); std::abort(); });
+  std::set_terminate([] { std::cerr << "TERMINATE at " << current_stage << '\n' << std::flush; trace(); std::abort(); });
   const std::string mode = argc > 1 ? argv[1] : "default";
   try
   {
-    std::cerr << "building " << arrow::default_memory_pool()->backend_name() << '\n' << std::flush;
+    stage("building");
     arrow::DoubleBuilder values;
     check(values.Append(100.25));
     check(values.Append(200.5));
     auto array = values.Finish().ValueOrDie();
     const auto table = arrow::Table::Make(arrow::schema({arrow::field("mz", arrow::float64())}), {array});
     const std::string file = "probe.parquet";
-    std::cerr << "write\n" << std::flush;
+    stage("write");
     {
       auto output = arrow::io::FileOutputStream::Open(file).ValueOrDie();
       check(parquet::arrow::WriteTable(*table, arrow::default_memory_pool(), output, 1024));
       check(output->Close());
     }
-    std::cerr << "read\n" << std::flush;
+    stage("read");
     const auto restored = read(file, mode != "no-prebuffer");
-    std::cerr << "count\n" << std::flush;
+    stage("count");
     int64_t rows;
     { auto reader = parquet::ParquetFileReader::OpenFile(file, false); rows = reader->metadata()->num_rows(); }
-    std::cerr << "remove\n" << std::flush;
+    stage("remove");
     std::filesystem::remove(file);
     if (rows != 2 || restored->num_columns() != 1) return 1;
     const auto column = std::static_pointer_cast<arrow::DoubleArray>(restored->column(0)->chunk(0));
     if (column->Value(0) != 100.25 || column->Value(1) != 200.5) return 2;
-    std::cerr << "release\n" << std::flush;
+    stage("release");
   }
   catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 3; }
-  std::cerr << "objects released\n" << std::flush;
+  stage("objects released");
   if (mode == "shutdown")
   {
     auto* pool = dynamic_cast<arrow::internal::ThreadPool*>(arrow::io::default_io_context().executor());
     if (!pool) throw std::runtime_error("Default I/O executor is not a thread pool");
     check(pool->Shutdown());
     check(arrow::internal::GetCpuThreadPool()->Shutdown());
-    std::cerr << "pools shut down\n" << std::flush;
+    stage("pools shut down");
   }
   return 0;
 }
