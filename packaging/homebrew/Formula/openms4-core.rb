@@ -1,0 +1,67 @@
+class Openms4Core < Formula
+  desc "Core C++ SDK for mass-spectrometry software"
+  homepage "https://github.com/okohlbacher/OpenMS4-core"
+  url "https://github.com/okohlbacher/OpenMS4-core/archive/refs/tags/core-v4.0.0-ci.1.tar.gz"
+  sha256 "7516b9ae2330a15dd3968ffd6a2028f6e407d8b44d47dcb5dcce2fe03dc1e939"
+  license "BSD-3-Clause"
+
+  depends_on "cmake" => :build
+  depends_on "ninja" => :build
+  depends_on "pkgconf" => :build
+  depends_on "apache-arrow"
+  depends_on "boost"
+  depends_on "cbc"
+  depends_on "curl"
+  depends_on "eigen"
+  depends_on "libomp"
+  depends_on "libsvm"
+  depends_on "libxml2"
+  depends_on "libzip"
+  depends_on "xerces-c"
+
+  def install
+    prefixes = %w[apache-arrow boost cbc curl eigen libomp libsvm libxml2 libzip xerces-c]
+               .map { |name| formula_opt_prefix(name) }
+    args = std_cmake_args + %W[
+      -G Ninja
+      -DENABLE_CLASS_TESTING=OFF
+      -DOPENMS_BUILD_TEST_SUPPORT=ON
+      -DWITH_OPENTIMS=OFF
+      -DWITH_THERMO_RAW=OFF
+      -DWITH_WNETALIGN=OFF
+      -DENABLE_TDL=OFF
+      -DWITH_ONNX=OFF
+      -DWITH_HDF5=OFF
+      -DLP_SOLVER=COIN
+      -DBOOST_USE_STATIC=OFF
+      -DCMAKE_PREFIX_PATH=#{prefixes.join(";")}
+      -DCURL_ROOT=#{formula_opt_prefix("curl")}
+      -DOpenMP_ROOT=#{formula_opt_prefix("libomp")}
+      -DCMAKE_FIND_FRAMEWORK=LAST
+      -DOPENMS_SOURCE_REVISION=94a2b114939e4c70e16b1141bd98c87b8d21d166
+      -DOPENMS_SOURCE_DIRTY=OFF
+      -DOPENMS_REQUIRE_CLEAN_SOURCE=ON
+    ]
+    system "cmake", "-S", ".", "-B", "build", *args
+    system "cmake", "--build", "build", "--parallel", ENV.make_jobs
+    system "cmake", "--install", "build"
+  end
+
+  test do
+    (testpath/"CMakeLists.txt").write <<~CMAKE
+      cmake_minimum_required(VERSION 3.24)
+      project(openms4_core_formula_test LANGUAGES CXX)
+      find_package(OpenMS 4.0.0 EXACT CONFIG REQUIRED)
+      add_executable(core_formula_test main.cpp)
+      target_link_libraries(core_formula_test PRIVATE OpenMS::Core)
+    CMAKE
+    (testpath/"main.cpp").write <<~CPP
+      #include <OpenMS/CONCEPT/VersionInfo.h>
+      int main() { return OpenMS::VersionInfo::getVersion() == "4.0.0" ? 0 : 1; }
+    CPP
+    system "cmake", "-S", ".", "-B", "build", "-G", "Ninja",
+                    "-DCMAKE_PREFIX_PATH=#{prefix}"
+    system "cmake", "--build", "build", "--parallel", ENV.make_jobs
+    system testpath/"build/core_formula_test"
+  end
+end

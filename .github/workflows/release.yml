@@ -40,5 +40,6 @@ jobs:
       - name: Publish immutable prerelease assets
         run: |
           gh release create "$RELEASE_TAG" ./artifacts/sdk-*/*.tar.gz ./artifacts/sdk-*/*.sha256 \
+            ./packaging/homebrew/Formula/openms4-core.rb \
             --verify-tag --prerelease --title "Core SDK $RELEASE_TAG" \
-            --notes "Native Release SDKs for Linux x64/arm64, macOS x64/arm64, and Windows x64. These exact archives passed the full enabled scientific test suite and installed/relocated consumer tests after extraction. Recreate their matching conda-forge dependencies from the included dependencies.txt; dependencies are not bundled. Optional native readers and downloaded models are disabled in this portable build."
+            --notes "Native Release SDKs for Linux x64/arm64, macOS x64/arm64, and Windows x64, plus the source-built Homebrew formula. These exact SDK archives passed the full enabled scientific test suite and installed/relocated consumer tests after extraction. Recreate their matching conda-forge dependencies from the included dependencies.txt; dependencies are not bundled. Optional native readers and downloaded models are disabled in this portable build."

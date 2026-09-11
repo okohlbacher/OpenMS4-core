@@ -142,6 +142,17 @@ records the exact conda packages used. Dependencies remain separately installed;
 the archives do not bundle third-party libraries or platform runtimes. Consumers
 must use compatible compiler/runtime settings and the matching dependency versions.
 
+The repository also ships a source-built Homebrew formula for Apple Silicon and
+Intel macOS. Install it directly with:
+
+```sh
+brew install --formula https://raw.githubusercontent.com/okohlbacher/OpenMS4-core/codex/package-split/packaging/homebrew/Formula/openms4-core.rb
+```
+
+CI builds the formula and its installed-package consumer test on both macOS
+architectures. Core release jobs attach the formula beside the five native SDK
+archives.
+
 ## Tool backend extraction
 
 NuXL search algorithms, ProSEAlgorithm, FLASH search/deconvolution orchestration,
