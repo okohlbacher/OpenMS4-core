@@ -377,5 +377,7 @@ add_test(NAME CoreExecutablePath_unicode_and_long
 
 add_executable(ProcessWait_test "${OPENMS_HOST_DIRECTORY}/tests/runtime/ProcessWait_test.cpp")
 target_link_libraries(ProcessWait_test PRIVATE OpenMS::Core Threads::Threads)
+# Match Core: Boost.Process must use std::filesystem, including on Windows.
+target_compile_definitions(ProcessWait_test PRIVATE BOOST_PROCESS_USE_STD_FS)
 add_test(NAME ProcessWait_test COMMAND ProcessWait_test)
 set_tests_properties(ProcessWait_test PROPERTIES TIMEOUT 15)
