@@ -60,7 +60,8 @@ class Openms4Core < Formula
       int main() { return OpenMS::VersionInfo::getVersion() == "4.0.0" ? 0 : 1; }
     CPP
     system "cmake", "-S", ".", "-B", "build", "-G", "Ninja",
-                    "-DCMAKE_PREFIX_PATH=#{prefix}"
+                    "-DCMAKE_PREFIX_PATH=#{prefix}",
+                    "-DOpenMP_ROOT=#{Formula["libomp"].opt_prefix}"
     system "cmake", "--build", "build", "--parallel", ENV.make_jobs
     system testpath/"build/core_formula_test"
   end
