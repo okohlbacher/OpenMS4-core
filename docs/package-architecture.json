@@ -1,0 +1,299 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "OpenMS 4 package architecture",
+    "output": "package-architecture.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      920,
+      520
+    ],
+    "views": [
+      {
+        "id": "sdk-boundary",
+        "label": "Installed SDK boundary",
+        "focus": [
+          "core",
+          "cli",
+          "testdata"
+        ],
+        "note": "Core carries the scientific library; CLI owns TOPPBase and tool registration."
+      },
+      {
+        "id": "console-products",
+        "label": "Console products",
+        "focus": [
+          "cli",
+          "topp",
+          "openswath",
+          "nuxl",
+          "products",
+          "providers",
+          "desktop"
+        ],
+        "note": "Every console product consumes the installed SDKs, never Core's source tree."
+      },
+      {
+        "id": "python-and-app",
+        "label": "Python and application",
+        "focus": [
+          "core",
+          "providers",
+          "pyopenms",
+          "flashapp"
+        ],
+        "note": "pyOpenMS pins Core exactly and consumes the FLASH and ProSE backends."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "core",
+      "type": "backend",
+      "label": "OpenMS4-core",
+      "tag": "OpenMS::Core",
+      "sublabel": "Scientific library, formats, data",
+      "pos": [
+        20,
+        160
+      ],
+      "size": [
+        165,
+        76
+      ]
+    },
+    {
+      "id": "cli",
+      "type": "backend",
+      "label": "OpenMS4-cli",
+      "tag": "OpenMS::CLI",
+      "sublabel": "TOPPBase, ToolHandler, manifests",
+      "pos": [
+        215,
+        160
+      ],
+      "size": [
+        170,
+        76
+      ]
+    },
+    {
+      "id": "testdata",
+      "type": "database",
+      "label": "OpenMS4-test-data",
+      "sublabel": "Fixtures, numerical suite",
+      "pos": [
+        215,
+        330
+      ],
+      "size": [
+        170,
+        60
+      ]
+    },
+    {
+      "id": "topp",
+      "type": "backend",
+      "label": "OpenMS4-topp",
+      "sublabel": "General TOPP tool suite",
+      "pos": [
+        410,
+        20
+      ],
+      "size": [
+        200,
+        60
+      ]
+    },
+    {
+      "id": "openswath",
+      "type": "backend",
+      "label": "OpenMS4-openswath",
+      "sublabel": "19 targeted-proteomics tools",
+      "pos": [
+        410,
+        96
+      ],
+      "size": [
+        200,
+        60
+      ]
+    },
+    {
+      "id": "nuxl",
+      "type": "backend",
+      "label": "OpenMS4-nuxl",
+      "sublabel": "OpenNuXL cross-link search",
+      "pos": [
+        410,
+        172
+      ],
+      "size": [
+        200,
+        60
+      ]
+    },
+    {
+      "id": "products",
+      "type": "backend",
+      "label": "Six product packages",
+      "sublabel": "Comet, Mascot, NASE and three more",
+      "pos": [
+        410,
+        248
+      ],
+      "size": [
+        200,
+        60
+      ]
+    },
+    {
+      "id": "providers",
+      "type": "backend",
+      "label": "OpenMS4-flash, OpenMS4-prose",
+      "sublabel": "Backends in-package; tools link CLI",
+      "pos": [
+        410,
+        324
+      ],
+      "size": [
+        200,
+        68
+      ]
+    },
+    {
+      "id": "desktop",
+      "type": "frontend",
+      "label": "OpenMS4-desktop",
+      "tag": "Qt 6",
+      "sublabel": "GUI SDK, TOPPView, TOPPAS",
+      "pos": [
+        410,
+        408
+      ],
+      "size": [
+        200,
+        60
+      ]
+    },
+    {
+      "id": "pyopenms",
+      "type": "backend",
+      "label": "OpenMS4-pyopenms",
+      "sublabel": "nanobind bindings and Arrow",
+      "pos": [
+        680,
+        160
+      ],
+      "size": [
+        185,
+        76
+      ]
+    },
+    {
+      "id": "flashapp",
+      "type": "frontend",
+      "label": "OpenMS4-flashapp",
+      "sublabel": "Imported web application",
+      "pos": [
+        680,
+        330
+      ],
+      "size": [
+        185,
+        60
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "cli",
+      "to": "core",
+      "variant": "emphasis"
+    },
+    {
+      "from": "testdata",
+      "to": "core",
+      "label": "fixture metadata",
+      "variant": "dashed"
+    },
+    {
+      "from": "topp",
+      "to": "cli"
+    },
+    {
+      "from": "openswath",
+      "to": "cli"
+    },
+    {
+      "from": "nuxl",
+      "to": "cli"
+    },
+    {
+      "from": "products",
+      "to": "cli"
+    },
+    {
+      "from": "providers",
+      "to": "cli"
+    },
+    {
+      "from": "desktop",
+      "to": "cli"
+    },
+    {
+      "from": "pyopenms",
+      "to": "core",
+      "label": "exact pin, Arrow target",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          890,
+          198
+        ],
+        [
+          890,
+          492
+        ],
+        [
+          102.5,
+          492
+        ]
+      ],
+      "labelSegment": 2,
+      "labelDy": 16
+    },
+    {
+      "from": "pyopenms",
+      "to": "providers",
+      "label": "backends"
+    },
+    {
+      "from": "flashapp",
+      "to": "pyopenms",
+      "label": "verified wheel"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Reading the map",
+      "items": [
+        "An arrow points from a consumer to what it consumes; dashed means runtime or fixture use.",
+        "An unlabelled arrow into CLI means that package's executables link the CLI framework, and it links Core too.",
+        "Core never links a product package; no arrow points back into it."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Verified on macOS arm64",
+      "items": [
+        "All 15 consumer packages build, test and install against the installed Core SDK.",
+        "2,369 tests pass, 2,022 of them the installed numerical suite; 150 console tools install."
+      ]
+    }
+  ]
+}
