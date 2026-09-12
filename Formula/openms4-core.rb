@@ -47,6 +47,10 @@ class Openms4Core < Formula
     system "cmake", "-S", ".", "-B", "build", *args
     system "cmake", "--build", "build", "--parallel", ENV.make_jobs
     system "cmake", "--install", "build"
+    # Core links its vendored SQLite statically and no exported target or public
+    # header refers to it, but the installed copies collide with Homebrew's sqlite
+    # on Linux, where that formula is not keg-only.
+    rm_f [include/"sqlite3.h", lib/"libsqlite3.a"]
   end
 
   test do
