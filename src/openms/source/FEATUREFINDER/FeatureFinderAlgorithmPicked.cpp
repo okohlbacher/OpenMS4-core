@@ -1018,9 +1018,25 @@ namespace OpenMS
     // Abort reasons
     OPENMS_LOG_INFO << '\n';
     OPENMS_LOG_INFO << "Info: reasons for not finalizing a feature during its construction:\n";
+    UInt total_aborts = 0;
+    std::pair<std::string, UInt> worst_reason{"", 0};
     for (const auto& reason : aborts_)
     {
       OPENMS_LOG_INFO << " - " << reason.first << ": " << reason.second << " times\n";
+      total_aborts += reason.second;
+      if (reason.second > worst_reason.second) worst_reason = reason;
+    }
+    // The counts above are easy to miss, and on data from fast-scanning instruments the mass
+    // trace settings reject nearly every seed: the traces are short and gappy, so
+    // 'mass_trace:min_spectra' and 'mass_trace:max_missing' decide the outcome, not the data.
+    if ((total_aborts > 0) && ((*features_).size() * 20 < total_aborts))
+    {
+      OPENMS_LOG_WARN << "Warning: " << total_aborts << " seeds were discarded and only "
+                      << (*features_).size() << " features remain; most often because \""
+                      << worst_reason.first << "\". If the data comes from a fast-scanning "
+                      << "instrument, check 'mass_trace:min_spectra' (currently "
+                      << min_spectra_ << ") and 'mass_trace:max_missing' (currently "
+                      << max_missing_trace_peaks_ << ") against its MS1 rate.\n";
     }
 
     OPENMS_LOG_INFO << "\n" << (*features_).size() << " features found.\n";
@@ -1128,14 +1144,22 @@ namespace OpenMS
   /// Writes the abort reason to the log file and counts occurrences for each reason
   void FeatureFinderAlgorithmPicked::abort_(const Seed& seed, const std::string& reason)
   {
-    if (debug_)
+    // Called from the OpenMP loop over seeds, where most iterations end here: on real data
+    // 40-60k of ~45-80k seeds abort. The counters, the seed map and the debug stream are
+    // shared, so every one of those updates has to be serialised - concurrent std::map
+    // insertion is undefined behaviour. The work protected here is a map lookup, which is
+    // nothing next to the isotope fit and trace extension it follows.
+#pragma omp critical(FeatureFinderAlgorithmPicked_ABORTS)
     {
-      log_ << "Abort: " << reason << '\n';
-    }
-    aborts_[reason]++;
-    if (debug_)
-    {
-      abort_reasons_[seed] = reason;
+      if (debug_)
+      {
+        log_ << "Abort: " << reason << '\n';
+      }
+      aborts_[reason]++;
+      if (debug_)
+      {
+        abort_reasons_[seed] = reason;
+      }
     }
   }
 

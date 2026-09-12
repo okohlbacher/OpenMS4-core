@@ -2111,10 +2111,7 @@ namespace OpenMS
   s.push_back(row.database_version.toCellString());
   s.push_back(row.search_engine.toCellString());
 
-  for (map<Size, MzTabDouble>::const_iterator it = row.best_search_engine_score.begin(); it != row.best_search_engine_score.end(); ++it)
-  {
-    s.push_back(it->second.toCellString());
-  }
+  addScoreColumnsToSectionRow_(meta.protein_search_engine_score.size(), row.best_search_engine_score, s);
 
   for (std::map<Size, std::map<Size, MzTabDouble> >::const_iterator it = row.search_engine_score_ms_run.begin(); it != row.search_engine_score_ms_run.end(); ++it)
   {
@@ -2382,7 +2379,7 @@ namespace OpenMS
   }
 
   std::string MzTabFile::generateMzTabSectionRow_(const MzTabPSMSectionRow& row, const vector<std::string>& optional_columns,
-                                             const MzTabMetaData& /*meta*/, size_t& n_columns) const
+                                             const MzTabMetaData& meta, size_t& n_columns) const
   {
     StringList s;
     s.push_back("PSM");
@@ -2400,10 +2397,7 @@ namespace OpenMS
     }
     else
     {
-      for (map<Size, MzTabDouble>::const_iterator it = row.search_engine_score.begin(); it != row.search_engine_score.end(); ++it)
-      {
-        s.push_back(it->second.toCellString());
-      }
+      addScoreColumnsToSectionRow_(std::min(meta.psm_search_engine_score.size(), Size(1)), row.search_engine_score, s);
     }
 
     if (store_psm_reliability_)
@@ -2501,7 +2495,7 @@ namespace OpenMS
   std::string MzTabFile::generateMzTabSectionRow_(
       const MzTabSmallMoleculeSectionRow& row,
       const std::vector<std::string>& optional_columns,
-      const MzTabMetaData& /*meta*/, size_t& n_columns) const
+      const MzTabMetaData& meta, size_t& n_columns) const
   {
   StringList s;
   s.push_back("SML");
@@ -2532,10 +2526,7 @@ namespace OpenMS
   s.push_back(row.spectra_ref.toCellString());
   s.push_back(row.search_engine.toCellString());
 
-  for (map<Size, MzTabDouble>::const_iterator it = row.best_search_engine_score.begin(); it != row.best_search_engine_score.end(); ++it)
-  {
-    s.push_back(it->second.toCellString());
-  }
+  addScoreColumnsToSectionRow_(meta.smallmolecule_search_engine_score.size(), row.best_search_engine_score, s);
 
   for (auto it = row.search_engine_score_ms_run.begin(); it != row.search_engine_score_ms_run.end(); ++it)
   {
@@ -2636,7 +2627,7 @@ namespace OpenMS
   std::string MzTabFile::generateMzTabSectionRow_(
       const MzTabNucleicAcidSectionRow& row,
       const vector<std::string>& optional_columns,
-      const MzTabMetaData& /*meta*/, size_t& n_columns) const
+      const MzTabMetaData& meta, size_t& n_columns) const
   {
     StringList s;
     s.push_back("NUC");
@@ -2648,10 +2639,7 @@ namespace OpenMS
     s.push_back(row.database_version.toCellString());
     s.push_back(row.search_engine.toCellString());
 
-    for (map<Size, MzTabDouble>::const_iterator it = row.best_search_engine_score.begin(); it != row.best_search_engine_score.end(); ++it)
-    {
-      s.push_back(it->second.toCellString());
-    }
+    addScoreColumnsToSectionRow_(meta.nucleic_acid_search_engine_score.size(), row.best_search_engine_score, s);
 
     for (std::map<Size, std::map<Size, MzTabDouble> >::const_iterator it = row.search_engine_score_ms_run.begin(); it != row.search_engine_score_ms_run.end(); ++it)
     {
@@ -2750,7 +2738,7 @@ namespace OpenMS
   std::string MzTabFile::generateMzTabSectionRow_(
       const MzTabOligonucleotideSectionRow& row,
       const vector<std::string>& optional_columns,
-      const MzTabMetaData& /*meta*/, size_t& n_columns) const
+      const MzTabMetaData& meta, size_t& n_columns) const
   {
     StringList s;
     s.push_back("OLI");
@@ -2759,10 +2747,7 @@ namespace OpenMS
     s.push_back(row.unique.toCellString());
     s.push_back(row.search_engine.toCellString());
 
-    for (map<Size, MzTabDouble>::const_iterator it = row.best_search_engine_score.begin(); it != row.best_search_engine_score.end(); ++it)
-    {
-      s.push_back(it->second.toCellString());
-    }
+    addScoreColumnsToSectionRow_(meta.oligonucleotide_search_engine_score.size(), row.best_search_engine_score, s);
 
     for (map<Size, map<Size, MzTabDouble> >::const_iterator it = row.search_engine_score_ms_run.begin(); it != row.search_engine_score_ms_run.end(); ++it)
     {
@@ -2835,17 +2820,14 @@ namespace OpenMS
   std::string MzTabFile::generateMzTabSectionRow_(
       const MzTabOSMSectionRow& row,
       const vector<std::string>& optional_columns,
-      const MzTabMetaData& /*meta*/, size_t& n_columns) const
+      const MzTabMetaData& meta, size_t& n_columns) const
   {
     StringList s;
     s.push_back("OSM");
     s.push_back(row.sequence.toCellString());
     s.push_back(row.search_engine.toCellString());
 
-    for (map<Size, MzTabDouble>::const_iterator it = row.search_engine_score.begin(); it != row.search_engine_score.end(); ++it)
-    {
-      s.push_back(it->second.toCellString());
-    }
+    addScoreColumnsToSectionRow_(meta.osm_search_engine_score.size(), row.search_engine_score, s);
 
     if (store_osm_reliability_)
     {
@@ -2868,6 +2850,15 @@ namespace OpenMS
     addOptionalColumnsToSectionRow_(optional_columns, row.opt_, s);
     n_columns = s.size();
     return ListUtils::concatenate(s, "\t");
+  }
+
+  void MzTabFile::addScoreColumnsToSectionRow_(Size n_declared, const map<Size, MzTabDouble>& scores, StringList& output)
+  {
+    for (Size i = 1; i <= n_declared; ++i)
+    {
+      const auto it = scores.find(i);
+      output.push_back(it == scores.end() ? MzTabDouble().toCellString() : it->second.toCellString());
+    }
   }
 
   void MzTabFile::addOptionalColumnsToSectionRow_(const vector<std::string>& column_names, const vector<MzTabOptionalColumnEntry>& column_entries, StringList& output)
