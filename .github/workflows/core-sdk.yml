@@ -3,6 +3,8 @@ name: Core SDK
 on:
   push:
     branches: ['**']
+    # The formula is built and tested by the bottle workflow, not by this one.
+    paths-ignore: ['Formula/**', '.github/workflows/bottle.yml']
   pull_request:
   workflow_dispatch:
     inputs:

@@ -1,0 +1,124 @@
+name: Homebrew bottles
+
+# Builds the formula on each bottled platform, publishes the bottles as assets
+# of the release the formula version names, and writes the bottle block into
+# the formula. Run it by hand after the formula moves to a new release.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bottle-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+  HOMEBREW_NO_INSTALL_CLEANUP: '1'
+  HOMEBREW_NO_ENV_HINTS: '1'
+  TAP: okohlbacher/openms4-core
+  FORMULA: okohlbacher/openms4-core/openms4-core
+
+jobs:
+  bottle:
+    name: Bottle / ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-arm64
+            runner: macos-15
+          - platform: macos-x64
+            runner: macos-15-intel
+          - platform: linux-x64
+            runner: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: Homebrew/actions/setup-homebrew@master
+        if: runner.os == 'Linux'
+      - name: Tap this checkout and build the bottle
+        run: |
+          brew trust --formula "$FORMULA"
+          brew tap "$TAP" "file://$GITHUB_WORKSPACE"
+          brew install --formula --build-bottle "$FORMULA"
+          version=$(brew info --json=v2 "$FORMULA" | python3 -c 'import json,sys; print(json.load(sys.stdin)["formulae"][0]["versions"]["stable"])')
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          mkdir bottles && cd bottles
+          brew bottle --json --root-url "https://github.com/$GITHUB_REPOSITORY/releases/download/core-v$version" "$FORMULA"
+          # Homebrew names local bottles with a double dash but downloads them with one.
+          for f in *--*; do mv "$f" "${f/--/-}"; done
+          ls -l
+      - name: Test the bottled formula
+        run: brew test "$FORMULA"
+      - name: Publish the bottle to the release the formula names
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "core-v$VERSION" bottles/*.bottle.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bottle-${{ matrix.platform }}
+          path: bottles/*.json
+          if-no-files-found: error
+
+  merge:
+    name: Write the bottle block into the formula
+    needs: bottle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: Homebrew/actions/setup-homebrew@master
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bottle-*
+          merge-multiple: true
+          path: bottles
+      - name: Merge the bottle JSON files and push the formula
+        run: |
+          brew trust --formula "$FORMULA"
+          brew tap "$TAP" "file://$GITHUB_WORKSPACE"
+          brew bottle --merge --write --no-commit bottles/*.json
+          cp "$(brew --repository "$TAP")/Formula/openms4-core.rb" Formula/openms4-core.rb
+          git diff
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/openms4-core.rb
+          git commit -m "[BUILD] Publish Homebrew bottles for openms4-core $(brew info --json=v2 "$FORMULA" | python3 -c 'import json,sys; print(json.load(sys.stdin)["formulae"][0]["versions"]["stable"])')
+
+          Built by the bottle workflow from ${{ github.sha }}."
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+  verify:
+    name: Install from bottle / ${{ matrix.platform }}
+    needs: merge
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-arm64
+            runner: macos-15
+          - platform: macos-x64
+            runner: macos-15-intel
+          - platform: linux-x64
+            runner: ubuntu-24.04
+    steps:
+      - uses: Homebrew/actions/setup-homebrew@master
+        if: runner.os == 'Linux'
+      - name: Install the formula the way a user does and expect the bottle
+        run: |
+          brew trust --formula "$FORMULA"
+          brew tap "$TAP" "https://github.com/$GITHUB_REPOSITORY"
+          git -C "$(brew --repository "$TAP")" checkout -q "${GITHUB_REF_NAME}"
+          brew install "$FORMULA"
+          brew info --json=v2 "$FORMULA" | python3 -c '
+          import json, sys
+          installed = json.load(sys.stdin)["formulae"][0]["installed"]
+          assert installed and installed[0]["poured_from_bottle"], installed'
+          brew test "$FORMULA"
