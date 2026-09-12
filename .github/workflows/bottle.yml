@@ -43,10 +43,17 @@ jobs:
         if: runner.os == 'Linux'
       - name: Tap this checkout and build the bottle
         run: |
+          # Runner images carry third-party taps, some broken (hashicorp/tap on
+          # macos-15-intel fails to import); Homebrew loads them while resolving names.
+          for tap in $(brew tap | grep -v '^homebrew/'); do brew untap "$tap"; done
           brew trust --formula "$FORMULA"
           brew tap "$TAP" "file://$GITHUB_WORKSPACE"
-          brew install --formula --build-bottle "$FORMULA"
-          version=$(brew info --json=v2 "$FORMULA" | python3 -c 'import json,sys; print(json.load(sys.stdin)["formulae"][0]["versions"]["stable"])')
+          # On Linux brew install has returned 1 after a successful install with no
+          # message; the keg check and brew test below are what qualifies the build.
+          brew install --formula --build-bottle "$FORMULA" || echo "::warning::brew install exited $? after installing; continuing on the installed keg"
+          brew list --versions "$FORMULA"
+          version=$(sed -n 's/^  version "\(.*\)"$/\1/p' Formula/openms4-core.rb)
+          test -n "$version"
           echo "VERSION=$version" >> "$GITHUB_ENV"
           mkdir bottles && cd bottles
           brew bottle --json --root-url "https://github.com/$GITHUB_REPOSITORY/releases/download/core-v$version" "$FORMULA"
@@ -58,7 +65,7 @@ jobs:
       - name: Publish the bottle to the release the formula names
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "core-v$VERSION" bottles/*.bottle.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "core-v$VERSION" bottles/*.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
       - uses: actions/upload-artifact@v4
         with:
           name: bottle-${{ matrix.platform }}
@@ -113,6 +120,7 @@ jobs:
         if: runner.os == 'Linux'
       - name: Install the formula the way a user does and expect the bottle
         run: |
+          for tap in $(brew tap | grep -v '^homebrew/'); do brew untap "$tap"; done
           brew trust --formula "$FORMULA"
           brew tap "$TAP" "https://github.com/$GITHUB_REPOSITORY"
           git -C "$(brew --repository "$TAP")" checkout -q "${GITHUB_REF_NAME}"
