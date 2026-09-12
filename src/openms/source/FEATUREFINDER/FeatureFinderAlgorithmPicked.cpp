@@ -1035,8 +1035,10 @@ namespace OpenMS
                       << (*features_).size() << " features remain; most often because \""
                       << worst_reason.first << "\". If the data comes from a fast-scanning "
                       << "instrument, check 'mass_trace:min_spectra' (currently "
-                      << min_spectra_ << ") and 'mass_trace:max_missing' (currently "
-                      << max_missing_trace_peaks_ << ") against its MS1 rate.\n";
+                      << param_.getValue("mass_trace:min_spectra").toString()
+                      << ") and 'mass_trace:max_missing' (currently "
+                      << param_.getValue("mass_trace:max_missing").toString()
+                      << ") against its MS1 rate.\n";
     }
 
     OPENMS_LOG_INFO << "\n" << (*features_).size() << " features found.\n";
