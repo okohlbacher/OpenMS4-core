@@ -1,10 +1,10 @@
 class Openms4Core < Formula
   desc "Core C++ SDK for mass-spectrometry software"
   homepage "https://github.com/okohlbacher/OpenMS4-core"
-  url "https://github.com/okohlbacher/OpenMS4-core/archive/refs/tags/core-v4.0.0-ci.1.tar.gz"
+  url "https://github.com/okohlbacher/OpenMS4-core/archive/refs/tags/core-v4.0.0-ci.2.tar.gz"
   # The tag name is not a bare version, so Homebrew would otherwise detect "1".
-  version "4.0.0-ci.1"
-  sha256 "7516b9ae2330a15dd3968ffd6a2028f6e407d8b44d47dcb5dcce2fe03dc1e939"
+  version "4.0.0-ci.2"
+  sha256 "9103ac2ee20a44d13f97a3436a814d0a036eb80df447461ed37cb03969f02b59"
   license "BSD-3-Clause"
 
   depends_on "cmake" => :build
@@ -40,7 +40,7 @@ class Openms4Core < Formula
       -DCURL_ROOT=#{formula_opt_prefix("curl")}
       -DOpenMP_ROOT=#{formula_opt_prefix("libomp")}
       -DCMAKE_FIND_FRAMEWORK=LAST
-      -DOPENMS_SOURCE_REVISION=94a2b114939e4c70e16b1141bd98c87b8d21d166
+      -DOPENMS_SOURCE_REVISION=bc9cc12514c768385ce121d6ca4bb710fe1983c4
       -DOPENMS_SOURCE_DIRTY=OFF
       -DOPENMS_REQUIRE_CLEAN_SOURCE=ON
     ]
