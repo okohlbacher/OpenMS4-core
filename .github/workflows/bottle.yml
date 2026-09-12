@@ -45,7 +45,7 @@ jobs:
         run: |
           # Runner images carry third-party taps, some broken (hashicorp/tap on
           # macos-15-intel fails to import); Homebrew loads them while resolving names.
-          for tap in $(brew tap | grep -v '^homebrew/'); do brew untap "$tap"; done
+          for tap in $(brew tap | grep -v '^homebrew/'); do brew untap --force "$tap" || true; done
           brew trust --formula "$FORMULA"
           brew tap "$TAP" "file://$GITHUB_WORKSPACE"
           # On Linux brew install has returned 1 after a successful install with no
@@ -120,7 +120,7 @@ jobs:
         if: runner.os == 'Linux'
       - name: Install the formula the way a user does and expect the bottle
         run: |
-          for tap in $(brew tap | grep -v '^homebrew/'); do brew untap "$tap"; done
+          for tap in $(brew tap | grep -v '^homebrew/'); do brew untap --force "$tap" || true; done
           brew trust --formula "$FORMULA"
           brew tap "$TAP" "https://github.com/$GITHUB_REPOSITORY"
           git -C "$(brew --repository "$TAP")" checkout -q "${GITHUB_REF_NAME}"

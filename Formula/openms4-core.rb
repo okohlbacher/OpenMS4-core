@@ -55,7 +55,7 @@ class Openms4Core < Formula
 
   test do
     assert_predicate include/"OpenMS/CONCEPT/VersionInfo.h", :exist?
-    assert_predicate lib/"libOpenMS.dylib", :exist?
+    assert_predicate lib/shared_library("libOpenMS"), :exist?
     (testpath/"CMakeLists.txt").write <<~CMAKE
       cmake_minimum_required(VERSION 3.24)
       project(openms4_core_formula_test LANGUAGES CXX)
