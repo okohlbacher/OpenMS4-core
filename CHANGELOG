@@ -9,6 +9,8 @@ Core review integration (2026-09-13, experimental branch)
 - Reject cross-linked spectrum requests that lack linker chemistry or would lose chain modifications,
   use the same resolved linker mass in mass and spectrum calculations, and reject mass calculation
   for empty ambiguous regions. Retain regression tests for ProForma, MSstats, mzData, mzXML and qcML.
+- Preserve distinct mzML processing histories for spectrum/chromatogram float, integer and string
+  arrays; omit undeclarable later array histories in streaming output with a warning.
 - API: Feature::getConvexHull returns a const reference. TOPP's obsolete cached-hull mutation must be
   removed in the coordinated consumer pin update. MSDataSqlConsumer is noncopyable and exposes
   finalize() for callers that need to handle output errors explicitly.

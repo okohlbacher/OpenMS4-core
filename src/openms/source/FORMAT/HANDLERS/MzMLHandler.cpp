@@ -5125,18 +5125,35 @@ namespace OpenMS::Internal
         }
       }
 
-      // count binary data array software
-      Size num_bi_software(0);
-
-      for (Size s = 0; s < exp.size(); ++s)
+      // Give every supplemental array its own processing ID. Array types and
+      // chromatograms must not alias the spectrum float-array IDs.
+      std::vector<std::pair<std::string, std::vector<ConstDataProcessingPtr>>> array_processing;
+      Size num_bi_software = 0;
+      auto collect_arrays = [&](const auto& arrays, const std::string& prefix)
       {
-        for (Size m = 0; m < exp[s].getFloatDataArrays().size(); ++m)
+        for (Size m = 0; m < arrays.size(); ++m)
         {
-          for (Size i = 0; i < exp[s].getFloatDataArrays()[m].getDataProcessing().size(); ++i)
+          const auto history = arrays[m].getDataProcessing();
+          if (!history.empty())
           {
-            ++num_bi_software;
+            array_processing.emplace_back(prefix + std::to_string(m), history);
+            num_bi_software += history.size();
           }
         }
+      };
+      auto collect_record = [&](const auto& record, const std::string& prefix)
+      {
+        collect_arrays(record.getFloatDataArrays(), prefix + "_bi_");
+        collect_arrays(record.getIntegerDataArrays(), prefix + "_int_");
+        collect_arrays(record.getStringDataArrays(), prefix + "_str_");
+      };
+      for (Size s = 0; s < exp.size(); ++s)
+      {
+        collect_record(exp[s], "dp_sp_" + std::to_string(s));
+      }
+      for (Size c = 0; c < exp.getChromatograms().size(); ++c)
+      {
+        collect_record(exp.getChromatograms()[c], "dp_ch_" + std::to_string(c));
       }
 
       os << "\t<softwareList count=\"" << num_software + num_bi_software + exp.getInstrumentConfigurations().size() << "\">\n";
@@ -5161,16 +5178,11 @@ namespace OpenMS::Internal
         }
       }
 
-      //write data processing (for each binary data array)
-      for (Size s = 0; s < exp.size(); ++s)
+      for (const auto& [id, history] : array_processing)
       {
-        for (Size m = 0; m < exp[s].getFloatDataArrays().size(); ++m)
+        for (Size i = 0; i < history.size(); ++i)
         {
-          for (Size i = 0; i < exp[s].getFloatDataArrays()[m].getDataProcessing().size(); ++i)
-          {
-            writeSoftware_(os,std::string("so_dp_sp_") + s + "_bi_" + m + "_pm_" + i,
-                exp[s].getFloatDataArrays()[m].getDataProcessing()[i]->getSoftware(), validator);
-          }
+          writeSoftware_(os, "so_" + id + "_pm_" + std::to_string(i), history[i]->getSoftware(), validator);
         }
       }
       os << "\t</softwareList>\n";
@@ -5194,20 +5206,7 @@ namespace OpenMS::Internal
       // data processing
       //--------------------------------------------------------------------------------------------
 
-      // count the float data arrays that get a processing record of their own below: an
-      // array without its own history references the first entry instead, so counting every
-      // array declared more dataProcessing elements than are written.
-      Size num_bi_dps(0);
-      for (Size s = 0; s < exp.size(); ++s)
-      {
-        for (Size m = 0; m < exp[s].getFloatDataArrays().size(); ++m)
-        {
-          if (!exp[s].getFloatDataArrays()[m].getDataProcessing().empty())
-          {
-            ++num_bi_dps;
-          }
-        }
-      }
+      const Size num_bi_dps = array_processing.size();
 
       os << "\t<dataProcessingList count=\"" << (std::max)((Size)1, dps.size() + num_bi_dps) << "\">\n";
 
@@ -5223,20 +5222,9 @@ namespace OpenMS::Internal
         writeDataProcessing_(os,std::string("dp_sp_") + s, dps[s], validator);
       }
 
-      //for each binary data array
-      for (Size s = 0; s < exp.size(); ++s)
+      for (const auto& [id, history] : array_processing)
       {
-        for (Size m = 0; m < exp[s].getFloatDataArrays().size(); ++m)
-        {
-          // if a DataArray has dataProcessing information, write it, otherwise we assume it has the
-          // same processing as the rest of the spectra and use the implicit referencing of mzML
-          // to the first entry (which is a dummy if none exists; see above)
-          if (!exp[s].getFloatDataArrays()[m].getDataProcessing().empty())
-          {
-            writeDataProcessing_(os,std::string("dp_sp_") + s + "_bi_" + m,
-              exp[s].getFloatDataArrays()[m].getDataProcessing(), validator);
-          }
-        }
+        writeDataProcessing_(os, id, history, validator);
       }
 
       os << "\t</dataProcessingList>\n";
@@ -5613,7 +5601,7 @@ namespace OpenMS::Internal
           std::string data_processing_ref_string ;
           if (!array.getDataProcessing().empty())
           {
-            data_processing_ref_string =std::string("dataProcessingRef=\"dp_sp_") + s + "_bi_" + m + "\"";
+            data_processing_ref_string =std::string("dataProcessingRef=\"dp_sp_") + s + "_int_" + m + "\"";
           }
           os << "\t\t\t\t\t<binaryDataArray arrayLength=\"" << array.size() << "\" encodedLength=\"" << encoded_string.size() << "\" " << data_processing_ref_string << ">\n";
           os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000522\" name=\"64-bit integer\" />\n";
@@ -5643,7 +5631,7 @@ namespace OpenMS::Internal
           std::string data_processing_ref_string ;
           if (!array.getDataProcessing().empty())
           {
-            data_processing_ref_string =std::string("dataProcessingRef=\"dp_sp_") + s + "_bi_" + m + "\"";
+            data_processing_ref_string =std::string("dataProcessingRef=\"dp_sp_") + s + "_str_" + m + "\"";
           }
           os << "\t\t\t\t\t<binaryDataArray arrayLength=\"" << array.size() << "\" encodedLength=\"" << encoded_string.size() << "\" " << data_processing_ref_string << ">\n";
           os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1001479\" name=\"null-terminated ASCII string\" />\n";
@@ -5852,7 +5840,8 @@ namespace OpenMS::Internal
       std::string data_processing_ref_string ;
       if (!array.getDataProcessing().empty())
       {
-        data_processing_ref_string =std::string("dataProcessingRef=\"dp_sp_") + spec_chrom_idx + "_bi_" + array_idx + "\"";
+        data_processing_ref_string = std::string("dataProcessingRef=\"") + (isSpectrum ? "dp_sp_" : "dp_ch_") +
+                                     std::to_string(spec_chrom_idx) + "_bi_" + std::to_string(array_idx) + "\"";
       }
 
       // Try numpress encoding (if it is enabled) and fall back to regular encoding if it fails
@@ -6011,7 +6000,7 @@ namespace OpenMS::Internal
         std::string data_processing_ref_string ;
         if (!array.getDataProcessing().empty())
         {
-          data_processing_ref_string =std::string("dataProcessingRef=\"dp_sp_") + c + "_bi_" + m + "\"";
+          data_processing_ref_string =std::string("dataProcessingRef=\"dp_ch_") + c + "_int_" + m + "\"";
         }
         os << "\t\t\t\t\t<binaryDataArray arrayLength=\"" << array.size() << "\" encodedLength=\"" << encoded_string.size() << "\" " << data_processing_ref_string << ">\n";
         os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000522\" name=\"64-bit integer\" />\n";
@@ -6043,7 +6032,7 @@ namespace OpenMS::Internal
         std::string data_processing_ref_string ;
         if (!array.getDataProcessing().empty())
         {
-          data_processing_ref_string =std::string("dataProcessingRef=\"dp_sp_") + c + "_bi_" + m + "\"";
+          data_processing_ref_string =std::string("dataProcessingRef=\"dp_ch_") + c + "_str_" + m + "\"";
         }
         os << "\t\t\t\t\t<binaryDataArray arrayLength=\"" << array.size() << "\" encodedLength=\"" << encoded_string.size() << "\" " << data_processing_ref_string << ">\n";
         os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1001479\" name=\"null-terminated ASCII string\" />\n";

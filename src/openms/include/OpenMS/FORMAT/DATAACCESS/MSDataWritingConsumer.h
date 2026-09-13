@@ -57,14 +57,19 @@ namespace OpenMS
       inconsistent mzML if the count attribute of spectrumList or
       chromatogramList is incorrect.
 
-      @note The header is written from the first spectrum alone, so it only
-      declares that spectrum's data processing and source file. A later
+      @note The header is written from the first spectrum or chromatogram alone.
+      It declares that record's data processing, including supplemental arrays.
+      A later
       spectrum whose data processing differs from the first one is written
       with the first spectrum's, and a later spectrum's own source file and
-      the data processing of its float data arrays are not written (a warning
+      the data processing of its supplemental arrays are not written (a warning
       is issued once when this loses information): mzML references to
       declarations the header does not contain would make the file invalid.
       Use MzMLFile::store to keep them.
+
+      @note Later chromatograms' supplemental array histories are likewise omitted
+      with a warning because their declarations cannot be added to the header.
+      The caller's arrays and histories are unchanged.
 
     */
     class OPENMS_DLLAPI MSDataWritingConsumer : 
@@ -260,5 +265,4 @@ namespace OpenMS
 
 
 } //end namespace OpenMS
-
 

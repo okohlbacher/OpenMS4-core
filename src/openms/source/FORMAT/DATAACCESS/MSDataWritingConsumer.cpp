@@ -17,6 +17,27 @@
 
 namespace OpenMS
 {
+  namespace
+  {
+    // Later records cannot add array-processing declarations to an already written header.
+    template <typename Record>
+    bool clearArrayProcessing(Record& record)
+    {
+      bool removed = false;
+      auto clear = [&](auto& arrays)
+      {
+        for (auto& array : arrays)
+        {
+          removed |= !array.getDataProcessing().empty();
+          array.getDataProcessing().clear();
+        }
+      };
+      clear(record.getFloatDataArrays());
+      clear(record.getIntegerDataArrays());
+      clear(record.getStringDataArrays());
+      return removed;
+    }
+  }
 
   MSDataWritingConsumer::MSDataWritingConsumer(const std::string& filename) :
     Internal::MzMLHandler(MapType(), filename, MzMLFile().getVersion(), ProgressLogger()),
@@ -107,14 +128,7 @@ namespace OpenMS
         scpy.setSourceFile(SourceFile());
         lost_information = true;
       }
-      for (auto& array : scpy.getFloatDataArrays())
-      {
-        if (!array.getDataProcessing().empty())
-        {
-          array.getDataProcessing().clear();
-          lost_information = true;
-        }
-      }
+      lost_information |= clearArrayProcessing(scpy);
       if (lost_information && !warned_undeclared_references_)
       {
         OPENMS_LOG_WARN << "Warning: '" << file_ << "': a spectrum carries a source file or data processing that the mzML header "
@@ -168,6 +182,12 @@ namespace OpenMS
       //--------------------------------------------------------------------
       Internal::MzMLHandler::writeHeader_(ofs_, dummy, dps_, *validator_);
       started_writing_ = true;
+    }
+    else if (clearArrayProcessing(ccpy) && !warned_undeclared_references_)
+    {
+      OPENMS_LOG_WARN << "Warning: '" << file_ << "': chromatogram array data processing is not declared in the mzML header; "
+                      << "writing arrays without that history. Use MzMLFile::store to retain it.\n";
+      warned_undeclared_references_ = true;
     }
     if (!writing_chromatograms_)
     {

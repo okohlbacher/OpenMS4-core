@@ -57,6 +57,31 @@ namespace
     c.push_back(p);
     return c;
   }
+
+  template <typename Record>
+  void addArrayHistories(Record& record, const std::string& prefix)
+  {
+    auto history = [&](auto& array, const std::string& type)
+    {
+      array.setName(prefix + type);
+      auto processing = std::make_shared<DataProcessing>();
+      processing->setMetaValue("array history", prefix + type);
+      processing->getProcessingActions().insert(DataProcessing::SMOOTHING);
+      array.getDataProcessing().push_back(processing);
+    };
+    record.getFloatDataArrays().resize(1);
+    record.getIntegerDataArrays().resize(1);
+    record.getStringDataArrays().resize(1);
+    auto& floats = record.getFloatDataArrays()[0];
+    auto& integers = record.getIntegerDataArrays()[0];
+    auto& strings = record.getStringDataArrays()[0];
+    floats.push_back(1.5f);
+    integers.push_back(42);
+    strings.push_back("label");
+    history(floats, "float");
+    history(integers, "integer");
+    history(strings, "string");
+  }
 }
 
 START_TEST(MSDataWritingConsumer, "$Id$")
@@ -268,6 +293,88 @@ START_SECTION(([EXTRA] later spectra only reference what the header written from
 }
 END_SECTION
 
-/////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////
+START_SECTION((regression: stored spectrum and chromatogram array histories are distinct))
+{
+  auto spectrum = makeSpectrum("spectrum=1", 10.0);
+  auto chromatogram = makeChromatogram("TIC");
+  addArrayHistories(spectrum, "spectrum ");
+  addArrayHistories(chromatogram, "chromatogram ");
+  PeakMap input;
+  input.addSpectrum(spectrum);
+  input.addChromatogram(chromatogram);
+  std::string filename;
+  NEW_TMP_FILE(filename)
+  MzMLFile file;
+  file.store(filename, input);
+  TEST_EQUAL(file.isValid(filename), true)
+  PeakMap loaded;
+  file.load(filename, loaded);
+  ABORT_IF(loaded.size() != 1 || loaded.getChromatograms().size() != 1)
+  auto check = [&](const auto& record, const std::string& prefix)
+  {
+    const bool arrays_present = record.getFloatDataArrays().size() == 1 && record.getIntegerDataArrays().size() == 1 && record.getStringDataArrays().size() == 1;
+    TEST_EQUAL(arrays_present, true)
+    if (!arrays_present) { return; }
+    const auto& floats = record.getFloatDataArrays()[0];
+    const auto& integers = record.getIntegerDataArrays()[0];
+    const auto& strings = record.getStringDataArrays()[0];
+    const bool histories_present = floats.getDataProcessing().size() == 1 && integers.getDataProcessing().size() == 1 && strings.getDataProcessing().size() == 1;
+    TEST_EQUAL(histories_present, true)
+    if (!histories_present) { return; }
+    TEST_STRING_EQUAL(floats.getDataProcessing()[0]->getMetaValue("array history").toString(), prefix + "float")
+    TEST_STRING_EQUAL(integers.getDataProcessing()[0]->getMetaValue("array history").toString(), prefix + "integer")
+    TEST_STRING_EQUAL(strings.getDataProcessing()[0]->getMetaValue("array history").toString(), prefix + "string")
+    const bool values_present = floats.size() == 1 && integers.size() == 1 && strings.size() == 1;
+    TEST_EQUAL(values_present, true)
+    if (!values_present) { return; }
+    TEST_REAL_SIMILAR(floats[0], 1.5)
+    TEST_EQUAL(integers[0], 42)
+    TEST_STRING_EQUAL(strings[0], "label")
+  };
+  check(loaded[0], "spectrum ");
+  check(loaded.getChromatograms()[0], "chromatogram ");
+}
+END_SECTION
+
+START_SECTION((regression: streamed arrays reference only declared processing records))
+{
+  for (bool spectrum_first : {false, true})
+  {
+    std::string filename;
+    NEW_TMP_FILE(filename)
+    {
+      PlainMSDataWritingConsumer consumer(filename);
+      consumer.setExpectedSize(spectrum_first ? 2 : 0, 2);
+      if (spectrum_first)
+      {
+        auto first = makeSpectrum("spectrum=1", 10.0);
+        addArrayHistories(first, "first ");
+        consumer.consumeSpectrum(first);
+        auto second = makeSpectrum("spectrum=2", 20.0);
+        addArrayHistories(second, "second ");
+        consumer.consumeSpectrum(second);
+        TEST_EQUAL(second.getIntegerDataArrays()[0].getDataProcessing().size(), 1)
+      }
+      auto first = makeChromatogram("TIC");
+      addArrayHistories(first, "first ");
+      consumer.consumeChromatogram(first);
+      auto second = makeChromatogram("BPC");
+      addArrayHistories(second, "second ");
+      consumer.consumeChromatogram(second);
+      TEST_EQUAL(second.getFloatDataArrays()[0].getDataProcessing().size(), 1)
+    }
+    MzMLFile file;
+    TEST_EQUAL(file.isValid(filename), true)
+    const auto xml = readWholeFile(filename);
+    TEST_EQUAL(xml.find("dataProcessingRef=\"dp_sp_1_"), std::string::npos)
+    TEST_EQUAL(xml.find("dataProcessingRef=\"dp_ch_1_"), std::string::npos)
+    TEST_EQUAL(xml.find("dataProcessingRef=\"dp_ch_0_") == std::string::npos, spectrum_first)
+    PeakMap loaded;
+    file.load(filename, loaded);
+    TEST_EQUAL(loaded.size(), spectrum_first ? 2 : 0)
+    TEST_EQUAL(loaded.getChromatograms().size(), 2)
+  }
+}
+END_SECTION
+
 END_TEST
