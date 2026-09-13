@@ -1,3 +1,19 @@
+Core review integration (2026-09-13, experimental branch)
+--------------------------------------------------------
+- Guard parser lengths and indices, preserve array/metadata pairing, make sqMass writes transactional,
+  and retain streamed run metadata. Readers and writers remain in the Core SDK.
+- Correct implicit protein-terminal pepXML modifications, MGF block isolation, list-valued numeric
+  filters and charge-two suffix neutral losses in both XLMS spectrum generators.
+- Exercise seeded ID collisions, missing peptide hits, mismatched mobility arrays and trailing mzTab
+  columns; enable the rewritten MSDataWritingConsumer test and remove timing-ratio assumptions.
+- API: Feature::getConvexHull returns a const reference. TOPP's obsolete cached-hull mutation must be
+  removed in the coordinated consumer pin update. MSDataSqlConsumer is noncopyable and exposes
+  finalize() for callers that need to handle output errors explicitly.
+- Remove the unused FeatureFinderAlgorithm and FeatureFinderDefs headers. Rebuild all consumers;
+  these changes do not establish ABI compatibility with the released Core SDK.
+- The inherited issue list includes deferred and documentation-only findings. Passing class tests
+  does not close unreviewed findings or qualify optional readers or every consumer/platform.
+
 OpenMS 4 Core SDK build and delivery
 -----------------------------------
 - Close filename-owned Parquet inputs before returning, preserve caller-owned input streams, and test immediate deletion and read-error cleanup.

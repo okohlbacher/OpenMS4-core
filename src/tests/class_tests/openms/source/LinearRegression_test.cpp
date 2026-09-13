@@ -24,7 +24,7 @@ using namespace OpenMS;
 using namespace Math;
 using namespace std;
 
-LinearRegression* ptr;
+LinearRegression* ptr = nullptr;
 LinearRegression* nullPointer = nullptr;
 START_SECTION((LinearRegression()))
   ptr = new LinearRegression;

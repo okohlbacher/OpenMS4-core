@@ -29,7 +29,7 @@ using namespace OpenMS;
 using namespace std;
 
 OMSSACSVFile xml_file;
-OMSSACSVFile* ptr;
+OMSSACSVFile* ptr = nullptr;
 OMSSACSVFile* nullPointer = nullptr;
 ProteinIdentification protein_identification;
 PeptideIdentificationList peptide_identifications; 

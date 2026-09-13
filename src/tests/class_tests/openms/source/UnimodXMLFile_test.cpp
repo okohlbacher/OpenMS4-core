@@ -30,7 +30,7 @@ using namespace OpenMS;
 using namespace std;
 
 UnimodXMLFile xml_file;
-UnimodXMLFile* ptr;
+UnimodXMLFile* ptr = nullptr;
 UnimodXMLFile* nullPointer = nullptr;
 
 START_SECTION((UnimodXMLFile()))

@@ -49,7 +49,7 @@ START_SECTION((BinnedSpectrum()))
 }
 END_SECTION
 
-BinnedSpectrum* bs1;
+BinnedSpectrum* bs1 = nullptr;
 DTAFile dtafile;
 PeakSpectrum s1;
 DTAFile().load(OPENMS_GET_TEST_DATA_PATH("PILISSequenceDB_DFPIANGER_1.dta"), s1);

@@ -29,7 +29,7 @@ using namespace std;
 typedef BaseFeature::QualityType QualityType;
 
 ///constructor and destructor test
-DataFilters* ptr;
+DataFilters* ptr = nullptr;
 DataFilters* nullPointer = nullptr;
 START_SECTION((DataFilters()))
 	ptr = new DataFilters();
