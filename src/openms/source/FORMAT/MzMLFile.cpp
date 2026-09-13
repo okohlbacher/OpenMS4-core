@@ -232,9 +232,13 @@ namespace OpenMS
 
   std::map<UInt, MzMLFile::SpecInfo> MzMLFile::getCentroidInfo(const std::string& filename, const Size first_n_spectra_only)
   {
+    std::map<UInt, SpecInfo> ret;
+    if (first_n_spectra_only == 0)
+    {
+      return ret; // inspect nothing; decrementing an unsigned zero wrapped to SIZE_MAX
+    }
     bool oldoption = options_.getFillData();
     options_.setFillData(true); // we want the data as well (to allow estimation from data if metadata is missing)
-    std::map<UInt, SpecInfo> ret;
     Size first_n_spectra_only_remaining = first_n_spectra_only;
     auto f = [&ret, &first_n_spectra_only_remaining](const MSSpectrum& s)
     {
@@ -265,7 +269,15 @@ namespace OpenMS
     };
     MSDataTransformingConsumer c;
     c.setSpectraProcessingFunc(f);
-    transform(filename, &c, true, true); // no first pass
+    try
+    {
+      transform(filename, &c, true, true); // no first pass
+    }
+    catch (...)
+    {
+      options_.setFillData(oldoption); // a parse or file error must not leave the reader changed
+      throw;
+    }
 
     // restore old state
     options_.setFillData(oldoption);

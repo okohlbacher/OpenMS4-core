@@ -535,7 +535,12 @@ namespace OpenMS::Internal
       //check if the term is allowed in this element
       //and if there is a mapping rule for this element
       //Also store fulfilled rule term counts - this count is used to check of the MUST/MAY and AND/OR/XOR is fulfilled
-      const vector<CVMappingRule>& rules = rules_.at(path);
+      const auto entry = rules_.find(path);
+      if (entry == rules_.end())
+      {
+        return false; // no mapping rule for this element: not located, rather than std::out_of_range
+      }
+      const vector<CVMappingRule>& rules = entry->second;
       for (Size r = 0; r < rules.size(); ++r) //go thru all rules
       {
         for (Size t = 0; t < rules[r].getCVTerms().size(); ++t) //go thru all terms

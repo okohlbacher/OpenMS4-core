@@ -416,6 +416,20 @@ namespace OpenMS
     }
   }
 
+  namespace
+  {
+    /// exp(z*z) * erfc(z) for z >= 0 -- the scaled complementary error function.
+    /// Forming the two factors separately overflows and underflows past z = 26.6, where
+    /// binary64 turns a very small but finite EMG tail into inf * 0 = NaN. For large z the
+    /// asymptotic series 1/(z*sqrt(pi)) * (1 - 1/(2z^2) + 3/(4z^4) - 15/(8z^6)) is used.
+    double erfcx_(const double z)
+    {
+      if (z < 25.0) return std::exp(z * z) * std::erfc(z);
+      const double w = 1.0 / (z * z);
+      return (1.0 - 0.5 * w * (1.0 - 1.5 * w * (1.0 - 2.5 * w))) / (z * std::sqrt(Constants::PI));
+    }
+  }
+
   double EmgGradientDescent::emg_point(
     const double x,
     const double h,
@@ -434,7 +448,7 @@ namespace OpenMS
     }
     else if (z <= 6.71e7)
     {
-      return h * std::exp(-(1.0/2.0) * std::pow(((x - u)/s),2.0)) * (s/t) * std::sqrt(PI/2.0) * std::exp(std::pow((1.0/std::sqrt(2.0) * (s/t - (x - u)/s)),2.0)) * std::erfc(1.0/std::sqrt(2.0) * (s/t - (x - u)/s));
+      return h * std::exp(-(1.0/2.0) * std::pow(((x - u)/s),2.0)) * (s/t) * std::sqrt(PI/2.0) * erfcx_(z);
     }
     else
     {

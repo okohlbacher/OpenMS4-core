@@ -45,44 +45,64 @@ namespace OpenMS
     return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 && second >= 0 && second <= 59;
   }
 
-  // helper: convert fields to a time_point, add seconds, convert back
-  // Uses std::chrono year_month_day and hh_mm_ss (C++20)
+  // helper: days since 1970-01-01 from a proleptic Gregorian date, and back.
+  // Plain integer arithmetic: timegm/_mkgmtime reject years before the libc epoch on some
+  // hosts -- macOS returns time_t(-1) for every year up to 1899 -- and the failure is
+  // indistinguishable from a valid result, so a valid early date came back as 1969-12-31.
+  static long long daysFromCivil_(int year, int month, int day)
+  {
+    year -= month <= 2;
+    const long long era = (year >= 0 ? year : year - 399) / 400;
+    const unsigned yoe = static_cast<unsigned>(year - era * 400);                  // [0, 399]
+    const unsigned doy = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1; // [0, 365]
+    const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;                    // [0, 146096]
+    return era * 146097LL + static_cast<long long>(doe) - 719468;
+  }
+
+  static void civilFromDays_(long long days, int& year, int& month, int& day)
+  {
+    days += 719468;
+    const long long era = (days >= 0 ? days : days - 146096) / 146097;
+    const unsigned doe = static_cast<unsigned>(days - era * 146097);            // [0, 146096]
+    const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; // [0, 399]
+    const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);               // [0, 365]
+    const unsigned mp = (5 * doy + 2) / 153;                                    // [0, 11]
+    day = static_cast<int>(doy - (153 * mp + 2) / 5 + 1);                       // [1, 31]
+    month = static_cast<int>(mp + (mp < 10 ? 3 : -9));                          // [1, 12]
+    year = static_cast<int>(static_cast<long long>(yoe) + era * 400 + (month <= 2));
+  }
+
+  // helper: add seconds to naive calendar fields
   static void addSecsToFields_(int& year, int& month, int& day,
                                int& hour, int& minute, int& second, int secs)
   {
-    // Build a tm struct and use mktime/gmtime approach via chrono
-    struct tm t{};
-    t.tm_year = year - 1900;
-    t.tm_mon = month - 1;
-    t.tm_mday = day;
-    t.tm_hour = hour;
-    t.tm_min = minute;
-    t.tm_sec = second;
-    t.tm_isdst = -1; // let mktime figure it out -- actually we want naive arithmetic
+    long long total = daysFromCivil_(year, month, day) * 86400LL
+                      + hour * 3600LL + minute * 60LL + second + secs;
+    long long days = total / 86400;
+    long long rest = total % 86400;
+    if (rest < 0)
+    {
+      rest += 86400;
+      --days;
+    }
+    civilFromDays_(days, year, month, day);
+    hour = static_cast<int>(rest / 3600);
+    minute = static_cast<int>((rest % 3600) / 60);
+    second = static_cast<int>(rest % 60);
+  }
 
-    // Use timegm (POSIX) or _mkgmtime (MSVC) to avoid timezone issues
-    // since our DateTime is naive (no timezone state)
-#ifdef _WIN32
-    time_t tt = _mkgmtime(&t);
-#else
-    time_t tt = timegm(&t);
-#endif
-
-    tt += secs;
-
-    struct tm result{};
-#ifdef _WIN32
-    _gmtime64_s(&result, &tt);
-#else
-    gmtime_r(&tt, &result);
-#endif
-
-    year = result.tm_year + 1900;
-    month = result.tm_mon + 1;
-    day = result.tm_mday;
-    hour = result.tm_hour;
-    minute = result.tm_min;
-    second = result.tm_sec;
+  // helper: milliseconds from the fractional part of a timestamp, read from the text itself
+  static int parseMillis_(const std::string& date)
+  {
+    const auto dot = date.find('.');
+    if (dot == std::string::npos) return 0;
+    int millisecond = 0, digits = 0;
+    for (size_t i = dot + 1; i < date.size() && std::isdigit(static_cast<unsigned char>(date[i])); ++i, ++digits)
+    {
+      if (digits < 3) millisecond = millisecond * 10 + (date[i] - '0');
+    }
+    for (int i = digits; i < 3; ++i) millisecond *= 10;
+    return millisecond;
   }
 
   // helper: parse 3-letter month abbreviation to month number (1-12), returns 0 on failure
@@ -221,15 +241,7 @@ namespace OpenMS
             // with milliseconds
             if (sscanf(stripped.c_str(), "%d-%d-%dT%d:%d:%d.%d", &year, &month, &day, &hour, &minute, &second, &millisecond) == 7)
             {
-              // Normalize fractional seconds: e.g. ".4" -> 400, ".46" -> 460, ".468" -> 468
-              auto dot_pos = stripped.find('.');
-              if (dot_pos != std::string::npos)
-              {
-                int frac_digits = 0;
-                for (size_t i = dot_pos + 1; i < stripped.size() && std::isdigit(static_cast<unsigned char>(stripped[i])); ++i) ++frac_digits;
-                for (int i = frac_digits; i < 3; ++i) millisecond *= 10;
-                millisecond %= 1000;
-              }
+              millisecond = parseMillis_(stripped);
               parsed = true;
             }
           }
@@ -246,15 +258,7 @@ namespace OpenMS
           // ISO 8601 with milliseconds, no timezone: yyyy-MM-ddThh:mm:ss.zzz
           if (sscanf(date.c_str(), "%d-%d-%dT%d:%d:%d.%d", &year, &month, &day, &hour, &minute, &second, &millisecond) == 7)
           {
-            // Normalize fractional seconds: e.g. ".4" -> 400, ".46" -> 460, ".468" -> 468
-            auto dot_pos = date.find('.');
-            if (dot_pos != std::string::npos)
-            {
-              int frac_digits = 0;
-              for (size_t i = dot_pos + 1; i < date.size() && std::isdigit(static_cast<unsigned char>(date[i])); ++i) ++frac_digits;
-              for (int i = frac_digits; i < 3; ++i) millisecond *= 10;
-              millisecond %= 1000;
-            }
+            millisecond = parseMillis_(date);
             parsed = true;
           }
         }
@@ -577,15 +581,7 @@ namespace OpenMS
     {
       n = sscanf(date.c_str(), "%d-%d-%dT%d:%d:%d.%d", &year, &month, &day, &hour, &minute, &second, &millisecond);
       if (n != 7) return d;
-      // Normalize fractional seconds: e.g. ".4" -> 400, ".46" -> 460, ".468" -> 468
-      auto dot_pos = date.find('.');
-      if (dot_pos != std::string::npos)
-      {
-        int frac_digits = 0;
-        for (size_t i = dot_pos + 1; i < date.size() && std::isdigit(static_cast<unsigned char>(date[i])); ++i) ++frac_digits;
-        for (int i = frac_digits; i < 3; ++i) millisecond *= 10;
-        millisecond %= 1000;
-      }
+      millisecond = parseMillis_(date);
     }
     else if (format == "yyyy-MM-dd hh:mm:ss")
     {

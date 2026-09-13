@@ -107,7 +107,10 @@ namespace OpenMS
 
   std::string ControlledVocabulary::CVTerm::toXMLString(const std::string& ref, const std::string& value) const
   {
-    std::string s =  "<cvParam accession=\"" + id + "\" cvRef=\"" + ref + "\" name=\"" + Internal::XMLHandler::writeXMLEscape(name);
+    // every attribute is caller-supplied text and has to be escaped, not just name and value
+    std::string s =  "<cvParam accession=\"" + Internal::XMLHandler::writeXMLEscape(id)
+      + "\" cvRef=\"" + Internal::XMLHandler::writeXMLEscape(ref)
+      + "\" name=\"" + Internal::XMLHandler::writeXMLEscape(name);
     if (!value.empty())
     {
       s += "\" value=\"" + Internal::XMLHandler::writeXMLEscape(std::string(value));
@@ -119,19 +122,36 @@ namespace OpenMS
 
   std::string ControlledVocabulary::CVTerm::toXMLString(const std::string& ref, const OpenMS::DataValue& value) const
   {
-    std::string s =  "<cvParam accession=\"" + id + "\" cvRef=\"" + ref + "\" name=\"" + Internal::XMLHandler::writeXMLEscape(name);
+    std::string s =  "<cvParam accession=\"" + Internal::XMLHandler::writeXMLEscape(id)
+      + "\" cvRef=\"" + Internal::XMLHandler::writeXMLEscape(ref)
+      + "\" name=\"" + Internal::XMLHandler::writeXMLEscape(name);
     if (!value.isEmpty())
     {
       s += "\" value=\"" + Internal::XMLHandler::writeXMLEscape(StringUtils::toStr(value));
     }
     if (value.hasUnit())
     {
-      std::string un = *(this->units.begin());
-      s += "\" unitAccession=\"" + un + "\" unitCvRef=\"" + StringUtils::prefix(un, 2);
-      // TODO: Currently we do not store the unit name in the CVTerm, only the
-      // accession number (we would need the ControlledVocabulary to look up
-      // the unit CVTerm).
-      // "\" unitName=\"" + unit.name
+      // The unit the value actually carries, not the term's lexically first allowed unit:
+      // substituting that one silently changed minutes into seconds, and dereferencing an
+      // empty set of allowed units was undefined behaviour.
+      char digits[8];
+      snprintf(digits, sizeof(digits), "%07d", value.getUnit()); // CV identifiers are 7 digits
+      std::string un(digits);
+      switch (value.getUnitType())
+      {
+        case DataValue::UnitType::UNIT_ONTOLOGY: un = "UO:" + un; break;
+        case DataValue::UnitType::MS_ONTOLOGY: un = "MS:" + un; break;
+        default: un.clear(); break; // unknown ontology: write no unit rather than a wrong one
+      }
+      if (!un.empty())
+      {
+        s += "\" unitAccession=\"" + Internal::XMLHandler::writeXMLEscape(un)
+          + "\" unitCvRef=\"" + StringUtils::prefix(un, 2);
+        // TODO: Currently we do not store the unit name in the CVTerm, only the
+        // accession number (we would need the ControlledVocabulary to look up
+        // the unit CVTerm).
+        // "\" unitName=\"" + unit.name
+      }
     }
     s +=  "\"/>";
     return s;
@@ -471,8 +491,10 @@ namespace OpenMS
           {
             line_wo_spaces = StringUtils::substr(line_wo_spaces, 0, line_wo_spaces.find('\"'));
           }
-          //trim prefix
-          line_wo_spaces = StringUtils::substr(line_wo_spaces, 22);
+          //trim prefix -- "xref:" and "xref_analog:" have different lengths
+          const std::string prefix = StringUtils::hasPrefix(line_wo_spaces, "xref_analog:binary-data-type:")
+                                     ? "xref_analog:binary-data-type:" : "xref:binary-data-type:";
+          line_wo_spaces = StringUtils::substr(line_wo_spaces, prefix.size());
           //trim just to be sure
           StringUtils::trim(line_wo_spaces);
           term.xref_binary.push_back(line_wo_spaces);
@@ -622,7 +644,7 @@ namespace OpenMS
       os << "name: '" << it.second.name <<  "'\n";
       for (const auto & parent_term : it.second.parents)
       {
-        cout << "is_a: '" << parent_term <<  "'\n";
+        os << "is_a: '" << parent_term <<  "'\n"; // the caller's stream, not the process console
       }
     }
     return os;

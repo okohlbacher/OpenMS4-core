@@ -145,9 +145,10 @@ namespace OpenMS::Internal
       options_ = opt;
       spectrum_data_.reserve(options_.getMaxDataPoolSize());
 
-      // Reserve memory for chromatogram data based on the maximum data pool size if chromatograms are to be skipped.
-      skip_chromatogram_ = options_.getSkipChromatograms();
-      if (!skip_chromatogram_)
+      // skip_chromatogram_ means "inside a chromatogram that is being skipped" and the generic
+      // start-element guard honours it, so setting it from the option here suppressed the file
+      // description and every spectrum as well; the <chromatogram> start tag sets it instead.
+      if (!options_.getSkipChromatograms())
       {
         chromatogram_data_.reserve(options_.getMaxDataPoolSize());
       }
@@ -926,7 +927,11 @@ namespace OpenMS::Internal
       }
       else if (tag == "chromatogram")
       {
-        if (load_detail_ == XMLHandler::LD_COUNTS_WITHOPTIONS)
+        if (options_.getSkipChromatograms())
+        {
+          skip_chromatogram_ = true; // skip this chrom, until endElement(chromatogram)
+        }
+        else if (load_detail_ == XMLHandler::LD_COUNTS_WITHOPTIONS)
         { //, but we only want to count
           skip_chromatogram_ = true; // skip the remaining chrom, until endElement(chromatogram)
           ++chromatogram_count_;
@@ -1395,6 +1400,14 @@ namespace OpenMS::Internal
 
       if (equal_(qname, s_spectrum))
       {
+        // Only the scan-start-time cvParam counts and skips a spectrum in count-only mode, so
+        // one without that term used to take the ordinary path: it was not counted, and its
+        // peak arrays were decoded -- and could throw -- although no data was asked for.
+        if (!skip_spectrum_ && load_detail_ == XMLHandler::LD_COUNTS_WITHOPTIONS && !rt_set_)
+        {
+          skip_spectrum_ = true;
+          ++scan_count_;
+        }
         if (!skip_spectrum_)
         {
           // catch errors stemming from confusion about elution time and scan time
@@ -1470,10 +1483,7 @@ namespace OpenMS::Internal
         {
           case XMLHandler::LD_ALLDATA:
           case XMLHandler::LD_COUNTS_WITHOPTIONS:
-            if (!options_.getSkipChromatograms())
-            {
-              skip_chromatogram_ = false;  // don't skip the next chrom
-            }
+            skip_chromatogram_ = false;  // stop skipping; the next <chromatogram> decides again
             break;
           case XMLHandler::LD_RAWCOUNTS:
             skip_chromatogram_ = true; // we always skip chroms; we only need the outer <spectrumList/chromatogramList count=...>
@@ -3784,7 +3794,7 @@ namespace OpenMS::Internal
       {
         os << "\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000799\" name=\"custom unreleased software tool\" value=\"" << writeXMLAttribute_(software.getName()) << "\" />\n";
       }
-      writeUserParam_(os, software, 3, "/mzML/Software/cvParam/@accession", validator);
+      writeUserParam_(os, software, 3, "/mzML/softwareList/software/cvParam/@accession", validator);
       os << "\t\t</software>\n";
     }
 
@@ -3845,11 +3855,13 @@ namespace OpenMS::Internal
         os << "\t\t\t</processingMethod>\n";
       }
 
-      bool written = false;
       for (Size i = 0; i < dps.size(); ++i)
       {
+        // per method: the fallback action below depends on this method alone, and the schema
+        // uses order to put consecutive steps in sequence, so it cannot be zero for all of them
+        bool written = false;
         //data processing action
-        os << "\t\t\t<processingMethod order=\"0\" softwareRef=\"so_" << id << "_pm_" << i << "\">\n";
+        os << "\t\t\t<processingMethod order=\"" << i << "\" softwareRef=\"so_" << id << "_pm_" << i << "\">\n";
         if (dps[i]->getProcessingActions().count(DataProcessing::DATA_PROCESSING) == 1)
         {
           os << "\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000543\" name=\"data processing action\" />\n";
@@ -5157,13 +5169,18 @@ namespace OpenMS::Internal
       // data processing
       //--------------------------------------------------------------------------------------------
 
-      // count number of float data array dps
+      // count the float data arrays that get a processing record of their own below: an
+      // array without its own history references the first entry instead, so counting every
+      // array declared more dataProcessing elements than are written.
       Size num_bi_dps(0);
       for (Size s = 0; s < exp.size(); ++s)
       {
         for (Size m = 0; m < exp[s].getFloatDataArrays().size(); ++m)
         {
-          ++num_bi_dps;
+          if (!exp[s].getFloatDataArrays()[m].getDataProcessing().empty())
+          {
+            ++num_bi_dps;
+          }
         }
       }
 

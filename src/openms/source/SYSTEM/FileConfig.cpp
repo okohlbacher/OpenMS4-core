@@ -154,7 +154,7 @@ namespace OpenMS
         Param p_new = getSystemParameterDefaults_();
         p.setValue("version", VersionInfo::getVersion()); // update old version, such that p_new:version does not get overwritten during update()
         p_new.update(p);
-        // no new version is stored
+        p = p_new; // the repaired parameters are the result; the file itself is not rewritten
       }
     }
     return p;

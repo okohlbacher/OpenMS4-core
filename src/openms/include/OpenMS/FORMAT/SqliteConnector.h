@@ -62,6 +62,11 @@ namespace OpenMS
     /// Destructor
     ~SqliteConnector();
 
+    /// The connector owns its database handle: copying it would close the same handle twice
+    /// and assignment would drop the previous one.
+    SqliteConnector(const SqliteConnector&) = delete;
+    SqliteConnector& operator=(const SqliteConnector&) = delete;
+
     /**
       @brief Checks whether the given table exists
 

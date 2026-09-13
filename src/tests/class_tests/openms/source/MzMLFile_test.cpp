@@ -1310,11 +1310,16 @@ START_SECTION((void testSkipChromatograms()))
   PeakMap pm;
   file.load(OPENMS_GET_TEST_DATA_PATH("MzMLFile_1.mzML"), pm);
   TEST_EQUAL(pm.getChromatograms().size(), 0)
+  // skipping chromatograms must leave the spectra and the file description alone
+  TEST_NOT_EQUAL(pm.size(), 0)
+  TEST_NOT_EQUAL(pm.getExperimentalSettings().getSourceFiles().size(), 0)
 
   opts.setSkipChromatograms(false);
   file.setOptions(opts);
-  file.load(OPENMS_GET_TEST_DATA_PATH("MzMLFile_1.mzML"), pm);
-  TEST_NOT_EQUAL(pm.getChromatograms().size(), 0)
+  PeakMap full;
+  file.load(OPENMS_GET_TEST_DATA_PATH("MzMLFile_1.mzML"), full);
+  TEST_NOT_EQUAL(full.getChromatograms().size(), 0)
+  TEST_EQUAL(pm.size(), full.size())
 }
 END_SECTION
 

@@ -183,7 +183,9 @@ namespace OpenMS
       if (it2 == d.decomp_.end())
       {
         d.decomp_.insert(*it);
-        if (it->second > number_of_max_aa_)
+        // compare against the running maximum of the result, not against this operand's:
+        // the assignment below would otherwise lower a maximum an earlier key already set.
+        if (it->second > d.number_of_max_aa_)
         {
           d.number_of_max_aa_ = it->second;
         }

@@ -29,6 +29,28 @@ namespace OpenMS
     }
   }
 
+  namespace
+  {
+    /// Finalises a prepared statement on every exit, including an exception.
+    struct StatementGuard
+    {
+      sqlite3_stmt* stmt = nullptr;
+      ~StatementGuard() { sqlite3_finalize(stmt); }
+    };
+
+    /// Quotes an SQL identifier: SQLite doubles an embedded quote inside "..."
+    std::string quoteIdentifier(const std::string& name)
+    {
+      std::string quoted = "\"";
+      for (const char c : name)
+      {
+        if (c == '"') quoted += '"';
+        quoted += c;
+      }
+      return quoted + '"';
+    }
+  }
+
   void SqliteConnector::openDatabase_(const std::string& filename, const SqlOpenMode mode)
   {
     // Open database
@@ -47,11 +69,15 @@ namespace OpenMS
     }
     sqlite3* db = nullptr;
     int rc = sqlite3_open_v2(filename.c_str(), &db, flags, nullptr);
-    db_ = db;
     if (rc)
     {
+      // sqlite3_open_v2 hands back an allocated handle even when it fails, and the
+      // destructor never runs for an object whose constructor throws.
+      sqlite3_close_v2(db);
+      db_ = nullptr;
       throw Exception::SqlOperationFailed(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Could not open sqlite db '" + filename + "' in mode " + StringUtils::toStr(int(mode)));
     }
+    db_ = db;
   }
 
   bool SqliteConnector::tableExists(const std::string& tablename)
@@ -77,55 +103,47 @@ namespace OpenMS
   Size SqliteConnector::countTableRows(const std::string& table_name)
   {
     sqlite3* db = static_cast<sqlite3*>(db_);
-    sqlite3_stmt* stmt;
-    std::string select_runs = "SELECT count(*) FROM " + table_name + ";";
-    Internal::SqliteHelper::prepareStatement(db, &stmt, select_runs);
-    sqlite3_step(stmt);
-    if (sqlite3_column_type(stmt, 0) == SQLITE_NULL)
+    StatementGuard guard;
+    std::string select_runs = "SELECT count(*) FROM " + quoteIdentifier(table_name) + ";";
+    Internal::SqliteHelper::prepareStatement(db, &guard.stmt, select_runs);
+    // an error from the step is not an empty table: without this check a locked or broken
+    // database read as a NULL count, and the throw below leaked the statement
+    if (sqlite3_step(guard.stmt) != SQLITE_ROW || sqlite3_column_type(guard.stmt, 0) == SQLITE_NULL)
     {
       throw Exception::SqlOperationFailed(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Could not retrieve " + table_name + " table count!");
     }
-    Size res = sqlite3_column_int64(stmt, 0);
-    sqlite3_finalize(stmt);
-    return res;
+    return sqlite3_column_int64(guard.stmt, 0);
   }
 
   namespace Internal::SqliteHelper
     {
       bool columnExists(sqlite3 *db, const std::string& tablename, const std::string& colname)
       {
-        bool found = false;
-
-        sqlite3_stmt* xcntstmt;
-        prepareStatement(db, &xcntstmt, "PRAGMA table_info(" + tablename + ")");
+        StatementGuard guard;
+        // the table name is an identifier, not text: interpolating it unquoted made a name
+        // with SQL punctuation a syntax error or a different query
+        prepareStatement(db, &guard.stmt, "PRAGMA table_info(" + quoteIdentifier(tablename) + ")");
 
         // Go through all columns and check whether the required column exists
-        sqlite3_step(xcntstmt);
-        while (sqlite3_column_type(xcntstmt, 0) != SQLITE_NULL)
+        while (sqlite3_step(guard.stmt) == SQLITE_ROW)
         {
-          if (strcmp(colname.c_str(), reinterpret_cast<const char*>(sqlite3_column_text(xcntstmt, 1))) == 0)
+          const unsigned char* name = sqlite3_column_text(guard.stmt, 1);
+          if (name != nullptr && colname == reinterpret_cast<const char*>(name))
           {
-            found = true;
-            break;
+            return true;
           }
-          sqlite3_step(xcntstmt);
         }
-        sqlite3_finalize(xcntstmt);
-
-        return found;
+        return false;
       }
 
       bool tableExists(sqlite3 *db, const std::string& tablename)
       {
-        sqlite3_stmt* stmt;
-        prepareStatement(db, &stmt, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='" + tablename + "';");
-
-        sqlite3_step(stmt);
-        // if we get a row back, the table exists:
-        bool found = (sqlite3_column_type(stmt, 0) != SQLITE_NULL);
-        sqlite3_finalize(stmt);
-
-        return found;
+        StatementGuard guard;
+        // bound, not interpolated: a name containing an apostrophe ended the string literal
+        prepareStatement(db, &guard.stmt, "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?;");
+        sqlite3_bind_text(guard.stmt, 1, tablename.c_str(), static_cast<int>(tablename.size()), SQLITE_TRANSIENT);
+        // a row means the table exists; any status other than SQLITE_ROW means it does not
+        return sqlite3_step(guard.stmt) == SQLITE_ROW;
       }
 
       void executeStatement(sqlite3 *db, const std::string& statement)
@@ -155,35 +173,29 @@ namespace OpenMS
 
       void executeBindStatement(sqlite3 *db, const std::string& prepare_statement, const std::vector<std::string>& data)
       {
-        int rc;
-        sqlite3_stmt *stmt = nullptr;
-        prepareStatement(db, &stmt, prepare_statement);
+        // the guard finalises the statement on every exit, including the two throws below
+        StatementGuard guard;
+        prepareStatement(db, &guard.stmt, prepare_statement);
         for (Size k = 0; k < data.size(); k++)
         {
           // Fifth argument is a destructor for the blob.
           // SQLITE_STATIC because the statement is finalized
           // before the buffer is freed:
-          rc = sqlite3_bind_blob(stmt, k+1, data[k].c_str(), (int)data[k].size(), SQLITE_STATIC);
+          int rc = sqlite3_bind_blob(guard.stmt, k+1, data[k].c_str(), (int)data[k].size(), SQLITE_STATIC);
           if (rc != SQLITE_OK)
           {
             std::cerr << "SQL error after sqlite3_bind_blob at iteration " << k << std::endl;
             std::cerr << "Prepared statement " << prepare_statement << std::endl;
-            // TODO this is a mem-leak (missing sqlite3_finalize())
             throw Exception::IllegalArgument(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, sqlite3_errmsg(db));
           }
         }
 
-        rc = sqlite3_step(stmt);
-        if (rc != SQLITE_DONE)
+        if (sqlite3_step(guard.stmt) != SQLITE_DONE)
         {
           std::cerr << "SQL error after sqlite3_step" << std::endl;
           std::cerr << "Prepared statement " << prepare_statement << std::endl;
-          // TODO this is a mem-leak (missing sqlite3_finalize())
           throw Exception::IllegalArgument(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, sqlite3_errmsg(db));
         }
-
-        // free memory
-        sqlite3_finalize(stmt);
       }
 
       template <> bool extractValue<double>(double* dst, sqlite3_stmt* stmt, int pos) //explicit specialization
@@ -219,7 +231,9 @@ namespace OpenMS
       {
         if (sqlite3_column_type(stmt, pos) != SQLITE_NULL)
         {
-          *dst = std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, pos)));
+          const char* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, pos));
+          // by length, not as a C string: a TEXT value may contain NUL bytes
+          *dst = std::string(text, static_cast<size_t>(sqlite3_column_bytes(stmt, pos)));
           return true;
         }
 
@@ -262,7 +276,7 @@ namespace OpenMS
       {
         if (sqlite3_column_type(stmt, pos) == SQLITE_INTEGER)
         {
-          *dst = StringUtils::toStr(sqlite3_column_int(stmt, pos));
+          *dst = StringUtils::toStr(sqlite3_column_int64(stmt, pos)); // SQLite INTEGER is 64 bit
           return true;
         }
         return false;

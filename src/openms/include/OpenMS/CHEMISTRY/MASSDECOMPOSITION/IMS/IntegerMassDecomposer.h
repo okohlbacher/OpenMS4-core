@@ -421,6 +421,12 @@ private:
       {
         size_type i = witness_vector_.at(r).first;
         decomposition_value_type j = witness_vector_.at(r).second;
+        // A witness count of zero subtracts nothing and leaves mass and residue unchanged,
+        // so the next iteration would repeat it forever; stop instead of hanging.
+        if (j == 0)
+        {
+          break;
+        }
         decomposition.at(i) += j;
         if (m < j * alphabet_.getWeight(i))
         {

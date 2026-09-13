@@ -84,6 +84,12 @@ namespace OpenMS
       int& im_fwhm_idx, bool& has_fwhm_im
     ) const
     {
+      // Reset first: these are members of the detector, and a second run over spectra
+      // without the arrays would otherwise keep the previous run's flags and indices and
+      // read a float data array that is not there.
+      fwhm_meta_idx = im_idx = im_fwhm_idx = -1;
+      has_fwhm_mz = has_centroid_im = has_fwhm_im = false;
+
       for (const auto& spec : spectra)
       {
         const auto& fda = spec.getFloatDataArrays();
