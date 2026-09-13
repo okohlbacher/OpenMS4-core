@@ -144,15 +144,6 @@ namespace OpenMS
       by the loaders). This MetaValue-based path is for experiments already
       loaded into an @p MSExperiment (e.g. via @p FileHandler).
 
-      @note The two overloads are not strict mirrors of each other; the documented behaviour is
-            what each one actually does. This overload copies @p imzml:pixel_size_x/y whenever
-            both MetaValues exist, where the index overload copies the pixel size only when both
-            values are &gt; 0. An experiment loaded through this class never carries a non-positive
-            pixel size (it only sets the MetaValues for values &gt; 0), so the overloads agree on it;
-            they differ only when a caller sets imzml:pixel_size_x/y to 0 or less by hand. It also
-            tests the coordinates before @p imzml:z, so a spectrum at (0, 0, 2) is warned about as
-            a non-conformant coordinate here and skipped silently as an off-plane pixel there.
-
       @param[in] exp  Experiment previously loaded from imzML (e.g. via @p load or @p FileHandler).
       @param[out] geom Geometry to populate (cleared first).
     */

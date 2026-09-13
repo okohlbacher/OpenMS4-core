@@ -268,6 +268,17 @@ void ImzMLFile::buildImagingGeometry(const MSExperiment& exp, MSImagingGeometry&
       continue;
     }
 
+    // off-plane pixels are skipped before the coordinate check, as the index overload does
+    Int z_imz = 1;
+    if (spec.metaValueExists("imzml:z"))
+    {
+      z_imz = spec.getMetaValue("imzml:z");
+    }
+    if (z_imz != 1)
+    {
+      continue;
+    }
+
     const Int x_imz = spec.getMetaValue("imzml:x");
     const Int y_imz = spec.getMetaValue("imzml:y");
     if (x_imz < 1 || y_imz < 1)
@@ -277,16 +288,6 @@ void ImzMLFile::buildImagingGeometry(const MSExperiment& exp, MSImagingGeometry&
       OPENMS_LOG_WARN << "imzML: pixel coordinates must be >= 1; skipping spectrum " << i
                       << " at (" << OpenMS::StringConversions::toString(x_imz) << ","
                       << OpenMS::StringConversions::toString(y_imz) << ")." << std::endl;
-      continue;
-    }
-
-    Int z_imz = 1;
-    if (spec.metaValueExists("imzml:z"))
-    {
-      z_imz = spec.getMetaValue("imzml:z");
-    }
-    if (z_imz != 1)
-    {
       continue;
     }
 
@@ -360,7 +361,10 @@ void ImzMLFile::buildImagingGeometry(const MSExperiment& exp, MSImagingGeometry&
   {
     const double px = static_cast<double>(exp.getMetaValue("imzml:pixel_size_x"));
     const double py = static_cast<double>(exp.getMetaValue("imzml:pixel_size_y"));
-    geom.setPixelSize(px, py, "micrometer");
+    if (px > 0 && py > 0) // as the index overload: setPixelSize validates nothing
+    {
+      geom.setPixelSize(px, py, "micrometer");
+    }
   }
 }
 

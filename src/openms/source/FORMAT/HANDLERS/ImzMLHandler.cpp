@@ -217,32 +217,11 @@ public:
         {
           throwCompressedExternalError_(ibd_path, "m/z or intensity arrays");
         }
-        if (ims->mz_meta.is_ext)
-        {
-          ImzMLBinaryIO::readMzArray(handler_.ibd_, ims->mz_meta.offset, ims->mz_meta.count,
-                                     ims->mz_meta.dt, mz_vec, ibd_path);
-        }
-        else
-        {
-          mz_vec.resize(s.size());
-          for (Size i = 0; i < s.size(); ++i)
-          {
-            mz_vec[i] = s[i].getMZ();
-          }
-        }
-        if (ims->int_meta.is_ext)
-        {
-          ImzMLBinaryIO::readIntArray(handler_.ibd_, ims->int_meta.offset, ims->int_meta.count,
-                                      ims->int_meta.dt, int_vec, ibd_path);
-        }
-        else
-        {
-          int_vec.resize(s.size());
-          for (Size i = 0; i < s.size(); ++i)
-          {
-            int_vec[i] = s[i].getIntensity();
-          }
-        }
+        // endElement rejects a spectrum with only one external peak array, so both are in the .ibd
+        ImzMLBinaryIO::readMzArray(handler_.ibd_, ims->mz_meta.offset, ims->mz_meta.count,
+                                   ims->mz_meta.dt, mz_vec, ibd_path);
+        ImzMLBinaryIO::readIntArray(handler_.ibd_, ims->int_meta.offset, ims->int_meta.count,
+                                    ims->int_meta.dt, int_vec, ibd_path);
 
         if (mz_vec.size() != int_vec.size())
         {
@@ -617,6 +596,13 @@ void ImzMLHandler::onEndElement(const char16_t* qname)
     // makes the base treat the spectrum as having no inline peaks: no mismatch, no
     // warning, no wasted populate work. ImzMLInterceptConsumer fills the peaks from the
     // .ibd afterwards using the external offsets/counts, which are independent of this.
+    if (cur_mz_meta_.is_ext != cur_int_meta_.is_ext)
+    {
+      // imzML 1.1 keeps both peak arrays of a spectrum in the .ibd; one inline array would be
+      // dropped below while its partner is read from the .ibd, and the peaks would not pair up
+      throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, file_,
+        "imzML spectrum stores only one of its m/z and intensity arrays externally (IMS:1000101); imzML 1.1 requires both peak arrays in the .ibd");
+    }
     if (cur_mz_meta_.is_ext || cur_int_meta_.is_ext)
     {
       default_array_length_ = 0;

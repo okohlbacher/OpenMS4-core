@@ -658,7 +658,9 @@ namespace OpenMS
     {
       // The parser stops at the first error but keeps the elements it has read, so the record decoded
       // below may be incomplete. Report it instead of passing a partial record off as a complete one.
-      OPENMS_LOG_WARN << "Malformed XML in mzML record: " << error_handler.message << std::endl;
+      // Xerces stops at the error and keeps what it parsed so far; decoding that partial record
+        // failed later as a ConversionError that hid the real cause
+        throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "", "Malformed XML in mzML record: " + error_handler.message);
     }
 
     //-------------------------------------------------------------
