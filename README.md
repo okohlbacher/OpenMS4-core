@@ -215,7 +215,7 @@ OpenMS is distributed under the BSD 3-Clause license. See [OpenMS](https://githu
 The eighteen repositories are assembled by the parent repository
 [OpenMS4-tests](https://github.com/okohlbacher/OpenMS4-tests), which holds the submodule pins (`packages.lock.json`), the
 dependency-order build runner and the contract tests that keep the graph consistent.
-[`docs/project-state.md`](https://github.com/okohlbacher/OpenMS4-tests/blob/main/docs/project-state.md) is the current state
-of the whole project; [`docs/build-split-packages.md`](https://github.com/okohlbacher/OpenMS4-tests/blob/main/docs/build-split-packages.md)
+[`docs/project-state.md`](https://github.com/okohlbacher/OpenMS4-tests/blob/codex/package-split/docs/project-state.md) is the current state
+of the whole project; [`docs/build-split-packages.md`](https://github.com/okohlbacher/OpenMS4-tests/blob/codex/package-split/docs/build-split-packages.md)
 reproduces the installed-SDK build.
 <!-- package-graph:end -->
