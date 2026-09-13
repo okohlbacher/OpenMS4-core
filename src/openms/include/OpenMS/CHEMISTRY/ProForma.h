@@ -1062,7 +1062,9 @@ namespace OpenMS
       @brief Check if a theoretical spectrum can be generated for a PeptidoformIon
 
       Returns true if the PeptidoformIon can be fragmented. For cross-linked
-      peptides, both chains must be convertible. Chimeric spectra are not supported.
+      peptides, both chains must be convertible without loss after removing the
+      linker brackets, and at least one endpoint must define a resolvable linker
+      mass. Chimeric spectra are not supported.
 
       @param[in] pfi The PeptidoformIon to check
       @return True if spectrum generation is possible
@@ -1116,6 +1118,8 @@ namespace OpenMS
 
       For single-chain peptides, uses TheoreticalSpectrumGenerator.
       For cross-linked peptides (// separator), uses TheoreticalSpectrumGeneratorXLMS.
+      Requires a resolvable linker mass and lossless conversion of both remaining
+      chains. Unsupported modifications are reported instead of silently discarded.
       Chimeric spectra are not supported.
 
       @param[in] pfi The PeptidoformIon to fragment

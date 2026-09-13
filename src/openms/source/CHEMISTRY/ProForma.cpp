@@ -2081,16 +2081,8 @@ namespace
           endpoint.modification = m;
           endpoint.defines_mass = (mod.resolved_mod != nullptr) || carriesChemistry_(mod);
           const auto [has_mass, mod_mass] = getModificationMass_(mod);
-          if (const auto* md = std::get_if<MassDelta>(&mod.alternatives[0].first))
-          {
-            endpoint.mass_known = true;
-            endpoint.mass = md->mass;
-          }
-          else
-          {
-            endpoint.mass_known = has_mass;
-            endpoint.mass = has_mass ? mod_mass : 0.0;
-          }
+          endpoint.mass_known = has_mass;
+          endpoint.mass = has_mass ? mod_mass : 0.0;
           return endpoint;
         }
         ++position;
@@ -2122,11 +2114,20 @@ namespace
       return issues;
     }
     // the linker mass is passed to the XLMS generator on its own: unresolvable linker chemistry would silently become 0 Da
-    if ((alpha.defines_mass && !alpha.mass_known) || (beta.defines_mass && !beta.mass_known))
+    if ((!alpha.defines_mass && !beta.defines_mass) ||
+        (alpha.defines_mass && !alpha.mass_known) || (beta.defines_mass && !beta.mass_known))
     {
       issues.push_back({ConversionIssueType::UNRESOLVED_MOD, "Cross-link '" + alpha.label + "' has no resolvable linker mass", 0});
     }
     return issues;
+  }
+
+  // The XLMS generator accounts for the linker separately from each chain's modifications.
+  void removeCrossLink_(Peptidoform& chain, const CrossLinkEndpoint_& endpoint)
+  {
+    if (!endpoint.found) return;
+    auto& mods = std::get<SequenceElement>(chain.sequence[endpoint.section]).modifications;
+    mods.erase(mods.begin() + static_cast<SignedSize>(endpoint.modification));
   }
 
   std::vector<ConversionIssue> collectPeptidoformSpectrumIssues(const Peptidoform& pf)
@@ -2166,7 +2167,17 @@ namespace
     Peptidoform beta_pf = pfi.chains[1];
     ProForma::resolveModifications(alpha_pf);
     ProForma::resolveModifications(beta_pf);
-    return collectCrossLinkIssues_(findCrossLink(alpha_pf), findCrossLink(beta_pf));
+    const auto alpha = findCrossLink(alpha_pf);
+    const auto beta = findCrossLink(beta_pf);
+    issues = collectCrossLinkIssues_(alpha, beta);
+    removeCrossLink_(alpha_pf, alpha);
+    removeCrossLink_(beta_pf, beta);
+    for (const auto* chain : {&alpha_pf, &beta_pf})
+    {
+      const auto chain_issues = collectPeptidoformSpectrumIssues(*chain);
+      issues.insert(issues.end(), chain_issues.begin(), chain_issues.end());
+    }
+    return issues;
   }
 } // anonymous namespace
 
@@ -2607,6 +2618,10 @@ namespace
       {
         // the accumulation takes the first candidate, so every candidate must be resolvable and weigh the same
         // including its modifications; otherwise the mass would depend on the order of the candidates
+        if (region->elements.empty())
+        {
+          issues.push_back({ConversionIssueType::AMBIGUOUS_REGION, "Ambiguous region has no candidate residues", position});
+        }
         bool have_reference = false;
         bool masses_differ = false;
         double reference_mass = 0.0;
@@ -2957,16 +2972,11 @@ MSSpectrum ProForma::generateSpectrum(
 
   // the XLMS generator adds cross_linker_mass to both chain masses itself; left on a chain, the linker bracket
   // would count the linker again in the precursor and in every linked fragment
-  auto removeLinker = [](Peptidoform& chain, const CrossLinkEndpoint_& endpoint) {
-    if (!endpoint.found) return;
-    auto& mods = std::get<SequenceElement>(chain.sequence[endpoint.section]).modifications;
-    mods.erase(mods.begin() + static_cast<SignedSize>(endpoint.modification));
-  };
-  removeLinker(alpha_pf, alpha);
-  removeLinker(beta_pf, beta);
+  removeCrossLink_(alpha_pf, alpha);
+  removeCrossLink_(beta_pf, beta);
 
-  AASequence alpha_seq = toAASequence(alpha_pf, ConversionPolicy::BEST_EFFORT);
-  AASequence beta_seq = toAASequence(beta_pf, ConversionPolicy::BEST_EFFORT);
+  AASequence alpha_seq = toAASequence(alpha_pf, ConversionPolicy::FAIL_ON_LOSS);
+  AASequence beta_seq = toAASequence(beta_pf, ConversionPolicy::FAIL_ON_LOSS);
 
   // the endpoint that defines chemistry supplies the linker, whatever the sign of its mass; a label-only one only marks the site
   const double linker_mass = alpha.defines_mass ? alpha.mass : beta.mass;
@@ -3000,4 +3010,3 @@ MSSpectrum ProForma::generateSpectrum(
 }
 
 } // namespace OpenMS
-
