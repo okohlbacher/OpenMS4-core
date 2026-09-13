@@ -7,6 +7,7 @@
 // --------------------------------------------------------------------------
 
 #include <OpenMS/CONCEPT/ClassTest.h>
+#include <OpenMS/CONCEPT/UniqueIdGenerator.h>
 #include <OpenMS/test_config.h>
 
 ///////////////////////////
@@ -199,4 +200,20 @@ END_SECTION
 
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
+START_SECTION(([EXTRA] seeded maps may need more than 64 redraws))
+  DummyVectorIndexed seeded;
+  seeded.resize(256);
+  UniqueIdGenerator::setSeed(12345);
+  for (auto& value : seeded)
+  {
+    value.setUniqueId();
+  }
+  const auto duplicate = seeded.front();
+  seeded.push_back(duplicate);
+  UniqueIdGenerator::setSeed(12345);
+  TEST_EQUAL(seeded.resolveUniqueIdConflicts(), 257)
+  seeded.updateUniqueIdToIndex();
+  TEST_NOT_EQUAL(seeded.front().getUniqueId(), seeded.back().getUniqueId())
+END_SECTION
+
 END_TEST

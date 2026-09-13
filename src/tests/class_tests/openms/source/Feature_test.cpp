@@ -127,7 +127,7 @@ START_SECTION((void setConvexHulls(const vector<ConvexHull2D>& hulls)))
   TEST_REAL_SIMILAR(tmp.getConvexHulls()[1].getHullPoints()[1][1],1.0)
 END_SECTION
 
-START_SECTION((ConvexHull2D& getConvexHull() const))
+START_SECTION((const ConvexHull2D& getConvexHull() const))
   Feature tmp;
   tmp.setConvexHulls(hulls);
 
