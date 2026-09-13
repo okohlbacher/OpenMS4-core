@@ -91,6 +91,15 @@ namespace OpenMS
         sql_mass.readChromatograms(tmp_chroms, indices, false);
         for (Size k = 0; k < tmp_chroms.size(); k++)
         {
+          // The SQL tables hold no chromatogram settings beyond precursor and product, so a
+          // chromatogram read from them lost e.g. its SRM type. load() restores the settings from
+          // the full-meta record; take them from that same record, matched by native ID.
+          const Size idx = idx_start + k;
+          if (idx < experimental_settings.getNrChromatograms() &&
+              experimental_settings.getChromatogram(idx).getNativeID() == tmp_chroms[k].getNativeID())
+          {
+            static_cast<ChromatogramSettings&>(tmp_chroms[k]) = experimental_settings.getChromatogram(idx);
+          }
           consumer->consumeChromatogram(tmp_chroms[k]);
         }
       }

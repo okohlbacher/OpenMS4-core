@@ -15,6 +15,7 @@
 #include <OpenMS/FORMAT/MzMLFile.h>
 #include <OpenMS/FORMAT/FileTypes.h>
 #include <OpenMS/KERNEL/MSExperiment.h>
+#include <OpenMS/FORMAT/DATAACCESS/MSDataStoringConsumer.h>
 
 using namespace OpenMS;
 using namespace std;
@@ -489,6 +490,34 @@ START_SECTION([EXTRA_NEGATIVE_LINEAR] void store(const std::string& filename, Ma
   TEST_REAL_SIMILAR(loaded.getChromatograms()[0][0].getRT(), -100.0)
   TEST_REAL_SIMILAR(loaded.getChromatograms()[0][1].getRT(), -99.0)
   TEST_REAL_SIMILAR(loaded.getChromatograms()[0][2].getRT(), -98.0)
+}
+END_SECTION
+
+START_SECTION([EXTRA_TRANSFORM_META] void transform(const std::string& filename_in, Interfaces::IMSDataConsumer* consumer, bool skip_full_count, bool skip_first_pass))
+{
+  // transform() rebuilt chromatograms from the SQL tables alone, so an SRM chromatogram came out
+  // as a mass chromatogram while load() kept its type from the full-meta record
+  MSExperiment exp_orig;
+  MzMLFile().load(OPENMS_GET_TEST_DATA_PATH("MzMLSqliteHandler_1.mzML"), exp_orig);
+  ABORT_IF(exp_orig.getNrChromatograms() == 0)
+  exp_orig.getChromatogram(0).setChromatogramType(ChromatogramSettings::ChromatogramType::SELECTED_REACTION_MONITORING_CHROMATOGRAM);
+
+  SqMassFile::SqMassConfig config;
+  config.write_full_meta = true;
+  SqMassFile file;
+  file.setConfig(config);
+  std::string tmp_filename;
+  NEW_TMP_FILE(tmp_filename);
+  file.store(tmp_filename, exp_orig);
+
+  MSDataStoringConsumer consumer;
+  file.transform(tmp_filename, &consumer, true, true);
+  const MSExperiment& transformed = consumer.getData();
+  TEST_EQUAL(transformed.getNrChromatograms(), exp_orig.getNrChromatograms())
+  ABORT_IF(transformed.getNrChromatograms() == 0)
+  TEST_EQUAL(transformed.getChromatogram(0).getNativeID(), exp_orig.getChromatogram(0).getNativeID())
+  TEST_EQUAL(transformed.getChromatogram(0).getChromatogramType() == ChromatogramSettings::ChromatogramType::SELECTED_REACTION_MONITORING_CHROMATOGRAM, true)
+  TEST_EQUAL(transformed.getChromatogram(0).size(), exp_orig.getChromatogram(0).size())
 }
 END_SECTION
 

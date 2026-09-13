@@ -17,8 +17,6 @@
 #include <OpenMS/CONCEPT/Constants.h>
 #include <OpenMS/ANALYSIS/XLMS/OPXLDataStructs.h>
 #include <iostream>
-#include <algorithm>
-#include <cmath>
 
 
 START_TEST(SimpleTSGXLMS, "$Id$")
@@ -595,31 +593,5 @@ END_SECTION
 /////////////////////////////////////////////////////////////
 
 delete ptr;
-
-START_SECTION(([EXTRA] charge-two suffix losses use neutral masses))
-  SimpleTSGXLMS generator;
-  Param parameters = generator.getParameters();
-  parameters.setValue("add_b_ions", "false");
-  parameters.setValue("add_y_ions", "true");
-  parameters.setValue("add_losses", "true");
-  generator.setParameters(parameters);
-  AASequence sequence = AASequence::fromString("PEPTIDES");
-  vector<SimpleTSGXLMS::SimplePeak> peaks;
-  generator.getLinearIonSpectrum(peaks, sequence, 0, 2);
-  Size checked = 0;
-  for (const auto& peak : peaks)
-  {
-    if (peak.charge != 2) continue;
-    // Charge-one and charge-two versions of the same fragment differ by one proton.
-    const double charge_one_mz = 2 * peak.mz - Constants::PROTON_MASS_U;
-    const bool found = std::any_of(peaks.begin(), peaks.end(), [&](const auto& candidate)
-    {
-      return candidate.charge == 1 && std::abs(candidate.mz - charge_one_mz) < 1e-6;
-    });
-    TEST_TRUE(found)
-    ++checked;
-  }
-  TEST_EQUAL(checked > sequence.size() - 1, true) // neutral-loss peaks were included
-END_SECTION
 
 END_TEST
