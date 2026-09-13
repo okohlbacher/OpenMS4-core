@@ -11,9 +11,14 @@
 
 ///////////////////////////
 #include <OpenMS/FORMAT/QcMLFile.h>
+#include <OpenMS/KERNEL/ConsensusMap.h>
+#include <OpenMS/KERNEL/FeatureMap.h>
+#include <OpenMS/KERNEL/MSExperiment.h>
 ///////////////////////////
 
 #include <algorithm>
+#include <fstream>
+#include <iterator>
 #include <vector>
 
 using namespace OpenMS;
@@ -97,7 +102,30 @@ NOT_TESTABLE
 END_SECTION
 
 START_SECTION((void removeAllAttachments(std::string at)))
-NOT_TESTABLE
+{
+  QcMLFile q;
+  q.registerRun("run", "run");
+  q.registerSet("set", "set", {});
+  QcMLFile::Attachment remove;
+  remove.name = "remove";
+  remove.cvAcc = "QC:0000044";
+  remove.colTypes = {"value"};
+  remove.tableRows = {{"1"}};
+  auto keep = remove;
+  keep.name = "keep";
+  keep.cvAcc = "QC:0000047";
+  q.addRunAttachment("run", remove);
+  q.addRunAttachment("run", keep);
+  q.addSetAttachment("set", remove);
+  q.addSetAttachment("set", keep);
+  q.addRunAttachment("orphan", remove);
+  q.removeAllAttachments(remove.cvAcc);
+  TEST_EQUAL(q.exportAttachment("run", "remove").empty(), true)
+  TEST_EQUAL(q.exportAttachment("set", "remove").empty(), true)
+  TEST_EQUAL(q.exportAttachment("orphan", "remove").empty(), true)
+  TEST_EQUAL(q.exportAttachment("run", "keep").empty(), false)
+  TEST_EQUAL(q.exportAttachment("set", "keep").empty(), false)
+}
 END_SECTION
 
 START_SECTION((void removeQualityParameter(std::string r, std::vector<std::string> &ids)))
@@ -125,7 +153,11 @@ NOT_TESTABLE
 END_SECTION
 
 START_SECTION((std::string map2csv(const std::map<std::string, std::map<std::string, std::string> > &cvs_table, const std::string &separator) const ))
-NOT_TESTABLE
+{
+  const std::map<std::string, std::map<std::string, std::string>> table {{"id", {{"A", "1"}, {"B", "2"}}}, {"ms2", {{"B", "3"}, {"C", "4"}}}};
+  TEST_STRING_EQUAL(qcmlfile.map2csv(table, "\t"), "qp\tA\tB\tC\t\nid\t1\t2\t\t\nms2\t\t3\t4\t\n")
+  TEST_STRING_EQUAL(qcmlfile.map2csv({}, ","), "")
+}
 END_SECTION
 
 START_SECTION((std::string exportIDstats(const std::string &filename) const ))
@@ -175,7 +207,33 @@ END_SECTION
 
 START_SECTION((void store(const std::string &filename) const ))
 {
-	NOT_TESTABLE
+  QcMLFile q;
+  for (const std::string id : {"r1", "r2"})
+  {
+    q.registerRun(id, id);
+    QcMLFile::QualityParameter parameter;
+    parameter.name = "mzML file";
+    parameter.id = id + "_name";
+    parameter.cvRef = "MS";
+    parameter.cvAcc = "MS:1000577";
+    parameter.value = id + ".mzML";
+    q.addRunQualityParameter(id, parameter);
+  }
+  q.registerSet("s1", "s1", {"r1", "r2"});
+  q.registerSet("s2", "s2", {"r2"});
+  std::string file;
+  NEW_TMP_FILE(file)
+  q.store(file);
+  QcMLFile loaded;
+  loaded.load(file);
+  std::vector<std::string> values;
+  loaded.collectSetParameter("s1", "MS:1000577", values);
+  TEST_EQUAL(values.size(), 2)
+  values.clear();
+  loaded.collectSetParameter("s2", "MS:1000577", values);
+  TEST_EQUAL(values.size(), 1)
+  ABORT_IF(values.size() != 1)
+  TEST_STRING_EQUAL(values[0], "r2.mzML")
 }
 END_SECTION
 
@@ -253,7 +311,42 @@ END_SECTION
 
 START_SECTION(([QcMLFile::Attachment] std::string toXMLString(UInt indentation_level) const ))
 {
-	NOT_TESTABLE
+  QcMLFile q;
+  q.registerRun("run", "run");
+  QcMLFile::QualityParameter parameter;
+  parameter.name = "time";
+  parameter.id = "time";
+  parameter.cvRef = "QC";
+  parameter.cvAcc = "QC:0000015";
+  parameter.value = "5";
+  parameter.unitRef = "UO";
+  parameter.unitAcc = "UO:0000010";
+  q.addRunQualityParameter("run", parameter);
+  QcMLFile::Attachment attachment;
+  attachment.name = "table";
+  attachment.id = "table";
+  attachment.cvRef = "QC";
+  attachment.cvAcc = "QC:0000044";
+  attachment.qualityRef = parameter.id;
+  attachment.unitRef = "UO";
+  attachment.unitAcc = "UO:0000031";
+  attachment.colTypes = {"label", "value"};
+  attachment.tableRows = {{"hello world", "x"}};
+  q.addRunAttachment("run", attachment);
+  std::string original, restored;
+  NEW_TMP_FILE(original)
+  NEW_TMP_FILE(restored)
+  q.store(original);
+  QcMLFile loaded;
+  loaded.load(original);
+  loaded.store(restored);
+  const std::string table = loaded.exportAttachment("run", "table");
+  TEST_EQUAL(table.find("hello_world\tx") != std::string::npos, true)
+  std::ifstream stream(restored);
+  const std::string xml {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+  TEST_EQUAL(xml.find("unitCvRef=\"UO\"") != std::string::npos, true)
+  TEST_EQUAL(xml.find("unitAccession=\"UO:0000010\"") != std::string::npos, true)
+  TEST_EQUAL(xml.find("unitAccession=\"UO:0000031\"") != std::string::npos, true)
 }
 END_SECTION
 
@@ -343,7 +436,45 @@ END_SECTION
 
 START_SECTION(([QcMLFile::QualityParameter] std::string toXMLString(UInt indentation_level) const ))
 {
-	NOT_TESTABLE
+  QcMLFile::QualityParameter parameter;
+  parameter.unitRef = "UO";
+  parameter.unitAcc = "UO:0000010";
+  const auto xml = parameter.toXMLString(0);
+  TEST_EQUAL(xml.find("unitCvRef=\"UO\"") != std::string::npos, true)
+  TEST_EQUAL(xml.find("unitAccession=\"UO:0000010\"") != std::string::npos, true)
+}
+END_SECTION
+
+START_SECTION((regression: slump percentage for more than one hundred spectra))
+{
+  PeakMap experiment;
+  MSChromatogram tic;
+  tic.setChromatogramType(ChromatogramSettings::ChromatogramType::TOTAL_ION_CURRENT_CHROMATOGRAM);
+  for (Size i = 0; i < 200; ++i)
+  {
+    MSSpectrum spectrum;
+    spectrum.setMSLevel(1);
+    spectrum.setRT(i);
+    Peak1D peak;
+    peak.setMZ(500.0);
+    peak.setIntensity(i < 100 ? 10.0f : 50000.0f);
+    spectrum.push_back(peak);
+    experiment.addSpectrum(spectrum);
+    ChromatogramPeak point;
+    point.setRT(i);
+    point.setIntensity(peak.getIntensity());
+    tic.push_back(point);
+  }
+  experiment.addChromatogram(tic);
+  experiment.updateRanges();
+  QcMLFile q;
+  std::vector<ProteinIdentification> proteins;
+  PeptideIdentificationList peptides;
+  FeatureMap features;
+  ConsensusMap consensus;
+  q.collectQCData(proteins, peptides, features, consensus, "slumprun.mzML", false, experiment);
+  TEST_STRING_EQUAL(q.exportQP("slumprun", "QC:0000023"), "50")
+  TEST_STRING_EQUAL(q.exportQP("slumprun", "QC:0000057"), "50")
 }
 END_SECTION
 
@@ -351,6 +482,3 @@ END_SECTION
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 END_TEST
-
-
-

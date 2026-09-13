@@ -2670,6 +2670,39 @@ START_SECTION(ProForma::getMonoWeight - multi-chain cross-link)
 }
 END_SECTION
 
+START_SECTION((regression: modifications inside ranges and ambiguous candidates))
+{
+  const auto ranged = ProForma::parse("(M[UNIMOD:35]A)[+1]");
+  TEST_REAL_SIMILAR(ProForma::getMonoWeight(ranged), AASequence::fromString("M(Oxidation)A").getMonoWeight() + 1.0)
+  // Candidate residues are isobaric, but their modifications are not.
+  const auto ambiguous = ProForma::parse("(?I[+10]L)");
+  TEST_EQUAL(ProForma::canCalculateMass(ambiguous), false)
+  TEST_EQUAL(ProForma::tryGetMonoWeight(ambiguous).has_value(), false)
+  const auto unresolved = ProForma::parse("(?I[UnknownMod999]L)");
+  TEST_EQUAL(ProForma::canCalculateMass(unresolved), false)
+}
+END_SECTION
+
+START_SECTION((regression: conversion preserves annotations and residue positions))
+{
+  TEST_EQUAL(ProForma::toAASequence(ProForma::parse("M[INFO:note]")), AASequence::fromString("M"))
+  TEST_EXCEPTION(Exception::ConversionError, ProForma::toAASequence(ProForma::parse("[#XL1]-PEPTIDE")))
+  // An empty region must not shift the following modification to another residue.
+  TEST_EQUAL(ProForma::toAASequence(ProForma::parse("(?)M[UNIMOD:35]"), ConversionPolicy::BEST_EFFORT),
+             AASequence::fromString("M(Oxidation)"))
+}
+END_SECTION
+
+START_SECTION((regression: cross-link mass does not depend on endpoint order))
+{
+  const auto label_first = ProForma::parseIon("K[#XL1]//K[+138.06807961#XL1]");
+  const auto chemistry_first = ProForma::parseIon("K[+138.06807961#XL1]//K[#XL1]");
+  const double expected = 2.0 * AASequence::fromString("K").getMonoWeight() + 138.06807961;
+  TEST_REAL_SIMILAR(ProForma::getMonoWeight(label_first), expected)
+  TEST_REAL_SIMILAR(ProForma::getMonoWeight(chemistry_first), expected)
+}
+END_SECTION
+
 START_SECTION(ProForma::getMZ - with charge state)
 {
   PeptidoformIon ion = ProForma::parseIon("PEPTIDE/2");
