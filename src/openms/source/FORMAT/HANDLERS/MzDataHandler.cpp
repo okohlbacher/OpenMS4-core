@@ -9,6 +9,8 @@
 #include <OpenMS/FORMAT/HANDLERS/MzDataHandler.h>
 
 #include <OpenMS/FORMAT/Base64.h>
+
+#include <algorithm>
 #include <map>
 
 namespace OpenMS::Internal
@@ -351,7 +353,8 @@ namespace OpenMS::Internal
           throw EndParsingSoftly(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION);
         //std::cout << Date::now() << " Reserving space for spectra" << std::endl;
         UInt count = attributeAsInt_(attributes, s_count);
-        exp_->reserve(count);
+        // count is untrusted (a negative value wraps): bound the reserve so a corrupt count cannot abort the load
+        exp_->reserve(std::min(Size(1e5), Size(count)));
         logger_.startProgress(0, count, "loading mzData file");
         //std::cout << Date::now() << " done" << std::endl;
       }

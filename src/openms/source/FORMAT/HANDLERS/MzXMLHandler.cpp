@@ -12,6 +12,7 @@
 #include <OpenMS/INTERFACES/IMSDataConsumer.h>
 #include <OpenMS/FORMAT/Base64.h>
 
+#include <algorithm>
 #include <atomic>
 #include <stack>
 #include <xercesc/util/XMLString.hpp>
@@ -131,7 +132,8 @@ namespace OpenMS::Internal
       {
         Int count = 0;
         optionalAttributeAsInt_(count, attributes, s_count_);
-        exp_->reserve(count);
+        // scanCount is untrusted: bound the reserve so a corrupt (or negative) count cannot abort the load
+        exp_->reserve(std::min(Size(1e5), static_cast<Size>(std::max(count, 0))));
         logger_.startProgress(0, count, "loading mzXML file");
         scan_count_ = 0;
         data_processing_.clear();
@@ -304,9 +306,15 @@ namespace OpenMS::Internal
         spectrum_data_.back().spectrum.setMSLevel(ms_level);
         spectrum_data_.back().spectrum.setRT(retention_time);
         spectrum_data_.back().spectrum.setNativeID(std::string("scan=") + attributeAsString_(attributes, s_num_));
-        //peak count == twice the scan size
-        spectrum_data_.back().peak_count_ = attributeAsInt_(attributes, s_peakscount_);
-        spectrum_data_.back().spectrum.reserve(spectrum_data_.back().peak_count_ / 2 + 1);
+        const Int peak_count = attributeAsInt_(attributes, s_peakscount_);
+        if (peak_count < 0)
+        {
+          fatalError(LOAD, std::string("Scan '") + spectrum_data_.back().spectrum.getNativeID() + "' declares peaksCount=" + peak_count + ".");
+        }
+        spectrum_data_.back().peak_count_ = peak_count;
+        // peaksCount is only checked against the decoded payload later, so it must not size an allocation
+        // directly: a corrupt count has to fail as a ParseError, not as OutOfMemory on a smaller machine.
+        spectrum_data_.back().spectrum.reserve(std::min(Size(1e5), static_cast<Size>(peak_count)));
         spectrum_data_.back().spectrum.setDataProcessing(data_processing_);
 
         //centroided, chargeDeconvoluted, deisotoped, collisionEnergy are ignored
