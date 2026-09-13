@@ -426,7 +426,22 @@ namespace OpenMS
     {
       throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, str, "Cannot convert string to modified ribonucleotide: missing ']'");
     }
-    ConstRibonucleotidePtr r = rdb->getRibonucleotide(mod);
+    ConstRibonucleotidePtr r;
+    try
+    {
+      r = rdb->getRibonucleotide(mod);
+    }
+    catch (Exception::ElementNotFound&)
+    {
+      // Same treatment as an invalid plain character above: the input is at fault, not
+      // OpenMS, so report it as a parse error naming the code instead of letting
+      // ElementNotFound reach the tool's catch-all as an "unexpected internal error".
+      throw Exception::ParseError(
+        __FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, str,
+        "Cannot convert string to modified ribonucleotide: unknown modification code '" + mod +
+        "'. Codes come from Modomics; add unlisted ones to CHEMISTRY/Custom_RNA_modifications.tsv "
+        "in the OpenMS share directory.");
+    }
     // @TODO: check if position is actually 5'/3' and there's no mod already
     if (r->getTermSpecificity() == Ribonucleotide::FIVE_PRIME)
     {

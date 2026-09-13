@@ -110,6 +110,12 @@ for ownership, exports and validation boundaries.
 
 ## CI and SDK packages
 
+The package boundary this SDK sits inside is drawn in
+[`docs/package-architecture.html`](docs/package-architecture.html); see
+[ARCHITECTURE.MD](ARCHITECTURE.MD#openms-4-package-architecture) for how to read
+and regenerate it.
+
+
 GitHub Actions builds and runs the scientific tests on Linux x64/ARM64, macOS
 x64/ARM64 and Windows x64 (MSVC). Each job uses the `core-release` profile and
 pinned conda-forge dependencies (COIN-OR on Linux/macOS, GLPK on Windows). Windows Release matches the native dependencies'

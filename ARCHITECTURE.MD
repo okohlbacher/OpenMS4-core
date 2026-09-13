@@ -291,6 +291,36 @@ OpenMS/
 └── tools/                   # Development tools and scripts
 ```
 
+## OpenMS 4 package architecture
+
+The sections above describe the library itself. This experimental revision also
+splits the former monorepo into installed packages, and
+[`docs/package-architecture.html`](docs/package-architecture.html) draws that
+boundary: which package owns what, and which direction each dependency runs.
+Open the file in a browser; it is self-contained, needs no server, and carries
+its own search, focus, tracing and export.
+
+Core sits at the left of that map because nothing points back into it. CLI links
+Core and publishes `OpenMS::CLI`; every console product links both and is built
+against the installed SDKs rather than Core's source tree. The fixtures package
+installs separately, pyOpenMS pins Core exactly and consumes the FLASH and ProSE
+backends, and FLASHApp consumes verified artifacts rather than rebuilding them.
+
+[`docs/package-architecture.json`](docs/package-architecture.json) is the source
+of truth for the drawing, not the HTML. Its facts come from `packages.lock.json`
+and each package's `dependencies.lock.json` in the integration parent, so a pin
+change should be reflected there and the artifact regenerated with the Archify
+skill:
+
+```sh
+node <archify>/bin/archify.mjs deliver architecture \
+  docs/package-architecture.json docs/package-architecture.html --quality showcase
+```
+
+The map deliberately groups the six smaller product packages into one node and
+omits repetitive edges that both endpoints already imply; its own first card
+states those conventions, and the exact graph remains the lock files.
+
 ## Contributing
 
 For detailed information about contributing to OpenMS, please refer to the CONTRIBUTING.md file in the repository.

@@ -142,6 +142,17 @@ namespace OpenMS
 
     // auxiliary functions
 
+    /**
+      @brief Writes one cell per search-engine-score column the header declared
+
+      A row need not carry every score: FalseDiscoveryRate scores only the hits it
+      considered (top hits, and targets when decoys are dropped), so after an FDR run some
+      rows have a q-value and others do not. Writing only the scores a row happens to hold
+      shifts every later column and trips the header/content check, so missing scores are
+      written as "null".
+    */
+    static void addScoreColumnsToSectionRow_(Size n_declared, const std::map<Size, MzTabDouble>& scores, StringList& output);
+
     /// Helper function for "generateMzTabSectionRow_" functions
     static void addOptionalColumnsToSectionRow_(const std::vector<std::string>& column_names, const std::vector<MzTabOptionalColumnEntry>& column_entries, StringList& output);
 
