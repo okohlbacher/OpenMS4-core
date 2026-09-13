@@ -588,9 +588,10 @@ START_SECTION(([EXTRA] numeric metadata filters reject lists))
   DataFilters numeric_filters;
   DataFilters::DataFilter numeric_filter;
   numeric_filter.fromString("Meta::number = 0");
-  numeric_filters.add(numeric_filter);
   Feature feature;
   ConsensusFeature consensus;
+  feature.setMetaValue("number", 0); // register the key before constructing its filter
+  numeric_filters.add(numeric_filter);
   for (const auto& value : {DataValue(IntList{0}), DataValue(DoubleList{0.0}), DataValue(StringList{"0"})})
   {
     feature.setMetaValue("number", value);

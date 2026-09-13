@@ -2132,13 +2132,14 @@ namespace OpenMS
       {
         const auto specificity = mod.getRegisteredMod()->getTermSpecificity();
         const auto& evidences = peptide_hit_.getPeptideEvidences();
-        // Protein-terminal fixed modifications require a matching protein boundary.
+        // pepXML uses '-' for either protein boundary; this reader preserves that
+        // spelling as well as accepting OpenMS's directional boundary markers.
         if ((specificity == ResidueModification::PROTEIN_N_TERM &&
              !std::any_of(evidences.begin(), evidences.end(), [](const PeptideEvidence& evidence)
-             { return evidence.getAABefore() == PeptideEvidence::N_TERMINAL_AA; })) ||
+             { return evidence.getAABefore() == PeptideEvidence::N_TERMINAL_AA || evidence.getAABefore() == '-'; })) ||
             (specificity == ResidueModification::PROTEIN_C_TERM &&
              !std::any_of(evidences.begin(), evidences.end(), [](const PeptideEvidence& evidence)
-             { return evidence.getAAAfter() == PeptideEvidence::C_TERMINAL_AA; })))
+             { return evidence.getAAAfter() == PeptideEvidence::C_TERMINAL_AA || evidence.getAAAfter() == '-'; })))
         {
           continue;
         }
