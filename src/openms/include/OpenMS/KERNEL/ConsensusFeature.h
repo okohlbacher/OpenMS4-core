@@ -91,20 +91,19 @@ public:
     /// slim struct to feed the need for systematically storing of ratios.
     struct Ratio
     {
-      Ratio()
-      {
-      }
+      Ratio() = default;
 
       Ratio(const Ratio& rhs) = default;
 
-      virtual ~Ratio()
-      {
-      }
+      // not virtual: nothing derives from Ratio and the struct is stored by value in a vector
+      ~Ratio() = default;
 
       Ratio& operator=(const Ratio& rhs) = default;
 
       // @TODO: members are public, names shouldn't end in underscores
-      double ratio_value_;
+      // initialised here because default construction is how new elements appear, e.g. when
+      // getRatios().resize() grows the vector before the values are read back
+      double ratio_value_ = 0.0;
       std::string denominator_ref_;
       std::string numerator_ref_;
       std::vector<std::string> description_;
@@ -262,7 +261,7 @@ public:
 
       @note still experimental. consensusfeaturehandler will ignore it.
     */
-    void setRatios(std::vector<Ratio>& rs);
+    void setRatios(const std::vector<Ratio>& rs);
 
     /**
       @brief Get the ratio vector.

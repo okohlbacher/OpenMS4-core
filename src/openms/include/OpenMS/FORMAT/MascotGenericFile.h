@@ -36,6 +36,11 @@ namespace OpenMS
     the MSSpectrum via the "SEQ" meta value as a StringList (always, even for a single SEQ)
     and written back out as one SEQ= line per entry.
 
+    When loading, every BEGIN IONS ... END IONS block yields an independent spectrum: a field that
+    a block omits keeps its default (MS level 2, centroided, one empty precursor, no meta value) and
+    is never taken over from the preceding block. Parameters in the file header, outside of any
+    block, are not applied to the spectra.
+
     @htmlinclude OpenMS_MascotGenericFile.parameters
 
     @ingroup FileIO
@@ -89,10 +94,7 @@ public:
       UInt spectrum_number(0);
       Size line_number(0); // carry line number for error messages within getNextSpectrum()
 
-      typename MapType::SpectrumType spectrum;
-      spectrum.setMSLevel(2);
-      spectrum.getPrecursors().resize(1);
-      spectrum.setType(SpectrumSettings::SpectrumType::CENTROID); // MGF is always centroided, by definition
+      typename MapType::SpectrumType spectrum; // (re)initialised for every block by getNextSpectrum_()
       while (getNextSpectrum_(is, spectrum, line_number, spectrum_number))
       {
         exp.addSpectrum(spectrum);
@@ -140,18 +142,16 @@ protected:
     template <typename SpectrumType>
     bool getNextSpectrum_(std::ifstream& is, SpectrumType& spectrum, Size& line_number, const Size& spectrum_number)
     {
-      spectrum.resize(0);
+      // Every BEGIN IONS block is an independent query, and most of its fields (RTINSECONDS, CHARGE,
+      // the PEPMASS intensity, MSLEVEL, TITLE, SEQ, NAME, ...) may be omitted. The same spectrum object
+      // is reused for every block, so reset peaks *and* meta data here; otherwise a block that omits
+      // a field would silently inherit the value of the previous block.
+      spectrum.clear(true);
+      spectrum.setMSLevel(2); // MGF default unless MSLEVEL says otherwise
+      spectrum.getPrecursors().resize(1);
+      spectrum.setType(SpectrumSettings::SpectrumType::CENTROID); // MGF is always centroided, by definition
       spectrum.setNativeID(std::string("index=") + (spectrum_number));
 
-      if (spectrum.metaValueExists("TITLE"))
-      {
-        spectrum.removeMetaValue("TITLE");
-      }
-      if (spectrum.metaValueExists("SEQ"))
-      {
-        // SEQ is a per-query field; do not let it bleed across spectra
-        spectrum.removeMetaValue("SEQ");
-      }
       typename SpectrumType::PeakType p;
 
       std::string line;
@@ -171,6 +171,11 @@ protected:
             StringUtils::trim(line); // remove whitespaces, line-endings etc
 
             if (line.empty()) continue;
+
+            if (line == "END IONS")
+            {
+              return true; // an empty spectrum still ends this block
+            }
 
             if (isdigit(line[0])) // actual data .. this comes first, since its the most common case
             {

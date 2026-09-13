@@ -58,12 +58,20 @@ namespace OpenMS
     // -------------------------------------------------------------------------
 
     std::string ibd_file_path; ///< Absolute path to the .ibd file
-    std::string ibd_sha1;      ///< SHA-1 checksum (IMS:1000091), empty if absent
-    std::string ibd_md5;       ///< MD5  checksum (IMS:1000090), empty if absent
+    /// SHA-1 checksum (IMS:1000091) as *declared* by the .imzML, empty if absent. No read
+    /// path recomputes it: the value is parsed and mirrored onto the loaded MSExperiment
+    /// (@c imzml:ibd_sha1) for the caller to verify if it needs that guarantee. Only the
+    /// 16-byte UUID header of the .ibd is checked while loading, and only advisorily.
+    std::string ibd_sha1;
+    std::string ibd_md5;       ///< MD5 checksum (IMS:1000090) as declared; never verified either
     std::string uuid;          ///< Dataset UUID (IMS:1000080)
 
     // -------------------------------------------------------------------------
     // Array data types (first occurrence, dataset-level summary)
+    //
+    // Taken from the first spectrum in document order that declares a type, so they are
+    // filled by a metadata/index-only parse as well as by a full decode; empty only if no
+    // spectrum declares MS:1000521/1000523/1000519/1000522.
     // -------------------------------------------------------------------------
 
     std::string mz_data_type;   ///< "float32" | "float64" | "int32" | "int64"
@@ -136,6 +144,11 @@ namespace OpenMS
     DataType int_type   {DataType::UNKNOWN};
     bool int_compressed {false};          ///< Compressed (not MS:1000576) on intensity array
     std::vector<AuxArray> aux;            ///< Extra external arrays (IM, …) in document order
+    /// External auxiliary arrays dropped from @p aux because they carry no array-identity
+    /// term (MS:1000786 or a child of MS:1000513) and hence no name to attach them under.
+    /// Counted so an on-disc consumer holding only the index can still see that the file
+    /// declared more arrays than @p aux lists.
+    uint32_t unnamed_aux {0};
   };
 
   /**
@@ -154,9 +167,11 @@ namespace OpenMS
       @param[in] count     Element count (IMS:1000103).
       @param[in] dt        Scalar type of stored values.
       @param[out] out       Decoded m/z values.
-      @param[in] ibd_path  Path used in error messages.
+      @param[in] ibd_path  Path @p ibd was opened from; its size bounds the declared range,
+                           and it is used in error messages.
 
-      @throws Exception::ParseError if seek or read fails.
+      @throws Exception::ParseError if the declared range does not fit inside the .ibd, or
+      if seek or read fails.
     */
     static void readMzArray(FILE* ibd,
                             uint64_t offset,
@@ -168,7 +183,8 @@ namespace OpenMS
     /**
       @brief Read an intensity array from the companion .ibd file.
 
-      @throws Exception::ParseError if seek or read fails.
+      @throws Exception::ParseError if the declared range does not fit inside the .ibd, or
+      if seek or read fails.
     */
     static void readIntArray(FILE* ibd,
                              uint64_t offset,
@@ -191,7 +207,8 @@ namespace OpenMS
       @param[in] count      Element count (IMS:1000103).
       @param[in] dt         Scalar type of stored values.
       @param[out] out       Decoded values as float (FloatDataArray storage).
-      @param[in] ibd_path   Path used in error messages.
+      @param[in] ibd_path   Path @p ibd was opened from; its size bounds the declared range,
+                            and it is used in error messages.
       @param[in] array_name Array name used in error messages (e.g. the CV term name).
 
       @note Compressed external arrays (any child of MS:1000572 other than
@@ -199,7 +216,8 @@ namespace OpenMS
       invoking this method. @c IMS:1000104 is then required to know how many
       compressed bytes to read.
 
-      @throws Exception::ParseError if seek or read fails.
+      @throws Exception::ParseError if the declared range does not fit inside the .ibd, or
+      if seek or read fails.
     */
     static void readAuxArray(FILE* ibd,
                              uint64_t offset,

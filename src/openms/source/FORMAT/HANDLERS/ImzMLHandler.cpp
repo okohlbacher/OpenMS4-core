@@ -130,6 +130,19 @@ namespace
       "(need uncompressed MS:1000576). Re-export without compression.");
   }
 
+  /// Spelling of a binary data type in the dataset-level ImzMLMeta summary.
+  std::string dtStr_(const ImzMLSpectrumIndex::DataType dt)
+  {
+    switch (dt)
+    {
+      case ImzMLSpectrumIndex::DataType::FLOAT32: return "float32";
+      case ImzMLSpectrumIndex::DataType::FLOAT64: return "float64";
+      case ImzMLSpectrumIndex::DataType::INT32:   return "int32";
+      case ImzMLSpectrumIndex::DataType::INT64:   return "int64";
+      default:                                    return "unknown";
+    }
+  }
+
   /// Drop empty Float/Integer/StringDataArrays left by MzMLHandler for skipped,
   /// zero-length, untyped, integer-typed, or inline aux arrays. On-disc never
   /// materializes those ghosts.
@@ -244,12 +257,6 @@ public:
           s[i].setMZ(mz_vec[i]);
           s[i].setIntensity(int_vec[i]);
         }
-
-        // Record first-seen data types at dataset level
-        if (handler_.meta_.mz_data_type.empty())
-          handler_.meta_.mz_data_type  = dtStr_(ims->mz_meta.dt);
-        if (handler_.meta_.int_data_type.empty())
-          handler_.meta_.int_data_type = dtStr_(ims->int_meta.dt);
       }
 
       // Fill auxiliary arrays (ion mobility, …) from the .ibd. MzMLHandler has already
@@ -262,9 +269,8 @@ public:
         for (const auto& aux : ims->aux_meta)
         {
           if (aux.name.empty())
-          {
-            OPENMS_LOG_WARN << "Skipping external auxiliary array without MS:1000513 / MS:1000786 identity at pixel ("
-                            << ims->x << "," << ims->y << "," << ims->z << ")\n";
+          { // warned about (and counted) once per array in the index build below, which runs
+            // for an index-only load too
             continue;
           }
           if (aux.compressed)
@@ -374,7 +380,12 @@ public:
       for (const auto& aux : ims->aux_meta)
       {
         if (aux.name.empty())
-        {
+        { // No identity term, so there is no name to attach the array under. Count the drop
+          // on the index (aux.size() keeps matching the arrays we can actually decode) and
+          // warn here, where both the decoding and the index-only load pass through.
+          ++entry.unnamed_aux;
+          OPENMS_LOG_WARN << "Skipping external auxiliary array without MS:1000513 / MS:1000786 identity at pixel ("
+                          << ims->x << "," << ims->y << "," << ims->z << ")\n";
           continue;
         }
         ImzMLSpectrumIndex::AuxArray a;
@@ -403,18 +414,6 @@ private:
   ImzMLHandler&                handler_;
   Interfaces::IMSDataConsumer* downstream_;
   int                          spec_idx_  {0};
-
-  static std::string dtStr_(ImzMLSpectrumIndex::DataType dt)
-  {
-    switch (dt)
-    {
-      case ImzMLSpectrumIndex::DataType::FLOAT32: return "float32";
-      case ImzMLSpectrumIndex::DataType::FLOAT64: return "float64";
-      case ImzMLSpectrumIndex::DataType::INT32:   return "int32";
-      case ImzMLSpectrumIndex::DataType::INT64:   return "int64";
-      default:                                    return "unknown";
-    }
-  }
 };
 
 // ===========================================================================
@@ -590,6 +589,19 @@ void ImzMLHandler::onEndElement(const char16_t* qname)
       snap.aux_meta = std::move(cur_aux_metas_);
       snap.inline_aux_names = std::move(cur_inline_aux_names_);
       spec_ims_.push_back(std::move(snap));
+
+      // The element widths are a property of the XML, not of the decode: recording them
+      // here keeps them available to an index-only load (ImzMLFile::loadSpectraIndex passes
+      // decode_ibd = false, so ImzMLInterceptConsumer never decodes a binary array), which
+      // is exactly the caller that needs the width to size its own buffers.
+      if (meta_.mz_data_type.empty() && cur_mz_meta_.dt != ImzMLSpectrumIndex::DataType::UNKNOWN)
+      {
+        meta_.mz_data_type = dtStr_(cur_mz_meta_.dt);
+      }
+      if (meta_.int_data_type.empty() && cur_int_meta_.dt != ImzMLSpectrumIndex::DataType::UNKNOWN)
+      {
+        meta_.int_data_type = dtStr_(cur_int_meta_.dt);
+      }
     }
 
     // imzML peak data lives in the companion .ibd, so the inline <binary> arrays are

@@ -449,6 +449,12 @@ namespace OpenMS
   //---------------------------------------------------------------------------
   //                      Conversion operators
   //----------------------------------------------------------------------------
+  // The three floating conversions must reject every type except INT_VALUE and
+  // DOUBLE_VALUE: STRING_VALUE and the list types keep a pointer in data_, so
+  // falling through to data_.dou_ would read an inactive union member (undefined
+  // behaviour, in practice a pointer's bits returned as a number) instead of
+  // raising the documented ConversionError. Strings are not parsed here either;
+  // use StringUtils::toDouble(value.toString()) for that.
   DataValue::operator long double() const
   {
     if (value_type_ == EMPTY_VALUE)
@@ -459,6 +465,11 @@ namespace OpenMS
     else if (value_type_ == INT_VALUE)
     {
       return (long double)(data_.ssize_);
+    }
+    else if (value_type_ != DOUBLE_VALUE)
+    {
+      throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+        "Could not convert non-numeric DataValue of type '" + NamesOfDataType[value_type_] + "' and value '" + this->toString(true) + "' to long double");
     }
     return data_.dou_;
   }
@@ -474,6 +485,11 @@ namespace OpenMS
     {
       return double(data_.ssize_);
     }
+    else if (value_type_ != DOUBLE_VALUE)
+    {
+      throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+        "Could not convert non-numeric DataValue of type '" + NamesOfDataType[value_type_] + "' and value '" + this->toString(true) + "' to double");
+    }
     return data_.dou_;
   }
 
@@ -487,6 +503,11 @@ namespace OpenMS
     else if (value_type_ == INT_VALUE)
     {
       return float(data_.ssize_);
+    }
+    else if (value_type_ != DOUBLE_VALUE)
+    {
+      throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+        "Could not convert non-numeric DataValue of type '" + NamesOfDataType[value_type_] + "' and value '" + this->toString(true) + "' to float");
     }
     return data_.dou_;
   }

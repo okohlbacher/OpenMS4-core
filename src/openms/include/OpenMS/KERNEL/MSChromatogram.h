@@ -469,14 +469,19 @@ public:
       @note Make sure BOTH chromatograms are sorted with respect to RT. Otherwise the result is
       undefined.
 
-      @note Peak level metadata stored in float_array string_array and int_array of the destination MSChromatogram is not guaranteed to be correct after merging
+      @note The peak level metadata of the destination MSChromatogram (FloatDataArrays,
+      IntegerDataArrays, StringDataArrays) is dropped: those arrays are parallel to the peaks and
+      describe the pre-merge peaks only, so keeping them would leave a size mismatch that sort()
+      and select() reject.
+
+      @note The cached ranges are recomputed, since a merge can only widen them.
 
       MZ of the destination MSChromatogram remains unchanged.
 
-      @param[in,out] other A reference to the MSChromatogram to take ChromatogramPeaks from
+      @param[in] other The MSChromatogram to take ChromatogramPeaks from; it is only read
       @param[in] add_meta If true, a metavalue "merged_chromatogram_mzs" is added with the m/z of @p other
     */
-    void mergePeaks(MSChromatogram& other, bool add_meta=false);
+    void mergePeaks(const MSChromatogram& other, bool add_meta=false);
 
 protected:
 

@@ -8,18 +8,129 @@
 
 #include <OpenMS/FORMAT/HANDLERS/MzMLSpectrumDecoder.h>
 #include <OpenMS/FORMAT/HANDLERS/XMLHandler.h>
+#include <OpenMS/CONCEPT/LogStream.h>
 
 #include <xercesc/framework/MemBufInputSource.hpp>
 #include <xercesc/parsers/XercesDOMParser.hpp>
 #include <xercesc/dom/DOMText.hpp>
 #include <xercesc/dom/DOMElement.hpp>
 #include <xercesc/dom/DOMNodeList.hpp>
+#include <xercesc/sax/ErrorHandler.hpp>
+#include <xercesc/sax/SAXParseException.hpp>
 
+#include <cstring>
 #include <memory>
 #include <xercesc/util/XMLString.hpp>
 
 namespace OpenMS
 {
+
+  namespace
+  {
+    /// Keeps the first problem the parser reports for a record. Without a handler Xerces drops them all.
+    class RecordErrorHandler_ : public xercesc::ErrorHandler
+    {
+    public:
+      void warning(const xercesc::SAXParseException&) override {}
+      void error(const xercesc::SAXParseException& e) override { keep_(e); }
+      void fatalError(const xercesc::SAXParseException& e) override { keep_(e); }
+      void resetErrors() override { message.clear(); }
+
+      std::string message;
+
+    private:
+      void keep_(const xercesc::SAXParseException& e)
+      {
+        if (message.empty())
+        {
+          message = Internal::StringManager::convert(reinterpret_cast<const char16_t*>(e.getMessage())) +
+            " (column " + std::to_string(e.getColumnNumber()) + ")";
+        }
+      }
+    };
+
+    bool isXMLSpace_(char c)
+    {
+      return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+    }
+
+    /**
+      @brief Number of leading bytes of @p in that make up its \<spectrum\> or \<chromatogram\> record
+
+      A byte range taken from an index runs up to the next record or up to the index itself, so the last
+      record of a list is followed by the end tags of that list, of the run and of mzML. Only the record is
+      handed to the parser, since that trailing content is not well-formed XML.
+
+      @return @p in.size() if @p in does not start with a spectrum or chromatogram start tag
+      @throws Exception::ParseError if the record is not closed inside @p in, i.e. the input is truncated or
+              the index offset does not point at a record
+    */
+    Size recordLength_(const std::string& in)
+    {
+      const Size start = in.find('<');
+      if (start == std::string::npos || in.find_first_not_of(" \t\r\n") != start)
+      {
+        return in.size();
+      }
+      std::string name;
+      for (const char* candidate : {"spectrum", "chromatogram"})
+      {
+        const Size length = std::strlen(candidate);
+        const Size after = start + 1 + length;
+        if (in.compare(start + 1, length, candidate) == 0 && after < in.size() &&
+            (isXMLSpace_(in[after]) || in[after] == '>' || in[after] == '/'))
+        {
+          name = candidate;
+          break;
+        }
+      }
+      if (name.empty())
+      {
+        return in.size();
+      }
+
+      // find the end of the start tag; attribute values may contain '>'
+      char quote = 0;
+      Size pos = start + 1 + name.size();
+      for (; pos < in.size(); ++pos)
+      {
+        if (quote != 0)
+        {
+          if (in[pos] == quote) quote = 0;
+        }
+        else if (in[pos] == '"' || in[pos] == '\'')
+        {
+          quote = in[pos];
+        }
+        else if (in[pos] == '>')
+        {
+          break;
+        }
+      }
+      if (pos < in.size() && in[pos - 1] == '/')
+      {
+        return pos + 1; // empty element
+      }
+
+      // the first end tag of that name closes the record (spectra and chromatograms do not nest); the
+      // check for '>' keeps </spectrumList> or </chromatogramList> from matching
+      const std::string end_tag = "</" + name;
+      for (Size close = in.find(end_tag, pos); pos < in.size() && close != std::string::npos; close = in.find(end_tag, close + 1))
+      {
+        Size after = close + end_tag.size();
+        while (after < in.size() && isXMLSpace_(in[after]))
+        {
+          ++after;
+        }
+        if (after < in.size() && in[after] == '>')
+        {
+          return after + 1;
+        }
+      }
+      throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "",
+          "The <" + name + "> record is not closed inside its byte range (truncated input, or an index offset that does not point at a record).");
+    }
+  }
 
   /// Small internal function to check the default data vectors
   void checkData_(std::vector<Internal::MzMLHandlerHelper::BinaryData>& data,
@@ -535,12 +646,20 @@ namespace OpenMS
     //-------------------------------------------------------------
     // Create parser from input string using MemBufInputSource
     //-------------------------------------------------------------
-    xercesc::MemBufInputSource myxml_buf(reinterpret_cast<const unsigned char*>(in.c_str()), in.length(), "myxml (in memory)");
+    xercesc::MemBufInputSource myxml_buf(reinterpret_cast<const unsigned char*>(in.c_str()), recordLength_(in), "myxml (in memory)");
+    RecordErrorHandler_ error_handler;
     std::unique_ptr<xercesc::XercesDOMParser> parser = std::make_unique<xercesc::XercesDOMParser>(); // make sure it is deleted even in case of exceptions
     parser->setDoNamespaces(false);
     parser->setDoSchema(false);
     parser->setLoadExternalDTD(false);
+    parser->setErrorHandler(&error_handler);
     parser->parse(myxml_buf);
+    if (!error_handler.message.empty())
+    {
+      // The parser stops at the first error but keeps the elements it has read, so the record decoded
+      // below may be incomplete. Report it instead of passing a partial record off as a complete one.
+      OPENMS_LOG_WARN << "Malformed XML in mzML record: " << error_handler.message << std::endl;
+    }
 
     //-------------------------------------------------------------
     // Start parsing

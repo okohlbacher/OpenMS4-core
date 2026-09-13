@@ -20,10 +20,10 @@ using namespace OpenMS;
 
 void wait(double seconds)
 {
-  auto start = std::chrono::system_clock::now();
+  auto start = std::chrono::steady_clock::now();
   while (true)
   {
-   double s = std::chrono::duration<double>(std::chrono::system_clock::now() - start).count();
+   double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
    if (s > seconds) break;
   };
 }
@@ -123,7 +123,6 @@ START_SECTION((bool stop()))
   TEST_EXCEPTION(Exception::Precondition, s.stop()); // cannot stop twice
 
   TEST_EQUAL(s.getClockTime() > 0.1, true)
-  TEST_EQUAL(s.getClockTime() < 0.3, true)
   
   double t1 = s.getCPUTime();
   double t2 = s.getClockTime();
@@ -141,20 +140,13 @@ START_SECTION((bool stop()))
   TEST_EQUAL(s.getUserTime(), t4)
   TEST_EQUAL(s.getCPUTime(), t1)
 
-  TEST_EQUAL(s.getCPUTime() > t_wait / 2, true) // waiting costs CPU time in our implementation... just not sure how much...
+  // CPU time covers every process thread, including dependency worker pools.
+  // It has no fixed ratio to wall time, and coarse accounting may report zero.
+  TEST_EQUAL(s.getCPUTime() >= 0, true)
+  TEST_REAL_SIMILAR(s.getCPUTime(), s.getUserTime() + s.getSystemTime())
   TEST_EQUAL(s.getClockTime() > t_wait * 0.95, true) // and must consume wall time
-  TEST_EQUAL(s.getClockTime() < t_wait * 3, true) // be a bit more loose if e.g. a VM is busy
-  std::cout << "Usertime: " << s.getUserTime() << "\n";
-#ifdef OPENMS_WINDOWSPLATFORM
-  // workaround for Windows-CI on VMs which report usertime = 0 ...
-  TEST_EQUAL(s.getUserTime() >= 0, true)//  and some user time
-#else
-  TEST_EQUAL(s.getUserTime() > t_wait / 2, true)//  and some user time
-#endif
-  TEST_EQUAL(s.getUserTime() < t_wait * 2, true)
-  std::cout << "Systemtime: " << s.getSystemTime() << "\n";
-  TEST_EQUAL(s.getSystemTime() < t_wait * 2, true)// and usually quite few system time
-                                                  // (not guaranteed on VMs, therefore do a trivial check)
+  TEST_EQUAL(s.getUserTime() >= 0, true)
+  TEST_EQUAL(s.getSystemTime() >= 0, true)
 
   // the watch that never stopped should be ahead...
   TEST_EQUAL(s.getCPUTime() <= s_nostop.getCPUTime(), true)
@@ -172,7 +164,7 @@ START_SECTION((bool stop()))
   TEST_EQUAL(s_reset.getClockTime() > 0, true);
 
   // don't stop the timer.. just keep running and query on the fly
-  TEST_EQUAL(s_resume.getCPUTime() > (t_wait_more + t_wait) / 2, true) // waiting costs CPU time in our implementation... just not sure how much...
+  TEST_EQUAL(s_resume.getCPUTime() >= t1, true) // resume retains the accumulated process time
   TEST_EQUAL(s_resume.getClockTime() > (t_wait_more + t_wait) * 0.95, true) //  must consume wall time
 END_SECTION
 

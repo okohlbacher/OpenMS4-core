@@ -136,9 +136,10 @@ namespace OpenMS::Internal
       {
         spec_.setComment(transcoded_chars);
       }
-      else if (current_tag == "data")
+      else if (current_tag == "data" && !data_to_decode_.empty())
       {
         //chars may be split to several chunks => concatenate them
+        // (a stray <data> before any binary array has no slot; fillData_ reports the unpaired precision)
         data_to_decode_.back() += transcoded_chars;
       }
       else if (current_tag == "arrayName" && parent_tag == "supDataArrayBinary")
@@ -469,6 +470,16 @@ namespace OpenMS::Internal
       std::vector<float> decoded;
       std::vector<double> decoded_double;
 
+      // Each binary array opens one data_to_decode_ entry and must hold exactly one <data> element,
+      // which opens the matching precisions_/endians_ entry. In a malformed spectrum that pairing is
+      // lost, the encoding of an array cannot be recovered, and the loops below would index past
+      // precisions_, so the spectrum is kept without peaks.
+      if (precisions_.size() != data_to_decode_.size())
+      {
+        error(LOAD, std::string("Spectrum '") + spec_.getNativeID() + "' has " + data_to_decode_.size() + " binary data arrays but " + precisions_.size() + " <data> elements. Its peaks are not loaded.");
+        return;
+      }
+
       // data_to_decode is an encoded spectrum, represented as
       // vector of base64-encoded strings:
       // Each string represents one property (e.g. mzData) and decodes
@@ -517,20 +528,29 @@ namespace OpenMS::Internal
 
       // this works only if MapType::PeakType is a Peak1D or derived from it
       {
+        // mzData requires an m/z and an intensity array. Check this before precisions_[0] and
+        // precisions_[1] are read: a spectrum lacking either has no peaks to build.
+        if (data_to_decode_.size() < 2)
+        {
+          if (!data_to_decode_.empty())
+          {
+            warning(LOAD, std::string("The m/z or intensity array of spectrum '") + spec_.getNativeID() + "' is missing. Its peaks are not loaded.");
+          }
+          return;
+        }
+
         //store what precision is used for intensity and m/z
+        // (anything but "64" was decoded as 32 bit above, so read it from the same list)
         bool mz_precision_64 = true;
-        if (precisions_[0] == "32")
+        if (precisions_[0] != "64")
         {
           mz_precision_64 = false;
         }
         bool int_precision_64 = true;
-        if (precisions_[1] == "32")
+        if (precisions_[1] != "64")
         {
           int_precision_64 = false;
         }
-
-        // no data was decoded?
-        if (data_to_decode_.size() < 2) return;
 
         const size_t peak_count_mz = mz_precision_64 ? decoded_double_list_[0].size() : decoded_list_[0].size();
         const size_t peak_count_int = int_precision_64 ? decoded_double_list_[1].size() : decoded_list_[1].size();
@@ -543,6 +563,12 @@ namespace OpenMS::Internal
         {
           warning(LOAD,std::string("Length of data arrays (m/z and int) differs from value in attribute 'length': ") + peak_count_mz + " vs. " + peak_count_ + ".");
           peak_count_ = peak_count_mz;
+        }
+        // the length mismatch above is only logged, so stop at the end of a shorter intensity array
+        // instead of reading past it
+        if (peak_count_int < peak_count_)
+        {
+          peak_count_ = peak_count_int;
         }
 
         // reserve space for spectrum
@@ -569,7 +595,19 @@ namespace OpenMS::Internal
             //load data from meta data arrays
             for (Size i = 0; i < spec_.getFloatDataArrays().size(); ++i)
             {
-              spec_.getFloatDataArrays()[i].push_back(precisions_[2 + i] == "64" ? decoded_double_list_[2 + i][n] : decoded_list_[2 + i][n]);
+              // A supDataArrayBinary may lack its <data>, or be shorter than the m/z array (writeTo only
+              // logs that mismatch). As in MzMLHandler, such an array ends early instead of being read
+              // past its end.
+              const Size sup_index = 2 + i;
+              if (sup_index >= data_to_decode_.size())
+              {
+                break;
+              }
+              const bool sup_precision_64 = (precisions_[sup_index] == "64");
+              if (n < (sup_precision_64 ? decoded_double_list_[sup_index].size() : decoded_list_[sup_index].size()))
+              {
+                spec_.getFloatDataArrays()[i].push_back(sup_precision_64 ? decoded_double_list_[sup_index][n] : decoded_list_[sup_index][n]);
+              }
             }
           }
         }
@@ -1129,11 +1167,27 @@ namespace OpenMS::Internal
             spec_.getInstrumentSettings().setZoomScan(true);
             spec_.getInstrumentSettings().setScanMode(InstrumentSettings::ScanMode::MASSSPECTRUM);
           }
+          // the next three are the spellings writeTo() emits; the CV leaves ScanMode values free,
+          // so without them a stored ABSORPTION/EMC/TDF spectrum would not load back as such
+          else if (value == "PhotodiodeArrayDetector")
+          {
+            spec_.getInstrumentSettings().setScanMode(InstrumentSettings::ScanMode::ABSORPTION);
+          }
+          else if (value == "EnhancedMultiplyChargedScan")
+          {
+            spec_.getInstrumentSettings().setScanMode(InstrumentSettings::ScanMode::EMC);
+          }
+          else if (value == "TimeDelayedFragmentationScan")
+          {
+            spec_.getInstrumentSettings().setScanMode(InstrumentSettings::ScanMode::TDF);
+          }
           else
           {
             if (spec_.getMSLevel() >= 2)
             {
-              exp_->getSpectra().back().getInstrumentSettings().setScanMode(InstrumentSettings::ScanMode::MSNSPECTRUM);
+              // the spectrum being parsed is spec_; it is not in exp_ yet, and exp_ may still be
+              // empty (first spectrum, or earlier ones skipped by MS-level/RT options)
+              spec_.getInstrumentSettings().setScanMode(InstrumentSettings::ScanMode::MSNSPECTRUM);
             }
             else
             {

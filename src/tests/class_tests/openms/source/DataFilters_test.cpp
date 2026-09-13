@@ -584,4 +584,27 @@ END_SECTION
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 
+START_SECTION(([EXTRA] numeric metadata filters reject lists))
+  DataFilters numeric_filters;
+  DataFilters::DataFilter numeric_filter;
+  numeric_filter.fromString("Meta::number = 0");
+  numeric_filters.add(numeric_filter);
+  Feature feature;
+  ConsensusFeature consensus;
+  for (const auto& value : {DataValue(IntList{0}), DataValue(DoubleList{0.0}), DataValue(StringList{"0"})})
+  {
+    feature.setMetaValue("number", value);
+    consensus.setMetaValue("number", value);
+    TEST_FALSE(numeric_filters.passes(feature))
+    TEST_FALSE(numeric_filters.passes(consensus))
+  }
+  for (const auto& value : {DataValue(0), DataValue(0.0)})
+  {
+    feature.setMetaValue("number", value);
+    consensus.setMetaValue("number", value);
+    TEST_TRUE(numeric_filters.passes(feature))
+    TEST_TRUE(numeric_filters.passes(consensus))
+  }
+END_SECTION
+
 END_TEST

@@ -1033,7 +1033,6 @@ namespace OpenMS::Internal
       {
         int id = query_feat.getColumn("id").getInt();
         ConsensusFeature feature(makeBaseFeature_(id, query_feat, query_meta, query_match));
-        consensus.push_back(feature);
         if (!isEmpty_(query_ratio))
         {
           query_ratio.bind(":id", id);
@@ -1053,6 +1052,9 @@ namespace OpenMS::Internal
           }
           query_ratio.reset(); // get ready for new executeStep()
         }
+        // appended only now: push_back copies, so appending before the ratio loop stored the
+        // feature without any of its ratios (the handle rows below attach to consensus.back())
+        consensus.push_back(feature);
       }
       else // FeatureHandle
       {

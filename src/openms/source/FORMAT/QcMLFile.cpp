@@ -20,6 +20,7 @@
 #include <OpenMS/MATH/MathFunctions.h>
 #include <OpenMS/MATH/StatisticFunctions.h>
 
+#include <algorithm>
 #include <filesystem>
 
 #include <fstream>
@@ -85,13 +86,15 @@ namespace OpenMS
     {
       s += " value=\"" + value + "\"";
     }
+    // qcML 0.0.7 (abstractParamType) names these unitCvRef/unitAccession, which is also what load() reads;
+    // the former unitRef/unitAcc spelling made every unit vanish on a store/load round trip
     if (!unitRef.empty())
     {
-      s += " unitRef=\"" + unitRef + "\"";
+      s += " unitCvRef=\"" + unitRef + "\"";
     }
     if (!unitAcc.empty())
     {
-      s += " unitAcc=\"" + unitAcc + "\"";
+      s += " unitAccession=\"" + unitAcc + "\"";
     }
     if (!flag.empty())
     {
@@ -196,13 +199,14 @@ namespace OpenMS
     {
       s += " value=\"" + value + "\"";
     }
+    // schema spelling, see QualityParameter::toXMLString
     if (!unitRef.empty())
     {
-      s += " unitRef=\"" + unitRef + "\"";
+      s += " unitCvRef=\"" + unitRef + "\"";
     }
     if (!unitAcc.empty())
     {
-      s += " unitAcc=\"" + unitAcc + "\"";
+      s += " unitAccession=\"" + unitAcc + "\"";
     }
     if (!qualityRef.empty())
     {
@@ -239,7 +243,9 @@ namespace OpenMS
           StringUtils::substitute(sit, std::string(" "), std::string("_"));
         }
 
-        s += StringUtils::trimmed(ListUtils::concatenate(*it, " "));
+        // write the substituted copy: cells are space-separated, so an original cell containing a space
+        // would be read back as two cells
+        s += StringUtils::trimmed(ListUtils::concatenate(copy_row, " "));
         s += "</tableRowValues>\n";
       }
       s += "</table>";
@@ -510,9 +516,17 @@ namespace OpenMS
 
   void QcMLFile::removeAllAttachments(const std::string& at)
   {
+    // Clean every run and set attachment list directly. Calling removeAttachment(r, at) for each run ID
+    // never reached a set whose ID is not also a run ID, and its existsRun/existsSet gate (which looks at
+    // the quality parameter maps) skipped entries that hold attachments but no quality parameter.
+    auto has_accession = [&at](const Attachment& a) { return a.cvAcc == at; };
     for (std::map<std::string, std::vector<Attachment> >::iterator it = runQualityAts_.begin(); it != runQualityAts_.end(); ++it)
     {
-      removeAttachment(it->first, at);
+      it->second.erase(std::remove_if(it->second.begin(), it->second.end(), has_accession), it->second.end());
+    }
+    for (std::map<std::string, std::vector<Attachment> >::iterator it = setQualityAts_.begin(); it != setQualityAts_.end(); ++it)
+    {
+      it->second.erase(std::remove_if(it->second.begin(), it->second.end(), has_accession), it->second.end());
     }
   }
 
@@ -683,10 +697,17 @@ namespace OpenMS
     std::vector<std::string> cols;
     if (!cvs_table.empty())
     {
-      for (std::map<std::string, std::string>::const_iterator it = cvs_table.begin()->second.begin(); it != cvs_table.begin()->second.end(); ++it)
+      // Rows need not share their columns (exportIDstats fills "id" and "ms2" from disjoint CV terms), so
+      // the header is the union of all row keys; std::set keeps the key order a single row map already has.
+      std::set<std::string> col_set;
+      for (std::map<std::string, std::map<std::string, std::string> >::const_iterator it = cvs_table.begin(); it != cvs_table.end(); ++it)
       {
-        cols.push_back(it->first);
+        for (std::map<std::string, std::string>::const_iterator jt = it->second.begin(); jt != it->second.end(); ++jt)
+        {
+          col_set.insert(jt->first);
+        }
       }
+      cols.assign(col_set.begin(), col_set.end());
       ret += "qp";
       ret += separator;
       for (std::vector<std::string>::const_iterator jt = cols.begin(); jt != cols.end(); ++jt)
@@ -705,8 +726,9 @@ namespace OpenMS
           if (found != it->second.end())
           {
             ret += found->second;
-            ret += separator;
-          } //TODO else throw error
+          }
+          // a missing cell still gets its separator, otherwise the following values shift under the wrong header
+          ret += separator;
         }
         ret += "\n";
       }
@@ -822,8 +844,16 @@ namespace OpenMS
     else if (tag_ == "qualityParameter")
     {
       optionalAttributeAsString_(qp_.value, attributes, "value");
-      optionalAttributeAsString_(qp_.unitAcc, attributes, "unitAccession");
-      optionalAttributeAsString_(qp_.unitRef, attributes, "unitCvRef");
+      // files stored by earlier OpenMS versions spell the unit attributes unitAcc/unitRef; accept them
+      // when the schema spelling is absent so those units are not lost either
+      if (!optionalAttributeAsString_(qp_.unitAcc, attributes, "unitAccession"))
+      {
+        optionalAttributeAsString_(qp_.unitAcc, attributes, "unitAcc");
+      }
+      if (!optionalAttributeAsString_(qp_.unitRef, attributes, "unitCvRef"))
+      {
+        optionalAttributeAsString_(qp_.unitRef, attributes, "unitRef");
+      }
       optionalAttributeAsString_(qp_.flag, attributes, "flag");
       qp_.cvRef = attributeAsString_(attributes, "cvRef");
       qp_.cvAcc = attributeAsString_(attributes, "accession");
@@ -838,9 +868,19 @@ namespace OpenMS
       }
       else //setQuality
       {
+        // Set members are run IDs wherever they are used (store, merge, collectSetParameter).
         if (qp_.cvAcc == "MS:1000577") //TODO make sure these exist in runs later!
         {
-          names_.insert(qp_.value);
+          // this legacy member record carries the run's file name; runQuality precedes setQuality in qcML,
+          // so a known name is translated to its run ID
+          std::map<std::string, std::string>::const_iterator mapsit = run_Name_ID_map_.find(qp_.value);
+          names_.insert(mapsit != run_Name_ID_map_.end() ? mapsit->second : qp_.value);
+        }
+        else if (qp_.cvAcc == "QC:0000005")
+        {
+          // store() writes one of these per member with ID set to the member's run ID, so without this
+          // branch membership was lost on every store/load round trip
+          names_.insert(qp_.id);
         }
         if (qp_.cvAcc == "QC:0000058") //id: MS:1000577 name: raw data file  - with value of the file name of the run
         {
@@ -851,8 +891,15 @@ namespace OpenMS
     else if (tag_ == "attachment")
     {
       optionalAttributeAsString_(at_.value, attributes, "value");
-      optionalAttributeAsString_(at_.unitAcc, attributes, "unitAccession");
-      optionalAttributeAsString_(at_.unitRef, attributes, "unitCvRef");
+      // legacy unit spelling fallback, as for qualityParameter
+      if (!optionalAttributeAsString_(at_.unitAcc, attributes, "unitAccession"))
+      {
+        optionalAttributeAsString_(at_.unitAcc, attributes, "unitAcc");
+      }
+      if (!optionalAttributeAsString_(at_.unitRef, attributes, "unitCvRef"))
+      {
+        optionalAttributeAsString_(at_.unitRef, attributes, "unitRef");
+      }
       at_.cvRef = attributeAsString_(attributes, "cvRef");
       at_.cvAcc = attributeAsString_(attributes, "accession");
       at_.name = attributeAsString_(attributes, "name");
@@ -868,6 +915,9 @@ namespace OpenMS
       qp_ = QualityParameter();
       at_ = Attachment();
       name_ = "";
+      // members belong to this set only; without the reset every set inherited those of the sets
+      // before it, in the same file and across load() calls
+      names_.clear();
     }
   }
 
@@ -942,11 +992,16 @@ namespace OpenMS
     }
     else if (tag_ == "qualityParameter")
     {
-      if (!(qp_.cvAcc == "MS:1000577" && parent_tag == "setQuality")) //set members get treated differently!
+      // set members were recorded in onStartElement and are regenerated by store(); keeping QC:0000005
+      // as a parameter too would write each member twice after a reload
+      bool set_member = parent_tag == "setQuality" && (qp_.cvAcc == "MS:1000577" || qp_.cvAcc == "QC:0000005");
+      if (!set_member) //set members get treated differently!
       {
         qps_.push_back(qp_);
-        qp_ = QualityParameter();
       }
+      // reset either way: optional attributes are only assigned when present, so a skipped member record
+      // would otherwise pass its value/unit/flag on to the next parameter
+      qp_ = QualityParameter();
     }
     else if (tag_ == "attachment")
     {
@@ -1294,7 +1349,9 @@ namespace OpenMS
         qp.id = base_name + "_ticslump"; ///< Identifier
         qp.cvRef = "QC"; ///< cv reference
         qp.cvAcc = "QC:0000023";
-        qp.value =StringUtils::toStr((100 / exp.size()) * below_10k);
+        // multiply before dividing: 100 / exp.size() is integer division and yields 0 for any run with
+        // more than 100 spectra; the integer percentage format is kept
+        qp.value =StringUtils::toStr(exp.empty() ? Size(0) : 100 * below_10k / exp.size());
         try
         {
           const ControlledVocabulary::CVTerm& term = cv.getTerm(qp.cvAcc);
@@ -1368,7 +1425,8 @@ namespace OpenMS
       qp.id = base_name + "_ricslump"; ///< Identifier
       qp.cvRef = "QC"; ///< cv reference
       qp.cvAcc = "QC:0000057";
-      qp.value =StringUtils::toStr((100 / exp.size()) * below_10k);
+      // same ordering fix as the TIC slump above
+      qp.value =StringUtils::toStr(exp.empty() ? Size(0) : 100 * below_10k / exp.size());
       try
       {
         const ControlledVocabulary::CVTerm& term = cv.getTerm(qp.cvAcc);

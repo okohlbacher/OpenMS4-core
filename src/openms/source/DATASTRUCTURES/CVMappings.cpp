@@ -67,7 +67,11 @@ namespace OpenMS
 
   void CVMappings::setCVReferences(const vector<CVReference>& cv_references)
   {
-    for (vector<CVReference>::const_iterator it = cv_references.begin(); it != cv_references.end(); ++it)
+    // traverse a copy: the argument may alias cv_references_vector_ (getCVReferences()
+    // hands out a reference to it), and appending to the very vector we iterate would
+    // invalidate the iterators as soon as it reallocates
+    const vector<CVReference> input(cv_references);
+    for (vector<CVReference>::const_iterator it = input.begin(); it != input.end(); ++it)
     {
       cv_references_[it->getIdentifier()] = *it;
       cv_references_vector_.push_back(*it);

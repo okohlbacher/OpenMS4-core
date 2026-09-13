@@ -40,13 +40,14 @@ public:
   RangeBase() = default;
 
   /// Cutom C'tor which sets the range to a singular point
-  RangeBase(const double single): min_(single), max_(single)
+  /// @throws Exception::InvalidRange if @p single is not finite
+  RangeBase(const double single): min_(requireFinite_(single, "Range point")), max_(single)
   {
   }
 
   /// Custom C'tor to set min and max
-  /// @throws Exception::InvalidRange if min > max
-  RangeBase(const double min, const double max): min_(min), max_(max)
+  /// @throws Exception::InvalidRange if min > max or either bound is not finite
+  RangeBase(const double min, const double max): min_(requireFinite_(min, "Range minimum")), max_(requireFinite_(max, "Range maximum"))
   {
     if (min_ > max_) throw Exception::InvalidRange(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Invalid initialization of range");
   }
@@ -110,15 +111,23 @@ public:
   ///@{
 
   /// sets the minimum (and the maximum, if uninitialized)
+  /// @throws Exception::InvalidRange if @p min is not finite
   void setMin(const double min)
   {
+    // a NaN bound makes both 'min <= max' and 'min > max' false, i.e. the range would be neither
+    // valid nor empty() and contains()/clampTo()/pushInto() would have no defined answer; an
+    // infinite bound breaks center() and getSpan() the same way
+    if (! std::isfinite(min)) throw Exception::InvalidRange(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Range minimum must be a finite number");
     min_ = min;
     if (max_ < min) max_ = min;
   }
 
   /// sets the maximum (and the minimum, if uninitialized)
+  /// @throws Exception::InvalidRange if @p max is not finite
   void setMax(const double max)
   {
+    // see setMin(): a non-finite bound would leave the min <= max invariant undecidable
+    if (! std::isfinite(max)) throw Exception::InvalidRange(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Range maximum must be a finite number");
     max_ = max;
     if (min_ > max) min_ = max;
   }
@@ -147,6 +156,7 @@ public:
   ///@}
 
   /// ensure the range includes the range of @p other
+  /// @note NaN bounds in @p other are silently ignored (see extend(const double))
   void extend(const RangeBase& other)
   {
     min_ = std::min(min_, other.min_);
@@ -154,6 +164,9 @@ public:
   }
 
   /// extend the range such that it includes the given @p value
+  /// @note A NaN @p value leaves the range unchanged (every comparison against NaN is false).
+  ///       This is deliberate and not checked explicitly: the function runs once per peak in
+  ///       updateRanges(), and corrupt values in the data must not poison the range.
   void extend(const double value)
   {
     min_ = std::min(min_, value);
@@ -165,6 +178,7 @@ public:
   /// Calling this on an empty range will not have any effect.
   void extendLeftRight(const double by)
   {
+    requireFinite_(by, "Range extension");
     if (isEmpty()) return;
     min_ -= by;
     max_ += by;
@@ -177,6 +191,7 @@ public:
    */
   void minSpanIfSingular(const double min_span)
   {
+    requireFinite_(min_span, "Minimal range span");
     if (min_ == max_) extendLeftRight(min_span / 2);
   }
 
@@ -234,6 +249,7 @@ public:
   */
   void scaleBy(const double factor)
   {
+    requireFinite_(factor, "Range scaling factor");
     if (isEmpty()) return;
     const double dist = max_ - min_;
     const double extension = dist * (factor - 1) / 2;
@@ -245,6 +261,7 @@ public:
   /// Shifting an empty range will not have any effect.
   void shift(const double distance)
   {
+    requireFinite_(distance, "Range shift");
     if (isEmpty()) return;
     min_ += distance;
     max_ += distance;
@@ -284,6 +301,13 @@ public:
   }
 
 protected:
+  /// A NaN or infinite bound, shift, extension or factor leaves min <= max undecidable (see setMin()).
+  static double requireFinite_(const double value, const char* what)
+  {
+    if (! std::isfinite(value)) throw Exception::InvalidRange(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, std::string(what) + " must be a finite number");
+    return value;
+  }
+
   // make members non-accessible to maintain invariant: min <= max  (unless uninitialized)
   double min_ = std::numeric_limits<double>::max();
   double max_ = std::numeric_limits<double>::lowest();
@@ -307,12 +331,14 @@ struct OPENMS_DLLAPI RangeRT : public RangeBase
   ///@{
 
   /// sets the minimum (and the maximum, if uninitialized)
+  /// @throws Exception::InvalidRange if @p min is not finite
   void setMinRT(const double min)
   {
     setMin(min);
   }
 
   /// sets the maximum (and the minimum, if uninitialized)
+  /// @throws Exception::InvalidRange if @p max is not finite
   void setMaxRT(const double max)
   {
     setMax(max);
@@ -370,12 +396,14 @@ struct OPENMS_DLLAPI RangeMZ : public RangeBase
   ///@{
 
   /// sets the minimum (and the maximum, if uninitialized)
+  /// @throws Exception::InvalidRange if @p min is not finite
   void setMinMZ(const double min)
   {
     setMin(min);
   }
 
   /// sets the maximum (and the minimum, if uninitialized)
+  /// @throws Exception::InvalidRange if @p max is not finite
   void setMaxMZ(const double max)
   {
     setMax(max);
@@ -432,12 +460,14 @@ struct OPENMS_DLLAPI RangeIntensity : public RangeBase
   ///@{
 
   /// sets the minimum (and the maximum, if uninitialized)
+  /// @throws Exception::InvalidRange if @p min is not finite
   void setMinIntensity(const double min)
   {
     setMin(min);
   }
 
   /// sets the maximum (and the minimum, if uninitialized)
+  /// @throws Exception::InvalidRange if @p max is not finite
   void setMaxIntensity(const double max)
   {
     setMax(max);
@@ -493,12 +523,14 @@ struct OPENMS_DLLAPI RangeMobility : public RangeBase
   ///@{
 
   /// sets the minimum (and the maximum, if uninitialized)
+  /// @throws Exception::InvalidRange if @p min is not finite
   void setMinMobility(const double min)
   {
     setMin(min);
   }
 
   /// sets the maximum (and the minimum, if uninitialized)
+  /// @throws Exception::InvalidRange if @p max is not finite
   void setMaxMobility(const double max)
   {
     setMax(max);

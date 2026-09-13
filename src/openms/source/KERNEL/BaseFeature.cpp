@@ -122,18 +122,41 @@ namespace OpenMS
 
   void BaseFeature::sortPeptideIdentifications()
   {
+    // the hits are sorted in a pass of their own: doing it from inside the comparator would modify
+    // the objects std::sort is comparing, and would leave the hits of any element that the sort
+    // never happens to compare (e.g. the only identification of a feature) unsorted
+    for (PeptideIdentification& pep : peptides_)
+    {
+      pep.sort();
+    }
+    // the score orientation is taken from the first identification that has hits and then used for
+    // every comparison: reading it from the left operand would make the comparator asymmetric as
+    // soon as two identifications disagree, which breaks the strict weak ordering std::sort requires
+    bool higher_score_better = true;
+    for (const PeptideIdentification& pep : peptides_)
+    {
+      // hits, not PeptideIdentification::empty(): that is false for a hit-less identification
+      // read from featureXML, which carries its identifier and score type
+      if (!pep.getHits().empty())
+      {
+        higher_score_better = pep.isHigherScoreBetter();
+        break;
+      }
+    }
     std::sort(peptides_.rbegin(),peptides_.rend(),
-              [](PeptideIdentification& p1, PeptideIdentification& p2)
-              {p1.sort();p2.sort();
-              if (p1.empty())
+              [higher_score_better](const PeptideIdentification& p1, const PeptideIdentification& p2)
               {
-                return true;
-              }
-              if (p2.empty())
+              // two identifications without hits are equivalent; returning true for both orders
+              // would violate asymmetry (undefined behaviour in std::sort)
+              if (p1.getHits().empty())
               {
-                return false;
+                return !p2.getHits().empty();
               }
-              if (p1.isHigherScoreBetter())
+              if (p2.getHits().empty())
+              {
+                return false; // getHits()[0] below would read past the end of an empty vector
+              }
+              if (higher_score_better)
               {
                 return p1.getHits()[0].getScore() < p2.getHits()[0].getScore();
               }
@@ -165,6 +188,10 @@ namespace OpenMS
           seqs.insert(id_tmp.getHits()[0].getSequence().toString());
         }
       }
+      // note: the state counts attached identifications, not sequences, so more than one attached
+      // identification yields a MULTIPLE_* state even when only one of them contributed a sequence
+      // (the shortcut above is the only path to SINGLE). Kept as is because tools branch on the
+      // existing states.
       if (seqs.size() == 1)
       {
         return AnnotationState::FEATURE_ID_MULTIPLE_SAME; // hits have identical seqs
@@ -246,16 +273,24 @@ namespace OpenMS
 
   void BaseFeature::updateIDReferences(const IdentificationData::RefTranslator& trans)
   {
+    // everything is translated into temporaries first and only committed once every translation has
+    // succeeded: RefTranslator::translate throws for an unmapped reference, and assigning as we go
+    // would leave the feature with only the already translated part of its annotations
+    optional<IdentificationData::IdentifiedMolecule> primary_id;
     if (primary_id_ != nullopt) // is feature annotated with a "primary ID"?
     {
-      primary_id_ = trans.translate(*primary_id_);
+      primary_id = trans.translate(*primary_id_);
     }
     set<IdentificationData::ObservationMatchRef> matches; // refs. to e.g. PSMs
-    matches.swap(id_matches_);
-    for (const auto& item : matches)
+    for (const auto& item : id_matches_)
     {
-      id_matches_.insert(trans.translate(item));
+      matches.insert(trans.translate(item));
     }
+    if (primary_id != nullopt)
+    {
+      primary_id_ = primary_id;
+    }
+    id_matches_.swap(matches);
   }
 
 } // namespace OpenMS

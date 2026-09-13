@@ -195,6 +195,10 @@ namespace OpenMS
           has_label = fs_column_header_to_index.contains("Label");
           has_sample = fs_column_header_to_index.contains("Sample");
 
+          // Width of a content row as written, i.e. without the Label/Sample columns appended below:
+          // RUN_CONTENT checks each row against it before it reads a cell or appends those columns.
+          n_col = cells.size();
+
           if (!has_label) // add label column to end of header
           {
             size_t hs = fs_column_header_to_index.size();
@@ -208,8 +212,6 @@ namespace OpenMS
             fs_column_header_to_index["Sample"] = hs;
             cells.push_back("Sample");
           }
-    
-          n_col = fs_column_header_to_index.size();
 
           // determine columns with sample metainfo like condition or replication
           for (size_t i = 0; i != cells.size(); ++i)
@@ -224,6 +226,10 @@ namespace OpenMS
         }
         else if (state == RUN_CONTENT)
         {
+          // Check the width before any cell is read: the lookups below index the row unchecked,
+          // so a row shorter than the header would otherwise be read past its end.
+          parseErrorIf_(n_col != cells.size(), tsv_file, "Wrong number of records in line");
+
           // if no label column exists -> label free
           // -> add label column with label 1 at the end of every row
           if (!has_label) { cells.push_back("1"); }
@@ -232,6 +238,11 @@ namespace OpenMS
           int label = StringUtils::toInt32(cells[fs_column_header_to_index["Label"]]);
           int fraction = StringUtils::toInt32(cells[fs_column_header_to_index["Fraction"]]);
           int fraction_group = StringUtils::toInt32(cells[fs_column_header_to_index["Fraction_Group"]]);
+          // All three are stored in unsigned members, where a negative value would wrap to ~4e9
+          // instead of failing. Reject it before the signed 'Label > 1' check, which -1 would pass.
+          parseErrorIf_(label < 0, tsv_file, "Label must not be negative, found " + StringUtils::toStr(label));
+          parseErrorIf_(fraction < 0, tsv_file, "Fraction must not be negative, found " + StringUtils::toStr(fraction));
+          parseErrorIf_(fraction_group < 0, tsv_file, "Fraction_Group must not be negative, found " + StringUtils::toStr(fraction_group));
           parseErrorIf_(!has_sample && (label > 1), tsv_file,
                         "Column 'Sample' is required for multiplexed one-table designs (Label > 1).");
 
@@ -245,7 +256,6 @@ namespace OpenMS
           }
 
           samplename = cells[fs_column_header_to_index["Sample"]];
-          parseErrorIf_(n_col != cells.size(), tsv_file, "Wrong number of records in line");
 
           const auto& [it, inserted] = samplename_to_index.emplace(samplename, samplename_to_index.size());
           sample = it->second;
@@ -376,12 +386,21 @@ namespace OpenMS
 
           ExperimentalDesign::MSFileSectionEntry e;
 
+          // Read through signed ints first: the members are unsigned, so a negative value would
+          // wrap to ~4e9 and then count as a real fraction group, fraction or label.
+          const int fraction_group = StringUtils::toInt32(cells[fs_column_header_to_index["Fraction_Group"]]);
+          const int fraction = StringUtils::toInt32(cells[fs_column_header_to_index["Fraction"]]);
+          const int label = has_label ? StringUtils::toInt32(cells[fs_column_header_to_index["Label"]]) : 1;
+          parseErrorIf_(fraction_group < 0, tsv_file, "Fraction_Group must not be negative, found " + StringUtils::toStr(fraction_group));
+          parseErrorIf_(fraction < 0, tsv_file, "Fraction must not be negative, found " + StringUtils::toStr(fraction));
+          parseErrorIf_(label < 0, tsv_file, "Label must not be negative, found " + StringUtils::toStr(label));
+
           // Assign fraction group and fraction
-          e.fraction_group = StringUtils::toInt32(cells[fs_column_header_to_index["Fraction_Group"]]);
-          e.fraction = StringUtils::toInt32(cells[fs_column_header_to_index["Fraction"]]);
+          e.fraction_group = fraction_group;
+          e.fraction = fraction;
 
           // Assign label
-          e.label = has_label ? StringUtils::toInt32(cells[fs_column_header_to_index["Label"]]) : 1;
+          e.label = label;
 
           // Assign sample number
           if (has_sample)
@@ -420,6 +439,10 @@ namespace OpenMS
         // Parse Sample Row
         else if (state == SAMPLE_CONTENT)
         {
+          // Same width check as the file section: the Sample lookup below indexes the row
+          // unchecked, and a short row stored here would be read past its end by getFactorValue().
+          parseErrorIf_(n_col != cells.size(), tsv_file, "Wrong number of records in line");
+
           // Parse Error if sample appears multiple times
           const std::string& sample = cells[sample_columnname_to_columnindex_["Sample"]];
           parseErrorIf_(sample_sample_to_rowindex_.contains(sample),

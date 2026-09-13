@@ -9,6 +9,7 @@
 #include <OpenMS/config.h> // for OPENMS_ASSERTIONS
 
 #include <OpenMS/KERNEL/MSExperiment.h>
+#include <OpenMS/SYSTEM/File.h>
 
 #include <OpenMS/CONCEPT/LogStream.h>
 #include <OpenMS/DATASTRUCTURES/ListUtils.h>
@@ -359,6 +360,8 @@ namespace OpenMS
         const MSSpectrum& spec = spectra_view[spec_idx].get();
         const double rt = spec.getRT();
         Int64 rt_bin = static_cast<Int64>((rt - min_rt) * rt_scale);
+        // unreachable on RT-sorted input (RTBegin() starts at min_rt), and the same holds for the
+        // mz_bin >= 0 tests below; they only keep unsorted input from indexing outside the buffer
         if (rt_bin < 0) continue;
         if (rt_bin >= static_cast<Int64>(rt_bins)) rt_bin = static_cast<Int64>(rt_bins) - 1;
 
@@ -422,6 +425,8 @@ namespace OpenMS
       Int64 rt_bin = static_cast<Int64>((rt - min_rt) * rt_scale);
 
       // Clamp to valid range: values exactly at max_rt should go in last bin
+      // (rt_bin < 0, like mz_bin < 0 below, cannot happen on sorted input; the tests only keep
+      // unsorted input, whose binary searches return arbitrary positions, inside the buffer)
       if (rt_bin < 0)
       {
         continue;
@@ -490,6 +495,8 @@ namespace OpenMS
     if (aggregation == RasterAggregation::SUM)
     {
       // Sum reduction: add all thread buffers (iterating per-buffer is cache-friendly)
+      // The float partial sums make the rounding depend on the thread count and schedule,
+      // so SUM is not bit-reproducible across configurations (documented in the header).
       for (int t = 0; t < num_threads; ++t)
       {
         const float* thread_buf = thread_buffers[t].data();
@@ -695,6 +702,8 @@ namespace OpenMS
       spectrum_ranges_.extendUnsafe(*it);
       spectrum_ranges_.extendRT(it->getRT()); // RT is not part of the range of an individual spectrum
       
+      // level 0 (set explicitly; unannotated spectra are level 1) is the manager's key for the global ranges, so such a spectrum
+      // extends those a second time (a no-op) and gets no per-level entry -- see updateRanges() docs
       spectrum_ranges_.extendUnsafe(*it, it->getMSLevel());
       spectrum_ranges_.extendRT(it->getRT(), it->getMSLevel()); // RT is not part of the range of an individual spectrum
       
@@ -919,8 +928,10 @@ namespace OpenMS
       else
       {
         // use Windows or UNIX path separator?
-        std::string actual_path = StringUtils::hasPrefix(path, "file:///") ? StringUtils::substr(path, 8) : path;
+        std::string actual_path = File::localPath(path);
         std::string sep = (StringUtils::has(actual_path, '\\') && !StringUtils::has(actual_path, '/')) ? "\\" : "/";
+        // the location keeps the URI form it was recorded in: tools write it to their output as is.
+        // Code that needs a file on disk converts it with File::localPath().
         std::string ms_run_location = path + sep + filename;
         toFill.push_back(ms_run_location);
       }

@@ -39,7 +39,9 @@ namespace OpenMS
         throw @ref Exception::IllegalArgument.
 
     All @c getXxxById methods honour the subset: id @c i refers to the @c i-th element of the
-    visible view, not the @c i-th row of the underlying SQLite table.
+    visible view, not the @c i-th row of the underlying SQLite table. A subset may list the
+    same spectrum more than once and in any order; positions refer to that order in every
+    accessor, including @ref getAllSpectra.
 
     @section SpectrumAccessSqMass_perf Performance and concurrency
 
@@ -64,7 +66,7 @@ namespace OpenMS
     @code
       // Obtain swath_map with boundaries first
       std::vector<int> indices = sql_mass_reader.readSpectraForWindow(swath_map);
-      OpenMS::Internal::MzMLSqliteHandler handler(file);
+      OpenMS::Internal::MzMLSqliteHandler handler(file, 0); // the run id is only used when writing
       OpenSwath::SpectrumAccessPtr sptr(new OpenMS::SpectrumAccessSqMass(handler, indices));
       swath_maps[k].sptr = sptr;
     @endcode
@@ -99,11 +101,13 @@ public:
 
       If @p sp already has a subset configured, @p indices are interpreted against that subset
       (i.e. @p indices[k] is a position within @p sp's already-visible view, not within the
-      raw sqMass file).
+      raw sqMass file). If @p sp exposes all spectra, @p indices are absolute spectrum
+      indices and, as for the @c (handler, indices) constructor, are only checked when a
+      spectrum is read.
 
       @param[in] sp      Parent accessor.
       @param[in] indices Indices into @p sp's already-filtered view; empty inherits @p sp's subset unchanged.
-      @throws Exception::IllegalArgument If any entry of @p indices is out of range of @p sp's subset.
+      @throws Exception::IllegalArgument If any entry of @p indices is negative or out of range of @p sp's subset.
     */
     SpectrumAccessSqMass(const SpectrumAccessSqMass& sp, const std::vector<int>& indices);
 
@@ -140,17 +144,19 @@ public:
 
       @param[in] id Spectrum index in the visible view (0-based; honours the optional subset).
       @return Pointer to the loaded spectrum.
+      @throws Exception::IllegalArgument If @p id is not a position in the visible view.
       @warning Prefer @ref getAllSpectra when many spectra are needed; per-call cost is dominated by the SQLite query overhead.
     */
     OpenSwath::SpectrumPtr getSpectrumById(int id) override;
 
     /**
-      @brief Load metadata (native id, RT, MS level) for one spectrum.
+      @brief Load metadata (index, native id, RT, MS level) for one spectrum.
 
       Same per-call cost trade-off as @ref getSpectrumById.
 
       @param[in] id Spectrum index in the visible view (0-based).
-      @return Metadata record for the requested spectrum.
+      @return Metadata record for the requested spectrum; its @c index is @p id.
+      @throws Exception::IllegalArgument If @p id is not a position in the visible view.
     */
     OpenSwath::SpectrumMeta getSpectrumMetaById(int id) const override;
 
@@ -159,8 +165,8 @@ public:
 
       Preferred over repeated @ref getSpectrumById calls — issues a single batched read.
 
-      @param[out] spectra      Receives one @c SpectrumPtr per visible spectrum.
-      @param[out] spectra_meta Receives the parallel metadata records.
+      @param[out] spectra      Receives one @c SpectrumPtr per visible spectrum, in view order.
+      @param[out] spectra_meta Receives the parallel metadata records; @c index is the position in the view.
     */
     void getAllSpectra(std::vector< OpenSwath::SpectrumPtr > & spectra, std::vector< OpenSwath::SpectrumMeta > & spectra_meta) const;
 
@@ -168,7 +174,13 @@ public:
       @brief Indices into the visible view of spectra whose RT lies within an absolute window.
 
       @param[in] RT      Centre of the RT window (same units as the underlying spectra).
-      @param[in] deltaRT Half-width of the RT window; matches spectra in @f$[RT - \mathrm{deltaRT}, RT + \mathrm{deltaRT}]@f$.
+      @param[in] deltaRT Half-width of the RT window; a positive value matches spectra in
+                         @f$[RT - \mathrm{deltaRT}, RT + \mathrm{deltaRT}]@f$. Zero does not
+                         match only spectra at exactly @p RT: it returns just the first
+                         spectrum at or after @p RT (spectra are assumed to be stored in RT
+                         order), or nothing if there is none.
+                         @ref OpenSwath::ISpectrumAccess::getMultipleSpectra relies on this to
+                         find the spectrum closest to @p RT.
       @return Indices into the visible view (already remapped through the subset, if any).
       @note Aborts via @c OPENMS_PRECONDITION if @p deltaRT is negative.
     */

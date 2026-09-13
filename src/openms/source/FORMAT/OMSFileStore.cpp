@@ -1558,7 +1558,9 @@ namespace OpenMS::Internal
       for (uint32_t i = 0; i < feat.getRatios().size(); ++i)
       {
         const ConsensusFeature::Ratio& ratio = feat.getRatios()[i];
-        query_ratio->bind(":feature_id", feature_id);
+        // the consensus feature's own id: feature_id has moved on to its last feature handle by now,
+        // and the loader looks ratios up under the consensus feature
+        query_ratio->bind(":feature_id", parent_id);
         query_ratio->bind(":ratio_index", i);
         query_ratio->bind(":ratio_value", ratio.ratio_value_);
         query_ratio->bind(":denominator_ref", ratio.denominator_ref_);

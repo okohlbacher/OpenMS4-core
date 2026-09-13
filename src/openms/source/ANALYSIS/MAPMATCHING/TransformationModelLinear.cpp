@@ -31,6 +31,9 @@ namespace OpenMS
       Param defaults;
       getDefaultParameters(defaults);
       params_.setDefaults(defaults);
+      // read for compatibility only: the fit below is always an ordinary least-squares regression
+      // of y on x. Honouring 'true' here would silently change the slope/intercept obtained with
+      // every existing parameter file that sets it, so the option is documented as ignored instead.
       symmetric_ = params_.getValue("symmetric_regression") == "true";
       // weight the data (if weighting is specified)
       TransformationModel::DataPoints data_weighted = data;
@@ -139,8 +142,11 @@ namespace OpenMS
   void TransformationModelLinear::getDefaultParameters(Param& params)
   {
     params.clear();
-    params.setValue("symmetric_regression", "false", "Perform linear regression"
-                                                     " on 'y - x' vs. 'y + x', instead of on 'y' vs. 'x'.");
+    // the description states the real behaviour: the value is accepted so that existing
+    // parameter files keep loading, but no symmetric regression is implemented
+    params.setValue("symmetric_regression", "false", "Currently ignored (accepted for compatibility):"
+                                                     " the model is always fitted by regressing 'y' on 'x',"
+                                                     " not 'y - x' on 'y + x'.");
     params.setValidStrings("symmetric_regression",
                            {"true","false"});
     params.setValue("x_weight", "x", "Weight x values");

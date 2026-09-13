@@ -33,7 +33,10 @@ namespace OpenMS::Internal
       //Also store fulfilled rule term counts - this count is used to check of the MUST/MAY and AND/OR/XOR is fulfilled
       bool allowed = false;
       bool rule_found = false;
-      vector<CVMappingRule>& rules = rules_[path];
+      // lookup without insertion, as in SemanticValidator::handleTerm_
+      const vector<CVMappingRule> no_rules;
+      const auto rules_it = rules_.find(path);
+      const vector<CVMappingRule>& rules = (rules_it != rules_.end()) ? rules_it->second : no_rules;
       for (Size r = 0; r < rules.size(); ++r) //go thru all rules
       {
         rule_found = true;

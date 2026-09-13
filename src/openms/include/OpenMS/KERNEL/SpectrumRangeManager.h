@@ -87,11 +87,16 @@ namespace OpenMS
     /**
       @brief Gets the ranges for a specific MS level
 
-      @param[in] ms_level The MS level for which to retrieve the ranges
+      Only levels which were actually extended have an entry. Level 0 never has one: the
+      extend...() members route @p ms_level == 0 to the global ranges, which live in the
+      BaseType subobject of this manager (use it directly, e.g. getMinRT()). The MS level is
+      therefore mandatory here -- a defaulted 0 could only ever throw.
+
+      @param[in] ms_level The MS level for which to retrieve the ranges (must not be 0)
       @return The ranges for the specified MS level
       @throw Exception::InvalidValue if no ranges exist for the specified MS level
     */
-    const BaseType& byMSLevel(UInt ms_level = 0) const
+    const BaseType& byMSLevel(UInt ms_level) const
     {
       if (auto it = ms_level_ranges_.find(ms_level); it != ms_level_ranges_.end())
       {

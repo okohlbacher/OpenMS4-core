@@ -16,7 +16,7 @@ namespace OpenMS::Internal
 
     MascotXMLHandler::MascotXMLHandler(ProteinIdentification& protein_identification, PeptideIdentificationList& id_data, const std::string& filename, map<std::string, vector<AASequence> >& modified_peptides, const SpectrumMetaDataLookup& lookup):
       XMLHandler(filename, ""), protein_identification_(protein_identification),
-      id_data_(id_data), peptide_identification_index_(0), actual_title_(""),
+      id_data_(id_data), peptide_identification_index_(0), actual_query_(0), actual_title_(""),
       modified_peptides_(modified_peptides), lookup_(lookup),
       no_rt_error_(false)
     {
@@ -54,12 +54,14 @@ namespace OpenMS::Internal
       else if (tag_ == "peptide" || tag_ == "u_peptide" || tag_ == "q_peptide")
       {
         Int attribute_value = attributeAsInt_(attributes, s_peptide_query);
-        peptide_identification_index_ = attribute_value - 1;
-
-        if (peptide_identification_index_ > id_data_.size())
+        // query numbers are 1-based indices into the <NumQueries> entries: validate before subtracting,
+        // so that 0 or a negative number cannot wrap around and query == NumQueries + 1 (one past the
+        // end of id_data_) is rejected instead of being used as an index later on
+        if (attribute_value <= 0 || static_cast<Size>(attribute_value) > id_data_.size())
         {
           fatalError(LOAD, "No or conflicting header information present (make sure to use the 'show_header=1' option in the ./export_dat.pl script)");
         }
+        peptide_identification_index_ = attribute_value - 1;
       }
     }
 
@@ -113,8 +115,9 @@ namespace OpenMS::Internal
           std::string msg = "<pep_scan_title> element has unexpected format '" + title + "'. Could not extract spectrum meta data.";
           error(LOAD, msg);
         }
-        // did it work?
-        if (!id_data_[peptide_identification_index_].getRT())
+        // did it work? A failed look-up leaves the RT NaN, while 0 is a valid RT, so test hasRT()
+        // rather than the truth value of the double
+        if (!id_data_[peptide_identification_index_].hasRT())
         {
           if (!no_rt_error_) // report the error only the first time
           {
@@ -335,6 +338,13 @@ namespace OpenMS::Internal
         std::string title = StringUtils::trim(character_buffer_);
         vector<std::string> parts;
 
+        // <query number> is 1-based and not checked at its start tag; it is first used as an index here
+        // (0 would wrap around, a number beyond <NumQueries> would run past the end of id_data_)
+        if (actual_query_ == 0 || actual_query_ > id_data_.size())
+        {
+          fatalError(LOAD, "No or conflicting header information present (make sure to use the 'show_header=1' option in the ./export_dat.pl script)");
+        }
+
         actual_title_ = title;
         if (modified_peptides_.contains(title))
         {
@@ -373,6 +383,11 @@ namespace OpenMS::Internal
       }
       else if (tag_ == "RTINSECONDS")
       {
+        // same 1-based <query number> range check as for <StringTitle>
+        if (actual_query_ == 0 || actual_query_ > id_data_.size())
+        {
+          fatalError(LOAD, "No or conflicting header information present (make sure to use the 'show_header=1' option in the ./export_dat.pl script)");
+        }
         id_data_[actual_query_ - 1].setRT(StringUtils::toDouble(StringUtils::trimmed(character_buffer_)));
       }
       else if (tag_ == "MascotVer")

@@ -144,6 +144,15 @@ namespace OpenMS
       by the loaders). This MetaValue-based path is for experiments already
       loaded into an @p MSExperiment (e.g. via @p FileHandler).
 
+      @note The two overloads are not strict mirrors of each other; the documented behaviour is
+            what each one actually does. This overload copies @p imzml:pixel_size_x/y whenever
+            both MetaValues exist, where the index overload copies the pixel size only when both
+            values are &gt; 0. An experiment loaded through this class never carries a non-positive
+            pixel size (it only sets the MetaValues for values &gt; 0), so the overloads agree on it;
+            they differ only when a caller sets imzml:pixel_size_x/y to 0 or less by hand. It also
+            tests the coordinates before @p imzml:z, so a spectrum at (0, 0, 2) is warned about as
+            a non-conformant coordinate here and skipped silently as an off-plane pixel there.
+
       @param[in] exp  Experiment previously loaded from imzML (e.g. via @p load or @p FileHandler).
       @param[out] geom Geometry to populate (cleared first).
     */
@@ -222,7 +231,9 @@ namespace OpenMS
       Writes external binary arrays (float32 or float64 via @p PeakFileOptions) with a
       16-byte UUID header in the @c .ibd file linked to IMS:1000080 in the XML. Continuous mode is selected when
       @p imzml:imaging_mode is @c continuous or all spectra share an identical
-      m/z axis; otherwise processed mode is used.
+      m/z axis; otherwise processed mode is used. When no spectrum holds any peak (e.g. a
+      metadata-only store via @p PeakFileOptions::setMetadataOnly) the declared mode is kept,
+      since both layouts are then identical on disk.
 
       Each spectrum must carry @p imzml:x and @p imzml:y MetaValues (1-based imzML
       pixel coordinates). Dataset imaging metadata (@p imzml:scan_pattern,
@@ -232,6 +243,11 @@ namespace OpenMS
 
       Spectra sharing a pixel coordinate are written out as-is with a warning, matching
       what @p load accepts for the same dataset.
+
+      The @c .ibd is written before the @c .imzML. If the store fails after this call has
+      created the @c .ibd, that file is removed again, so a failed store never leaves a
+      truncated @c .ibd that could pass for the companion of an older @c .imzML. (An earlier
+      @c .ibd at the same path is overwritten as soon as the write starts and is not restored.)
 
       @param[in] filename Path to the output @c .imzML file.
       @param[in] exp      Experiment with spectra and optional imzML MetaValues.

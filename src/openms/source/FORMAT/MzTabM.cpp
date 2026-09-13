@@ -98,14 +98,17 @@ namespace OpenMS
                                         std::set<std::string>& observationmatch_user_value_keys,
                                         std::set<std::string>& compound_user_value_keys)
   {
+    // The collected keys are looked up again on the features, observation matches and
+    // compounds (addMetaInfoToOptionalColumns), so they are kept exactly as stored. Only
+    // the column name derived from a key must not contain spaces, and that substitution
+    // happens when the column is created - substituting here already would look up
+    // "a_b" for a value stored as "a b" and export it as null.
     for (Size i = 0; i < feature_map.size(); ++i)
     {
       // feature section optional columns
       const Feature& f = feature_map[i];
       std::vector<std::string> keys;
       f.getKeys(keys);
-      // replace whitespaces with underscore
-      std::transform(keys.begin(), keys.end(), keys.begin(), [&](std::string& s) { return StringUtils::substitute(s, ' ', '_'); });
       feature_user_value_keys.insert(keys.begin(), keys.end());
 
       auto match_refs = f.getIDMatches();
@@ -114,8 +117,6 @@ namespace OpenMS
         // feature section optional columns
         std::vector<std::string> obsm_keys;
         match_ref->getKeys(obsm_keys);
-        // replace whitespaces with underscore
-        std::transform(obsm_keys.begin(), obsm_keys.end(), obsm_keys.begin(), [&](std::string& s) { return StringUtils::substitute(s, ' ', '_'); });
 
         // remove "IDConverter_trace" metadata from the ObservationMatch
         // introduced by the IdentificationDataConverter
@@ -133,8 +134,6 @@ namespace OpenMS
         IdentificationData::IdentifiedCompoundRef compound_ref = molecule.getIdentifiedCompoundRef();
         std::vector<std::string> compound_keys;
         compound_ref->getKeys(compound_keys);
-        // replace whitespaces with underscore
-        std::transform(compound_keys.begin(), compound_keys.end(), compound_keys.begin(), [&](std::string& s) { return StringUtils::substitute(s, ' ', '_'); });
         compound_user_value_keys.insert(compound_keys.begin(), compound_keys.end());
       }
     }

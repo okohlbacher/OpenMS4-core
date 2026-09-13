@@ -12,12 +12,14 @@
 
 // Std-only (see ClassTest.h); OpenMS behavior is registered by the test projects
 // (openms/source/OpenMSTestSupport.cpp).
+#include <cmath>        // std::isinf, std::isnan, std::signbit
 #include <cstdlib>      // std::getenv, exit
 #include <exception>    // std::exception, current-exception handling
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>       // std::numeric_limits
 #include <sstream>
 #include <system_error> // std::error_code
 
@@ -382,6 +384,33 @@ namespace OpenMS::Internal::ClassTest
           return false;
         }
 
+        // Decide infinities here, because the case distinction below cannot:
+        // inf - inf and inf / -inf are nan, every comparison against nan is
+        // false, and control fell through to "ratio of numbers is small" -- so
+        // TEST_REAL_SIMILAR(inf, -inf) passed. An infinity is similar only to
+        // the same infinity; tests comparing a result against
+        // numeric_limits<double>::infinity() rely on that. (FuzzyStringComparator
+        // makes the same decision.)
+        if (std::isinf(number_1) || std::isinf(number_2))
+        {
+          if (number_1 == number_2)
+          {
+            fuzzy_message = "both numbers are the same infinity";
+            return true;
+          }
+          absdiff = std::numeric_limits<double>::infinity();
+          absdiff_max = absdiff;
+          if (std::isinf(number_1) && std::isinf(number_2))
+          {
+            fuzzy_message = "infinities have different signs";
+          }
+          else
+          {
+            fuzzy_message = "one number is infinite and the other is not";
+          }
+          return false;
+        }
+
         // check if absolute difference is small
         absdiff = number_1 - number_2;
         if (absdiff < 0)
@@ -438,7 +467,14 @@ namespace OpenMS::Internal::ClassTest
           else // both numbers are not zero
           {
             ratio = number_1 / number_2;
-            if (ratio < 0.)
+            // Take the sign case from the operands, not from the quotient: when
+            // the magnitudes are far apart the quotient underflows to -0.0,
+            // '-0.0 < 0.' is false, the reciprocal below makes it -inf, and
+            // '-inf > ratio_max_allowed' is false as well -- so
+            // isRealSimilar(1e-300, -1e300) was true while
+            // isRealSimilar(-1e300, 1e-300) was false. Both numbers are non-zero
+            // and finite here, so signbit is unambiguous.
+            if (std::signbit(number_1) != std::signbit(number_2))
             {
               if (!is_absdiff_small)
               {

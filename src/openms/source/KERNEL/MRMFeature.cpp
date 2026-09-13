@@ -8,8 +8,24 @@
 
 #include <OpenMS/KERNEL/MRMFeature.h>
 
+#include <OpenMS/CONCEPT/Exception.h>
+
 namespace OpenMS
 {
+  namespace
+  {
+    /// Index lookup for the id->index maps; a miss must not default-insert, since that would
+    /// register a key that was never added and make the read return an unrelated feature
+    int featureIndex_(const std::map<std::string, int>& index_map, const std::string& key, const char* function)
+    {
+      std::map<std::string, int>::const_iterator it = index_map.find(key);
+      if (it == index_map.end())
+      {
+        throw Exception::ElementNotFound(__FILE__, __LINE__, function, key);
+      }
+      return it->second;
+    }
+  }
 
   MRMFeature::MRMFeature() :
     Feature()
@@ -69,24 +85,41 @@ namespace OpenMS
 
   void MRMFeature::addFeature(const Feature & feature, const std::string& key)
   {
-    features_.push_back(feature);
-    feature_map_[key] = Int(features_.size()) - 1;
+    // a repeated key replaces the feature in place: appending would leave the previously keyed
+    // feature in features_ with no map entry pointing at it, so getFeatures() and getFeatureIDs()
+    // would disagree and the stranded entry would still be counted downstream
+    std::pair<std::map<std::string, int>::iterator, bool> pos = feature_map_.emplace(key, Int(features_.size()));
+    if (pos.second)
+    {
+      features_.push_back(feature);
+    }
+    else
+    {
+      features_.at(pos.first->second) = feature;
+    }
   }
 
   void MRMFeature::addFeature(Feature && feature, const std::string& key)
   {
-    features_.push_back(std::move(feature));
-    feature_map_[key] = Int(features_.size()) - 1;
+    std::pair<std::map<std::string, int>::iterator, bool> pos = feature_map_.emplace(key, Int(features_.size()));
+    if (pos.second)
+    {
+      features_.push_back(std::move(feature));
+    }
+    else
+    {
+      features_.at(pos.first->second) = std::move(feature);
+    }
   }
 
   Feature & MRMFeature::getFeature(const std::string& key) 
   {
-    return features_.at(feature_map_[key]);
+    return features_.at(featureIndex_(feature_map_, key, OPENMS_PRETTY_FUNCTION));
   }
 
   const Feature & MRMFeature::getFeature(const std::string& key) const 
   {
-    return features_.at(feature_map_.at(key));
+    return features_.at(featureIndex_(feature_map_, key, OPENMS_PRETTY_FUNCTION));
   }
 
   const std::vector<Feature> & MRMFeature::getFeatures() const
@@ -104,14 +137,29 @@ namespace OpenMS
 
   void MRMFeature::addPrecursorFeature(const Feature & feature, const std::string& key)
   {
-    precursor_features_.push_back(feature);
-    precursor_feature_map_[key] = Int(precursor_features_.size()) - 1;
+    // see addFeature: replacing in place keeps precursor_features_ reachable through the map
+    std::pair<std::map<std::string, int>::iterator, bool> pos = precursor_feature_map_.emplace(key, Int(precursor_features_.size()));
+    if (pos.second)
+    {
+      precursor_features_.push_back(feature);
+    }
+    else
+    {
+      precursor_features_.at(pos.first->second) = feature;
+    }
   }
 
   void MRMFeature::addPrecursorFeature(Feature && feature, const std::string& key)
   {
-    precursor_features_.push_back(std::move(feature));
-    precursor_feature_map_[key] = Int(precursor_features_.size()) - 1;
+    std::pair<std::map<std::string, int>::iterator, bool> pos = precursor_feature_map_.emplace(key, Int(precursor_features_.size()));
+    if (pos.second)
+    {
+      precursor_features_.push_back(std::move(feature));
+    }
+    else
+    {
+      precursor_features_.at(pos.first->second) = std::move(feature);
+    }
   }
 
   void MRMFeature::getPrecursorFeatureIDs(std::vector<std::string> & result) const
@@ -124,12 +172,12 @@ namespace OpenMS
 
   Feature & MRMFeature::getPrecursorFeature(const std::string& key)
   {
-    return precursor_features_.at(precursor_feature_map_[key]);
+    return precursor_features_.at(featureIndex_(precursor_feature_map_, key, OPENMS_PRETTY_FUNCTION));
   }
 
   const Feature & MRMFeature::getPrecursorFeature(const std::string& key) const
   {
-    return precursor_features_.at(precursor_feature_map_.at(key));
+    return precursor_features_.at(featureIndex_(precursor_feature_map_, key, OPENMS_PRETTY_FUNCTION));
   }
 
   void MRMFeature::IDScoresAsMetaValue(bool decoy, const OpenSwath_Ind_Scores& idscores)
@@ -149,7 +197,6 @@ namespace OpenMS
     setMetaValue(id + "peak_apex_position", idscores.ind_apex_position);
     setMetaValue(id + "width_at_50", idscores.ind_fwhm);
     setMetaValue(id + "total_mi", idscores.ind_total_mi);
-    setMetaValue(id + "transition_names", idscores.ind_transition_names);
     setMetaValue(id + "ind_log_intensity", idscores.ind_log_intensity);
     setMetaValue(id + "ind_xcorr_coelution", idscores.ind_xcorr_coelution_score);
     setMetaValue(id + "ind_xcorr_shape", idscores.ind_xcorr_shape_score);

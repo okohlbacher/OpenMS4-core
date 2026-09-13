@@ -1766,4 +1766,90 @@ START_SECTION(void load and OnDisc skip aux array without a supported binary dat
 }
 END_SECTION
 
+
+START_SECTION(void store writes a metadata-only continuous dataset)
+{
+  // Two spectra on different m/z axes: refused as continuous while they carry peaks, but with every
+  // peak cleared by setMetadataOnly() there is no axis left to disagree on, so the declared mode
+  // must be honoured -- the same store of a processed dataset has always succeeded.
+  MSExperiment original;
+  original.setMetaValue("imzml:imaging_mode", "continuous");
+  original.addSpectrum(makePixelSpectrum_(1, 1, 100.0, 10.0f));
+  original.addSpectrum(makePixelSpectrum_(2, 1, 200.0, 20.0f));
+
+  ImzMLFile with_peaks;
+  std::string refused_imzml;
+  NEW_TMP_FILE_EXT(refused_imzml, ".imzML");
+  TEST_EXCEPTION(Exception::InvalidParameter, with_peaks.store(refused_imzml, original))
+
+  PeakFileOptions opts;
+  opts.setMetadataOnly(true);
+  ImzMLFile f;
+  f.setOptions(opts);
+  std::string tmp_imzml;
+  NEW_TMP_FILE_EXT(tmp_imzml, ".imzML");
+  f.store(tmp_imzml, original);
+
+  ImzMLMeta meta;
+  std::vector<ImzMLSpectrumIndex> index;
+  ImzMLFile().loadSpectraIndex(tmp_imzml, meta, index);
+  TEST_EQUAL(meta.imaging_mode, "continuous")
+  TEST_EQUAL(index.size(), 2)
+  TEST_EQUAL(index[0].mz_length, 0)
+  TEST_EQUAL(index[1].int_length, 0)
+  remove(ibdPathFor_(tmp_imzml).c_str());
+}
+END_SECTION
+
+
+START_SECTION(void store skips a misaligned FloatDataArray whatever the PeakFileOptions say)
+{
+  // One value for two peaks, on a spectrum that is deliberately unsorted. Sorting and peak
+  // filtering refuse a mis-sized data array, so the writer must drop it before either runs:
+  // skip-and-warn is the one outcome, not an abort that depends on unrelated option flags.
+  MSSpectrum s;
+  s.push_back(Peak1D(200.0, 20.0f));
+  s.push_back(Peak1D(100.0, 10.0f));
+  s.setMetaValue("imzml:x", 1);
+  s.setMetaValue("imzml:y", 1);
+  s.setMetaValue("imzml:z", 1);
+  MSSpectrum::FloatDataArray im;
+  im.setName("mean inverse reduced ion mobility array");
+  im.push_back(0.85f);
+  s.getFloatDataArrays().push_back(im);
+
+  MSExperiment original;
+  original.addSpectrum(s);
+  original.setMetaValue("imzml:imaging_mode", "processed");
+
+  PeakFileOptions untouched; // neither sorts nor filters: always skipped the array
+  untouched.setSortSpectraByMZ(false);
+  PeakFileOptions sorting;   // the default: sortByPosition() over the unsorted spectrum
+  PeakFileOptions trimming;  // select() drops the peak at m/z 100
+  trimming.setSortSpectraByMZ(false);
+  trimming.setMZRange(DRange<1>(150.0, 250.0));
+
+  std::vector<PeakFileOptions> option_sets;
+  option_sets.push_back(untouched);
+  option_sets.push_back(sorting);
+  option_sets.push_back(trimming);
+  const Size expected_peaks[3] = {2, 2, 1};
+
+  std::string tmp_imzml;
+  NEW_TMP_FILE_EXT(tmp_imzml, ".imzML"); // reused: each iteration overwrites the previous pair
+  for (Size k = 0; k < option_sets.size(); ++k)
+  {
+    ImzMLFile f;
+    f.setOptions(option_sets[k]);
+    f.store(tmp_imzml, original);
+
+    MSExperiment reloaded = loadImzMLExperiment_(tmp_imzml);
+    TEST_EQUAL(reloaded.getNrSpectra(), 1)
+    TEST_EQUAL(reloaded[0].size(), expected_peaks[k])
+    TEST_EQUAL(reloaded[0].getFloatDataArrays().size(), 0)
+    remove(ibdPathFor_(tmp_imzml).c_str());
+  }
+}
+END_SECTION
+
 END_TEST

@@ -146,9 +146,22 @@ namespace OpenMS
     product_ = product;
   }
 
-  std::ostream & operator<<(std::ostream & os, const ChromatogramSettings & /*spec*/)
+  std::ostream & operator<<(std::ostream & os, const ChromatogramSettings & spec)
   {
+    // The block used to hold nothing but its two delimiters, so every chromatogram dump claimed a
+    // settings section that could never contain a setting. The delimiters are kept (consumers match
+    // on the surrounding text), the identifying members are now printed between them.
     os << "-- CHROMATOGRAMSETTINGS BEGIN --" << std::endl;
+    os << "native ID: " << spec.getNativeID() << std::endl;
+    os << "chromatogram type: " << ChromatogramSettings::ChromatogramNames[static_cast<size_t>(spec.getChromatogramType())] << std::endl;
+    os << "precursor m/z: " << spec.getPrecursor().getMZ() << std::endl;
+    os << "product m/z: " << spec.getProduct().getMZ() << std::endl;
+    std::vector<std::string> keys;
+    spec.getKeys(keys);
+    for (const std::string& key : keys)
+    {
+      os << "meta value: " << key << " = " << spec.getMetaValue(key).toString() << std::endl;
+    }
     os << "-- CHROMATOGRAMSETTINGS END --" << std::endl;
     return os;
   }

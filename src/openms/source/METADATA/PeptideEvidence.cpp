@@ -78,10 +78,12 @@ namespace OpenMS
   
   bool PeptideEvidence::hasValidLimits() const
   {
-    return !(
-      getStart() == UNKNOWN_POSITION ||
-      getEnd() == UNKNOWN_POSITION ||
-      getEnd() == N_TERMINAL_POSITION);
+    // positions are zero-based and inclusive, so both endpoints have to be real
+    // coordinates (UNKNOWN_POSITION is the only negative one that is ever set, but
+    // any negative value is outside the protein) and they must not be reversed.
+    // N_TERMINAL_POSITION is a legal endpoint: end == 0 describes a single-residue
+    // peptide at the protein's N terminus, not a missing coordinate.
+    return getStart() >= 0 && getEnd() >= 0 && getStart() <= getEnd();
   }
 
   void PeptideEvidence::setProteinAccession(const std::string& s)

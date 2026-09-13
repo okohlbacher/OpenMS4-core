@@ -78,17 +78,24 @@ namespace OpenMS
                             rhs.data_processing_.begin(),
                             rhs.data_processing_.end());
 
-    // append fileDescription
-    column_description_.insert(rhs.column_description_.begin(), rhs.column_description_.end());
-
-    // update filename and map size
-    std::map<UInt64, ColumnHeader>::const_iterator it = column_description_.begin();
-    std::map<UInt64, ColumnHeader>::const_iterator it2 = rhs.column_description_.begin();
-
-    for (; it != column_description_.end() && it2 != rhs.column_description_.end(); ++it, ++it2)
+    // append fileDescription, and update filename and map size
+    // Pair the headers by column index, not by position in the two maps: the indices need
+    // not be 0..n-1, so walking both maps in lockstep would add the size of an unrelated
+    // column and rename a header that rhs does not even contribute to.
+    for (const auto& rhs_column : rhs.column_description_)
     {
-      getColumnHeaders()[it->first].filename = "mergedConsensusXMLFile";
-      getColumnHeaders()[it->first].size = it->second.size + it2->second.size;
+      auto it = column_description_.find(rhs_column.first);
+      if (it == column_description_.end())
+      {
+        // column exists only in rhs: take it over as it is, it still describes one file
+        column_description_[rhs_column.first] = rhs_column.second;
+      }
+      else
+      {
+        // column exists in both maps, so it now describes rows from both files
+        it->second.size += rhs_column.second.size;
+        it->second.filename = "mergedConsensusXMLFile";
+      }
     }
 
     // append proteinIdentification
@@ -402,6 +409,10 @@ namespace OpenMS
     //swap consensus features
     data_.swap(from.data_);
 
+    // swap meta values: operator==() and clear(true) treat them as part of the map, so
+    // leaving them behind would hand each map the other's data with its own annotation
+    MetaInfoInterface::swap(from);
+
     // swap DocumentIdentifier
     DocumentIdentifier::swap(from);
 
@@ -522,6 +533,17 @@ namespace OpenMS
         ") must match number of columns (" + StringUtils::toStr(column_description_.size()) + ").");
     }
 
+    // Rename the columns that exist, in index order: the headers are keyed by map index,
+    // which nothing requires to be 0..n-1, so a running counter would default-insert an
+    // extra empty column instead of renaming the sparsely keyed one. A map without any
+    // header still gains one column per path, as before.
+    std::vector<UInt64> column_indices;
+    column_indices.reserve(column_description_.size());
+    for (auto const & cd : column_description_)
+    {
+      column_indices.push_back(cd.first);
+    }
+
     Size i(0);
     for (auto const & p : s)
     {
@@ -531,7 +553,7 @@ namespace OpenMS
                         << "Filename: '" << p << "'" << std::endl;
       }
 
-      column_description_[i].filename = p;
+      column_description_[i < column_indices.size() ? column_indices[i] : i].filename = p;
       ++i;
     }
   }
@@ -540,9 +562,10 @@ namespace OpenMS
   {
     StringList ms_path;
     e.getPrimaryMSRunPath(ms_path);
-    if (ms_path.size() == 1 && StringUtils::hasSuffix(ms_path[0], "mzML") && File::exists(ms_path[0]))
+    // the recorded location is usually a file:// URI, which File::exists() cannot resolve
+    if (ms_path.size() == 1 && StringUtils::hasSuffix(ms_path[0], "mzML") && File::exists(File::localPath(ms_path[0])))
     {
-      setPrimaryMSRunPath(ms_path);
+      setPrimaryMSRunPath({File::localPath(ms_path[0])});
     }
     else
     {
@@ -706,6 +729,29 @@ OPENMS_THREAD_CRITICAL(LOGSTREAM)
     Size numbr_exps = column_description_.size();
     std::vector<FeatureMap>fmaps(numbr_exps);
 
+    // A map index is not a position in fmaps: the column headers are keyed by map index and
+    // nothing requires those keys to be 0..n-1, so an index has to be resolved through the
+    // header keys -- indexing fmaps with it directly would read and write past the end.
+    std::map<UInt64, Size> index_to_position;
+    {
+      Size position(0);
+      for (const auto& cd : column_description_)
+      {
+        index_to_position[cd.first] = position;
+        ++position;
+      }
+    }
+    auto positionOf = [&index_to_position](UInt64 map_index) -> Size
+    {
+      auto it = index_to_position.find(map_index);
+      if (it == index_to_position.end())
+      {
+        throw Exception::ElementNotFound(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+          "Map index " + StringUtils::toStr(map_index) + " does not name a column of this ConsensusMap. Check Input!");
+      }
+      return it->second;
+    };
+
     // Check for Isobaric Analyzer
     bool iso_analyze = DataProcessingUtils::hasIsobaricAnalyzer(getDataProcessing());
 
@@ -777,16 +823,18 @@ OPENMS_THREAD_CRITICAL(LOGSTREAM)
       // Add new Features to corresponding FeatureMap.
       for (auto it = new_feats.begin(); it != new_feats.end(); ++it)
       {
-        fmaps[it->first].emplace_back(std::move(it->second));
+        fmaps[positionOf(it->first)].emplace_back(std::move(it->second));
       }
     }
 
     // Add unassigned PeptideIdentifications to ...
     if (iso_analyze)
     {
-      // ... the first FeatureMap.
-      fmaps[0].getUnassignedPeptideIdentifications() = this->getUnassignedPeptideIdentifications();
-      fmaps[0].getProteinIdentifications() = this->getProteinIdentifications(); // wrong! improve: only copy the ProtID which belongs to this FMap!
+      // ... the first FeatureMap, i.e. the one belonging to map index 0 (see the min_index
+      // check above); resolving it keeps a map without that column from being indexed blindly
+      const Size first = positionOf(0);
+      fmaps[first].getUnassignedPeptideIdentifications() = this->getUnassignedPeptideIdentifications();
+      fmaps[first].getProteinIdentifications() = this->getProteinIdentifications(); // wrong! improve: only copy the ProtID which belongs to this FMap!
     }
     else
     {
@@ -798,7 +846,7 @@ OPENMS_THREAD_CRITICAL(LOGSTREAM)
           throw Exception::MissingInformation(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
             "File did not undergo IsobaricAnalyzer, but no map index was found at PeptideIdentifications. Check Input!");
         }
-        fmaps[upep_id.getMetaValue("map_index")].getUnassignedPeptideIdentifications().push_back(upep_id);
+        fmaps[positionOf(static_cast<UInt64>(upep_id.getMetaValue("map_index")))].getUnassignedPeptideIdentifications().push_back(upep_id);
       }
     }
 

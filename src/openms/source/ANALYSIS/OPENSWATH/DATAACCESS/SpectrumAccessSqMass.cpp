@@ -12,6 +12,26 @@
 
 namespace OpenMS
 {
+  namespace
+  {
+    // Maps a position in the visible view to the SQL spectrum id. Only a
+    // subset view is indexed here: an unchecked position would read outside
+    // the index vector, whereas a bad id in the full view is rejected by the
+    // handler when no such row exists.
+    int storageIndex(const std::vector<int>& sidx, int id)
+    {
+      if (sidx.empty())
+      {
+        return id;
+      }
+      if (id < 0 || id >= (int)sidx.size())
+      {
+        throw Exception::IllegalArgument(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+            std::string("Spectrum index ") + id + " is outside the " + sidx.size() + " selected spectra");
+      }
+      return sidx[id];
+    }
+  }
 
     /// Constructor
   SpectrumAccessSqMass::SpectrumAccessSqMass(const OpenMS::Internal::MzMLSqliteHandler& handler) :
@@ -40,7 +60,8 @@ namespace OpenMS
         // we only want to select a subset of the currently selected indices
         for (Size k = 0; k < indices.size(); k++)
         {
-          if (indices[k] >= (int)sp.sidx_.size()) throw Exception::IllegalArgument(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+          // a negative position would convert to a huge size_t in sidx_[] below
+          if (indices[k] < 0 || indices[k] >= (int)sp.sidx_.size()) throw Exception::IllegalArgument(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
               std::string("Error creating SpectrumAccessSqMass with an index ") + indices[k] + " that exceeds the number of available data " + sp.sidx_.size());
           sidx_.push_back( sp.sidx_[ indices[k] ] );
         }
@@ -66,14 +87,7 @@ namespace OpenMS
     OpenSwath::SpectrumPtr SpectrumAccessSqMass::getSpectrumById(int id)
     {
       std::vector<int> indices;
-      if (sidx_.empty())
-      {
-        indices.push_back(id);
-      }
-      else
-      {
-        indices.push_back(sidx_[id]);
-      }
+      indices.push_back(storageIndex(sidx_, id));
 
       // read MSSpectra and prepare for conversion
       std::vector<MSSpectrum> tmp_spectra;
@@ -97,14 +111,7 @@ namespace OpenMS
     OpenSwath::SpectrumMeta SpectrumAccessSqMass::getSpectrumMetaById(int id) const
     {
       std::vector<int> indices;
-      if (sidx_.empty())
-      {
-        indices.push_back(id);
-      }
-      else
-      {
-        indices.push_back(sidx_[id]);
-      }
+      indices.push_back(storageIndex(sidx_, id));
 
       // read MSSpectra and prepare for conversion
       std::vector<MSSpectrum> tmp_spectra;
@@ -112,6 +119,8 @@ namespace OpenMS
 
       const MSSpectrumType& spectrum = tmp_spectra[0];
       OpenSwath::SpectrumMeta m;
+      // SpectrumMeta::index is the position in the list this accessor exposes
+      m.index = static_cast<std::size_t>(id);
       m.id = spectrum.getNativeID();
       m.RT = spectrum.getRT();
       m.ms_level = spectrum.getMSLevel();
@@ -134,7 +143,28 @@ namespace OpenMS
       }
       else
       {
-        handler_.readSpectra(tmp_spectra, sidx_, false);
+        // The handler's "ID IN (...)" query returns each distinct id once, in
+        // ascending id order, not in the order or multiplicity of sidx_ (a
+        // repeated id even made its size check throw). Read every distinct id
+        // once and rebuild the configured view, so that it matches what
+        // getSpectrumById() returns for each position.
+        std::vector<int> unique_ids(sidx_);
+        std::sort(unique_ids.begin(), unique_ids.end());
+        unique_ids.erase(std::unique(unique_ids.begin(), unique_ids.end()), unique_ids.end());
+
+        handler_.readSpectra(tmp_spectra, unique_ids, false);
+
+        if (unique_ids != sidx_)
+        {
+          std::vector<MSSpectrum> unique_spectra;
+          unique_spectra.swap(tmp_spectra);
+          tmp_spectra.reserve(sidx_.size());
+          for (Size k = 0; k < sidx_.size(); k++)
+          {
+            Size pos = std::lower_bound(unique_ids.begin(), unique_ids.end(), sidx_[k]) - unique_ids.begin();
+            tmp_spectra.push_back(unique_spectra[pos]);
+          }
+        }
       }
       spectra.reserve(tmp_spectra.size());
       spectra_meta.reserve(tmp_spectra.size());
@@ -151,6 +181,7 @@ namespace OpenMS
         }
 
         OpenSwath::SpectrumMeta m;
+        m.index = k;
         m.id = spectrum.getNativeID();
         m.RT = spectrum.getRT();
         m.ms_level = spectrum.getMSLevel();

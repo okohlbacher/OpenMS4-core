@@ -170,7 +170,11 @@ namespace OpenMS
     {
       file_name_column_index = it - pin_header.begin();
     }
- 
+
+    // The PIN format lets the last column (Proteins) continue over further tab-separated fields, one
+    // accession each; store() writes multi-protein PSMs that way. Only this trailer may widen a row.
+    const bool proteins_trailer = !pin_header.empty() && pin_header.back() == "Proteins";
+
     // determine extra scores and store column indices
     std::set<std::string> found_extra_scores; // additional (non-main) scores that should be stored in the PeptideHit, order important for comparable idXML  
     for (const std::string& s : extra_scores)
@@ -236,7 +240,7 @@ namespace OpenMS
         if (StringUtils::toDouble(t_row[to_idx_t.at("spectrum_q")]) > threshold ) continue;
       }
 
-      if (row.size() != pin_header.size())
+      if (row.size() < pin_header.size() || (row.size() > pin_header.size() && !proteins_trailer))
       {
         throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Error: line " + StringUtils::toStr(i) + " of file '" + pin_file + "' does not have the same number of columns as the pin_header!",StringUtils::toStr(i));
       }
@@ -270,7 +274,12 @@ namespace OpenMS
         pids.resize(pids.size() + 1);
         pids.back().setHigherScoreBetter(higher_score_better);
         pids.back().setScoreType(score_name);
-        pids.back().setMetaValue(Constants::UserParam::ID_MERGE_INDEX, map_filename_to_idx.at(raw_file_name));
+        // FileName is optional (Percolator's own PIN format has none); without it no filenames were
+        // registered, so there is no merge index to point at.
+        if (file_name_column_index >= 0)
+        {
+          pids.back().setMetaValue(Constants::UserParam::ID_MERGE_INDEX, map_filename_to_idx.at(raw_file_name));
+        }
         pids.back().setRT(StringUtils::toDouble(row[to_idx.at("retentiontime")]) * 60.0); // search engines typically write minutes (e.g., sage)
         pids.back().setMetaValue("PinSpecId", sSpecId);
         if (IM > 0.0) // Sage might annotate 0.0 if no IM is present
@@ -285,7 +294,7 @@ namespace OpenMS
       std::string sPeptide = row[to_idx.at("Peptide")];
       const double score = StringUtils::toDouble(row[to_idx.at(score_name)]);
       std::string target_decoy = StringUtils::toInt32(row[to_idx.at("Label")]) == 1 ? "target" : "decoy";
-      const std::string& sProteins = row[to_idx.at("Proteins")];
+      const size_t proteins_column = to_idx.at("Proteins");
       int rank = to_idx.count("rank") ? StringUtils::toInt32(row[to_idx.at("rank")]) : 1;
       StringList accessions;
 
@@ -310,7 +319,15 @@ namespace OpenMS
         pids.back().setMZ(StringUtils::toDouble(row[to_idx.at("ExpMass")]) / std::fabs(charge) + Constants::PROTON_MASS_U);
       }
 
-      StringUtils::split(sProteins, ';', accessions);
+      // Sage joins accessions with ';' inside one field, PIN writers such as store() give each its own
+      // trailing field (see proteins_trailer); accept both so our own output loads back.
+      const size_t proteins_end = proteins_trailer ? row.size() : proteins_column + 1;
+      for (size_t p = proteins_column; p < proteins_end; ++p)
+      {
+        StringList field_accessions;
+        StringUtils::split(row[p], ';', field_accessions);
+        accessions.insert(accessions.end(), field_accessions.begin(), field_accessions.end());
+      }
 
       // deduce decoy state from accessions if decoy_prefix is set
       if (!decoy_prefix.empty())
@@ -521,6 +538,12 @@ namespace OpenMS
         char aa_before = hit.getPeptideEvidences().front().getAABefore();
         char aa_after  = hit.getPeptideEvidences().front().getAAAfter();
 
+        // PeptideEvidence marks protein termini with '[' / ']', but isEnz_ (like Percolator's converters)
+        // only recognises '-' as a terminus. Normalise before the enzyme features, not just for the
+        // Peptide string, so a protein terminus counts as a valid cleavage site.
+        aa_before = aa_before == PeptideEvidence::N_TERMINAL_AA ? '-' : aa_before;
+        aa_after  = aa_after  == PeptideEvidence::C_TERMINAL_AA ? '-' : aa_after;
+
         const bool enzN = isEnz_(aa_before, StringUtils::prefix(unmodified_sequence, 1)[0], enz);
         stamp_meta_value("enzN", enzN);
         const bool enzC = isEnz_(StringUtils::suffix(unmodified_sequence, 1)[0], aa_after, enz);
@@ -531,8 +554,6 @@ namespace OpenMS
         stamp_meta_value("absdm", std::abs(delta_mass));
 
         // Percolator-formatted peptide string with PTM brackets
-        aa_before = aa_before == '[' ? '-' : aa_before;
-        aa_after  = aa_after  == ']' ? '-' : aa_after;
         std::string sequence;
         sequence += aa_before;
         sequence += ".";

@@ -136,7 +136,16 @@ public:
               @note Subordinate features are not checked and may remain non-unique. However,
               they are associated to their parent which makes identification 'unique'.
 
-              @return The number of invalid (=replaced) elements
+              @return The number of unique ids that were drawn to break a conflict. This counts
+                      draws, not elements: an element that needed two draws counts twice, and an
+                      element which simply had no valid id yet is given one without being counted.
+
+              @throw Exception::Postcondition if a single element does not obtain a free unique id
+                     within (number of ids in use + 64) draws. A generator that does not repeat
+                     itself can collide with each id in use at most once, so this bound holds
+                     even for a seeded generator whose ids overlap a map written under the same
+                     seed; it only ends a generator that keeps returning the same ids, which
+                     would otherwise hang the caller.
 
     */
     Size
@@ -155,10 +164,24 @@ public:
         }
 
         // see if UID already present
+        // Bound the redraws: the loop below has no other exit, so a generator that keeps producing
+        // ids already in use would hang a merge. A fixed small cap is not enough -- TOPP -test runs
+        // seed the generator, so merging two maps written under that seed collides once per id of
+        // the overlapping block before a free id comes up.
+        const Size max_redraws = uniqueid_to_index_.size() + 64;
+        Size redraws(0);
         while (uniqueid_to_index_.contains(unique_id)) // double entry!
         {
+          if (redraws == max_redraws)
+          {
+            std::stringstream ss;
+            ss << "Could not assign a unique id that is not already in use to the element at index " << index
+               << " after " << max_redraws << " attempts.";
+            throw Exception::Postcondition(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, ss.str());
+          }
           getBase_()[index].setUniqueId();
           unique_id = getBase_()[index].getUniqueId();
+          ++redraws;
           ++invalid_uids;
         }
 

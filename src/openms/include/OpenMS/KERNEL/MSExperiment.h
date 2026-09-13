@@ -166,6 +166,11 @@ public:
 
       Container can be a PeakArray or an STL container of peaks which
       supports push_back(), end() and back()
+
+      @note Only MS level 1 spectra contribute; MS2 (and higher) spectra and all
+            chromatograms are skipped. The number of appended peaks is therefore in
+            general smaller than getSize(), which counts those as well -- callers must
+            not use getSize() as a bound for the filled container.
     */
     template <class Container>
     void get2DData(Container& cont) const
@@ -445,7 +450,19 @@ public:
      * @param[in] aggregation RasterAggregation mode: SUM (default) or MAX
      *
     * @note The experiment should be sorted by RT and m/z (call sortSpectra(true) if needed)
-    *       for optimal performance and correct results.
+    *       for optimal performance and correct results. Sortedness is not checked: the RT and
+    *       m/z windows are found by binary search, which on unsorted data returns arbitrary
+    *       positions. Spectra and peaks inside the window may then never be visited. Of the
+    *       visited ones, those more than one bin width below @p min_rt / @p min_mz are skipped,
+    *       those less than one bin width below are added to the first RT column / m/z row (the
+    *       bin index truncates toward zero), and those above @p max_rt / @p max_mz are added to
+    *       the last. No error is reported in that case.
+    * @note With RasterAggregation::SUM the exact pixel values depend on how many threads are
+    *       used and on how OpenMP distributes the spectra among them: each thread sums into
+    *       its own float buffer and the partial sums are added afterwards, so the float
+    *       rounding follows a different addition order than a single-threaded run. Results
+    *       can therefore differ by floating-point rounding between machines, thread settings
+    *       and even repeated runs. RasterAggregation::MAX is independent of threading.
     * @note The output buffer is zero-initialized at the start of this method.
     *       Callers must still ensure the buffer is pre-allocated with the
     *       correct size and layout (mz_bins * rt_bins floats, row-major/C-order).
@@ -1073,13 +1090,25 @@ std::vector<MSChromatogram> extractXICs(
       - The combined range manager (for overall ranges across both spectra and chromatograms)
       
       Call this method after modifying spectra or chromatograms to ensure that all range information is up-to-date.
+
+      @note A spectrum whose MS level is explicitly 0 (e.g. a non-MS absorption scan; a spectrum
+            without an MS level annotation defaults to 1) extends only the global
+            spectrum ranges. SpectrumRangeManager reserves level 0 for those global ranges, so
+            no per-level entry is created for it: spectrumRanges().getMSLevels() omits 0 while
+            getMSLevels() of this experiment reports it, and spectrumRanges().byMSLevel(0) throws.
     */
     void updateRanges();
 
     /// returns the total number of peaks (spectra and chromatograms included)
     UInt64 getSize() const;
 
-    /// returns a sorted array of MS levels (calculated on demand)
+    /**
+      @brief returns a sorted array of MS levels (calculated on demand)
+
+      Every level present among the spectra is reported, including 0 for spectra whose level
+      was set to 0 explicitly. This can differ from spectrumRanges().getMSLevels(), which never
+      contains 0 (see updateRanges()).
+    */
     std::vector<UInt> getMSLevels() const;
 
     ///@}

@@ -14,18 +14,33 @@
 #include <OpenMS/FORMAT/SqliteConnector_impl.h>
 #include <sqlite3.h>
 
+#include <memory>
+
 namespace OpenMS::Internal
 {
 
 
     namespace Sql = Internal::SqliteHelper;
 
+    namespace
+    {
+      /// Finalises the prepared statement on every exit, including a failed step
+      using StatementGuard = std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)>;
+    }
+
+    // All three accessors open the file read-only: the default mode created a missing file, whose
+    // query then failed on a missing table instead of on the missing file. They advance with
+    // Sql::nextRow, which throws on a failed step: taking a NULL first column for the end of the
+    // result made an error look like a complete (possibly empty) result.
+
     std::vector<OpenSwath::SwathMap> MzMLSqliteSwathHandler::readSwathWindows()
     {
       std::vector<OpenSwath::SwathMap> swath_maps;
-      SqliteConnector conn(filename_);
+      SqliteConnector conn(filename_, SqliteConnector::SqlOpenMode::READ_ONLY);
       sqlite3_stmt * stmt;
 
+      // DISTINCT applies to the whole row (centre and both bounds); a precursor without an
+      // isolation target has no window and used to end the loop as if it were the last row
       std::string select_sql;
       select_sql = "SELECT " \
                     "DISTINCT(ISOLATION_TARGET)," \
@@ -33,24 +48,21 @@ namespace OpenMS::Internal
                     "ISOLATION_TARGET + ISOLATION_UPPER " \
                     "FROM PRECURSOR " \
                     "INNER JOIN SPECTRUM ON SPECTRUM_ID = SPECTRUM.ID " \
-                    "WHERE MSLEVEL == 2 "\
+                    "WHERE MSLEVEL == 2 AND ISOLATION_TARGET IS NOT NULL "\
                     ";";
 
       Internal::SqliteHelper::prepareStatement(conn, &stmt, select_sql);
-      sqlite3_step( stmt );
+      StatementGuard guard(stmt, &sqlite3_finalize);
 
-      while (sqlite3_column_type( stmt, 0 ) != SQLITE_NULL)
+      Sql::SqlState state = Sql::SqlState::SQL_ROW;
+      while ((state = Sql::nextRow(stmt, state)) == Sql::SqlState::SQL_ROW)
       {
         OpenSwath::SwathMap map;
         Sql::extractValue<double>(&map.center, stmt, 0);
         Sql::extractValue<double>(&map.lower, stmt, 1);
         Sql::extractValue<double>(&map.upper, stmt, 2);
         swath_maps.push_back(map);
-        sqlite3_step( stmt );
       }
-
-      // free memory
-      sqlite3_finalize(stmt);
 
       return swath_maps;
     }
@@ -58,7 +70,7 @@ namespace OpenMS::Internal
     std::vector<int> MzMLSqliteSwathHandler::readMS1Spectra()
     {
       std::vector< int > indices;
-      SqliteConnector conn(filename_);
+      SqliteConnector conn(filename_, SqliteConnector::SqlOpenMode::READ_ONLY);
       sqlite3_stmt * stmt;
 
       std::string select_sql;
@@ -67,16 +79,13 @@ namespace OpenMS::Internal
                    "WHERE MSLEVEL == 1;";
 
       Internal::SqliteHelper::prepareStatement(conn, &stmt, select_sql);
-      sqlite3_step(stmt);
+      StatementGuard guard(stmt, &sqlite3_finalize);
 
-      while (sqlite3_column_type(stmt, 0) != SQLITE_NULL)
+      Sql::SqlState state = Sql::SqlState::SQL_ROW;
+      while ((state = Sql::nextRow(stmt, state)) == Sql::SqlState::SQL_ROW)
       {
         indices.push_back(sqlite3_column_int(stmt, 0));
-        sqlite3_step(stmt);
       }
-
-      // free memory
-      sqlite3_finalize(stmt);
 
       return indices;
     }
@@ -86,26 +95,25 @@ namespace OpenMS::Internal
       std::vector< int > indices;
       const double center = swath_map.center;
 
-      SqliteConnector conn(filename_);
+      SqliteConnector conn(filename_, SqliteConnector::SqlOpenMode::READ_ONLY);
       sqlite3_stmt * stmt;
 
+      // chromatogram precursors share the table and have no SPECTRUM_ID: the writer stores
+      // chromatograms first, so one with a precursor in the window ended the loop early
       std::string select_sql = "SELECT " \
                           "SPECTRUM_ID " \
                           "FROM PRECURSOR " \
-                          "WHERE ISOLATION_TARGET BETWEEN ";
+                          "WHERE SPECTRUM_ID IS NOT NULL AND ISOLATION_TARGET BETWEEN ";
 
       select_sql +=StringUtils::toStr(center - 0.01) + " AND " + StringUtils::toStr(center + 0.01) + ";";
       Internal::SqliteHelper::prepareStatement(conn, &stmt, select_sql);
-      sqlite3_step(stmt);
+      StatementGuard guard(stmt, &sqlite3_finalize);
 
-      while (sqlite3_column_type( stmt, 0 ) != SQLITE_NULL)
+      Sql::SqlState state = Sql::SqlState::SQL_ROW;
+      while ((state = Sql::nextRow(stmt, state)) == Sql::SqlState::SQL_ROW)
       {
         indices.push_back(sqlite3_column_int(stmt, 0));
-        sqlite3_step(stmt);
       }
-
-      // free memory
-      sqlite3_finalize(stmt);
 
       return indices;
     }

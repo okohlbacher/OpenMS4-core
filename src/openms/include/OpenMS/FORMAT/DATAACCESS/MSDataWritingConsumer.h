@@ -57,6 +57,15 @@ namespace OpenMS
       inconsistent mzML if the count attribute of spectrumList or
       chromatogramList is incorrect.
 
+      @note The header is written from the first spectrum alone, so it only
+      declares that spectrum's data processing and source file. A later
+      spectrum whose data processing differs from the first one is written
+      with the first spectrum's, and a later spectrum's own source file and
+      the data processing of its float data arrays are not written (a warning
+      is issued once when this loses information): mzML references to
+      declarations the header does not contain would make the file invalid.
+      Use MzMLFile::store to keep them.
+
     */
     class OPENMS_DLLAPI MSDataWritingConsumer : 
       public Internal::MzMLHandler,
@@ -199,6 +208,10 @@ namespace OpenMS
       std::vector<std::vector< ConstDataProcessingPtr > > dps_;
       /// The dataprocessing to be added to each spectrum/chromatogram
       DataProcessingPtr additional_dataprocessing_;
+      /// Data processing of the first spectrum, declared by the header as the spectrumList default
+      std::vector<DataProcessingPtr> first_spectrum_data_processing_;
+      /// Whether the loss of an undeclarable reference of a later spectrum was already reported
+      bool warned_undeclared_references_ = false;
     };
 
     /**

@@ -160,8 +160,9 @@ public:
       @brief conversion operator to long double
 
       Note: The implementation uses typedef double (as opposed to float, double, long double.)
+      Accepts DOUBLE_VALUE and INT_VALUE (converted); a STRING_VALUE is not parsed, even if it looks numeric.
 
-      @exception Exception::ConversionError is thrown if a cast from the the wrong type is requested
+      @exception Exception::ConversionError is thrown for any type other than DOUBLE_VALUE or INT_VALUE (String, lists, Empty)
     */
     operator long double() const;
 
@@ -169,8 +170,9 @@ public:
       @brief conversion operator to double
 
       Note: The implementation uses typedef double (as opposed to float, double, long double.)
+      Accepts DOUBLE_VALUE and INT_VALUE (converted); a STRING_VALUE is not parsed, even if it looks numeric.
 
-      @exception Exception::ConversionError is thrown if a cast from the the wrong type is requested
+      @exception Exception::ConversionError is thrown for any type other than DOUBLE_VALUE or INT_VALUE (String, lists, Empty)
     */
     operator double() const;
 
@@ -178,8 +180,9 @@ public:
       @brief conversion operator to float
 
       Note: The implementation uses typedef double (as opposed to float, double, long double.)
+      Accepts DOUBLE_VALUE and INT_VALUE (converted); a STRING_VALUE is not parsed, even if it looks numeric.
 
-      @exception Exception::ConversionError is thrown if a cast from the the wrong type is requested
+      @exception Exception::ConversionError is thrown for any type other than DOUBLE_VALUE or INT_VALUE (String, lists, Empty)
     */
     operator float() const;
 

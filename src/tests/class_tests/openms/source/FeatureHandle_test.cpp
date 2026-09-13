@@ -187,11 +187,22 @@ START_SECTION(([FeatureHandle::IndexLess] bool operator()(FeatureHandle const &l
   lhs.setMapIndex(2);
   lhs.setUniqueId(77);
   rhs.setMapIndex(4);
-  lhs.setUniqueId(29);
+  rhs.setUniqueId(29);
 
   FeatureHandle::IndexLess il;
 
+  // differing map indices decide, irrespective of the unique ids
   TEST_EQUAL(il(lhs, rhs), 1);
+  TEST_EQUAL(il(rhs, lhs), 0);
+
+  // equal map indices fall back to the unique ids
+  rhs.setMapIndex(2);
+  TEST_EQUAL(il(lhs, rhs), 0);
+  TEST_EQUAL(il(rhs, lhs), 1);
+
+  // irreflexive for equal keys
+  rhs.setUniqueId(77);
+  TEST_EQUAL(il(lhs, rhs), 0);
   TEST_EQUAL(il(rhs, lhs), 0);
 END_SECTION
 

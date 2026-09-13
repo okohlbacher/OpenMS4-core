@@ -74,17 +74,13 @@ namespace
     return s;
   }
 
-  // imzML integrity check: the .ibd must begin with the 16-byte UUID declared in
-  // the .imzML XML (IMS:1000080). A mismatch means the .imzML and .ibd do not
-  // belong together (or the .ibd is truncated/corrupt) — reject loudly instead of
-  // silently decoding garbage offsets. If the XML carries no (or an unparsable)
-  // UUID we can only warn, since some non-conformant writers omit it.
   // Advisory imzML integrity check: the .ibd should begin with the 16-byte UUID declared
   // in the .imzML XML (IMS:1000080). A mismatch usually means the .imzML and .ibd do not
   // belong together. This is reported as a loud WARNING rather than a hard error so that
   // legacy / non-conformant datasets (e.g. an .ibd that stores array data from offset 0
   // with no UUID prefix) still load; callers who require strict conformance can inspect
-  // the warning log.
+  // the warning log. A missing or unparsable UUID, an unopenable .ibd and an .ibd shorter
+  // than 16 bytes are warned about the same way: nothing here ever rejects a dataset.
   void verifyIbdUuid_(const std::string& ibd_path, const std::string& xml_uuid, const std::string& imzml_path)
   {
     unsigned char expected[16];

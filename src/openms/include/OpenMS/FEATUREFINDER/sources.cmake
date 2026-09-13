@@ -15,8 +15,6 @@ EmgModel.h
 EmgScoring.h
 ExtendedIsotopeFitter1D.h
 ExtendedIsotopeModel.h
-FeatureFinderAlgorithm.h
-FeatureFinderDefs.h
 FeatureFinderAlgorithmPicked.h
 FeatureFinderAlgorithmPickedHelperStructs.h
 FeatureFinderIdentificationAlgorithm.h

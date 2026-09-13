@@ -158,7 +158,10 @@ namespace OpenMS
       }
       else
       {
-        error(LOAD,std::string("Unsupported parameter type: '") + type + "'");
+        // the schema only admits int/float/string; skipping the entry would let the
+        // model be refitted with its default for that parameter (e.g. 'cspline' for a
+        // dropped interpolation_type) and silently change the stored transformation
+        fatalError(LOAD,std::string("Unsupported parameter type '") + type + "' of parameter '" + attributeAsString_(attributes, "name") + "'");
       }
 
     }

@@ -406,6 +406,20 @@ namespace OpenMS{
     return fs::absolute(to_path(file)).generic_string();
   }
 
+  std::string File::localPath(const std::string& file)
+  {
+    if (!StringUtils::hasPrefix(file, "file://"))
+    {
+      return file;
+    }
+    std::string path = file.substr(7);
+    if (path.size() > 2 && path[0] == '/' && path[2] == ':')
+    {
+      path.erase(0, 1); // file:///C:/... -- the slash before the drive letter is part of the URI
+    }
+    return path;
+  }
+
   std::string File::basename(const std::string& file)
   {
     return PathUtils::basename(file);

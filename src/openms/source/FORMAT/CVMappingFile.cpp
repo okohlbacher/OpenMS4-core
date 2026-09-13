@@ -33,6 +33,14 @@ namespace OpenMS
 
     strip_namespaces_ = strip_namespaces;
 
+    // start every load from empty accumulators: a previous load that threw in the
+    // middle of a document leaves its partial references and rules behind (the
+    // inherited XMLHandler::reset() is empty), and they would then be published
+    // into the destination of the next, possibly unrelated, load
+    cv_references_.clear();
+    rules_.clear();
+    actual_rule_ = CVMappingRule();
+
     parse_(filename, this);
 
     cv_mappings.setCVReferences(cv_references_);
@@ -66,6 +74,9 @@ namespace OpenMS
       std::string element_path = attributeAsString_(attributes, "cvElementPath");
       if (strip_namespaces_)
       {
+        // keep the input around: the rebuilt path below is only a fragment while
+        // the loop runs, so an error must report what the file actually contained
+        const std::string original_path = element_path;
         vector<std::string> slash_split;
         StringUtils::split(element_path, '/', slash_split);
         if (slash_split.empty())
@@ -82,19 +93,30 @@ namespace OpenMS
 
           vector<std::string> split;
           StringUtils::split(*it, ':', split);
-          if (split.empty())
+          if (split.size() < 2)
           {
+            // StringUtils::split() returns the whole segment when there is no ':',
+            // i.e. the segment carries no namespace prefix and is already final
             element_path += "/" + *it;
           }
           else
           {
             if (split.size() == 2)
             {
-              element_path += "/" + split[1];
+              // '@' marks an attribute and belongs to the path, not to the prefix,
+              // so it has to survive the removal of 'prefix:'
+              if (!split[0].empty() && split[0][0] == '@')
+              {
+                element_path +=std::string("/@") + split[1];
+              }
+              else
+              {
+                element_path += "/" + split[1];
+              }
             }
             else
             {
-              fatalError(LOAD,std::string("Cannot parse namespaces of path: '") + element_path + "'");
+              fatalError(LOAD,std::string("Cannot parse namespaces of path: '") + original_path + "'");
             }
           }
         }
@@ -120,7 +142,9 @@ namespace OpenMS
           }
           else
           {
-            // throw Exception
+            // a misspelled level must not silently fall back to MUST: that would
+            // apply a constraint the file never asked for
+            fatalError(LOAD,std::string("Invalid requirementLevel '") + lvl + "' in mapping rule '" + actual_rule_.getIdentifier() + "'");
           }
         }
       }
@@ -148,7 +172,9 @@ namespace OpenMS
           }
           else
           {
-            // throw Exception;
+            // likewise: falling back to OR would loosen an AND/XOR rule instead of
+            // reporting the malformed attribute
+            fatalError(LOAD,std::string("Invalid cvTermsCombinationLogic '") + lgc + "' in mapping rule '" + actual_rule_.getIdentifier() + "'");
           }
         }
       }

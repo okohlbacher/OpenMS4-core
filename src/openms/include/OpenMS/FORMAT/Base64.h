@@ -143,6 +143,19 @@ private:
 
     static const char encoder_[];
     static const char decoder_[];
+
+    /**
+        @brief Rejects malformed Base64 before it is decoded into numbers
+
+        The decoders map every input byte to some 6-bit value, so a byte outside the alphabet or padding
+        inside the data would otherwise come back as plausible numeric values instead of an error.
+
+        @return false if @p in carries nothing to decode (shorter than one group, or padding only)
+        @throws Exception::ConversionError if the length is not a multiple of 4, a byte is outside the
+                Base64 alphabet, or padding is anything but a trailing run of at most two '='
+    */
+    static bool checkNumericInput_(const std::string& in);
+
     /// Decodes a Base64 string to a vector of floating point numbers
     template <typename ToType>
     static void decodeUncompressed_(const std::string & in, ByteOrder from_byte_order, std::vector<ToType> & out);
@@ -276,7 +289,7 @@ private:
   void Base64::decodeCompressed_(const std::string& in, ByteOrder from_byte_order, std::vector<ToType>& out)
   {
     out.clear();
-    if (in.empty())
+    if (!checkNumericInput_(in))
     {
       return;
     }
@@ -313,13 +326,9 @@ private:
 
     // The length of a base64 string is always a multiple of 4 (always 3
     // bytes are encoded as 4 characters)
-    if (in.size() < 4)
+    if (!checkNumericInput_(in))
     {
       return;
-    }
-    if (in.size() % 4 != 0)
-    {
-      throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Malformed base64 input, length is not a multiple of 4.");
     }
 
     Size src_size = in.size();
@@ -416,7 +425,10 @@ private:
     constexpr Size element_size = sizeof(ToType);
 
     std::string decompressed;
-    Base64::decodeSingleString(in, decompressed, true);
+    if (checkNumericInput_(in))
+    {
+      Base64::decodeSingleString(in, decompressed, true);
+    }
     if (decompressed.empty())
     {
       throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Decompression error?");
@@ -509,8 +521,9 @@ private:
     out.clear();
 
     // The length of a base64 string is a always a multiple of 4 (always 3
-    // bytes are encoded as 4 characters)
-    if (in.size() < 4)
+    // bytes are encoded as 4 characters). The check also keeps every byte
+    // inside the range that decoder_ below is indexed with.
+    if (!checkNumericInput_(in))
     {
       return;
     }

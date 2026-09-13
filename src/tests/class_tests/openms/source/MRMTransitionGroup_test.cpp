@@ -261,6 +261,15 @@ START_SECTION ( void getLibraryIntensity(std::vector<double> & result) const)
   TEST_EQUAL(result.size(), 2)
   TEST_REAL_SIMILAR(result[0], 3)
   TEST_REAL_SIMILAR(result[1], 0)
+
+  // only the appended entries are clamped, values the caller already had are untouched
+  std::vector< double > prefilled;
+  prefilled.push_back(-5.0);
+  mrmtrgroup.getLibraryIntensity(prefilled);
+  TEST_EQUAL(prefilled.size(), 3)
+  TEST_REAL_SIMILAR(prefilled[0], -5.0)
+  TEST_REAL_SIMILAR(prefilled[1], 3)
+  TEST_REAL_SIMILAR(prefilled[2], 0)
 }
 END_SECTION
 
@@ -285,6 +294,15 @@ START_SECTION ( MRMTransitionGroup subset(std::vector<std::string> tr_ids))
   mrmtrgroupsub.getLibraryIntensity(result);
   TEST_EQUAL(result.size(), 1)
   TEST_REAL_SIMILAR(result[0], 3)
+
+  // precursor chromatograms are carried over under the key they are stored with; both have
+  // an unset nativeID here, so keying the copies by nativeID would make them collide
+  mrmtrgroup.addPrecursorChromatogram(chrom1, "prec1");
+  mrmtrgroup.addPrecursorChromatogram(chrom2, "prec2");
+  mrmtrgroupsub = mrmtrgroup.subset(transition_ids);
+  TEST_EQUAL(mrmtrgroupsub.getPrecursorChromatograms().size(), 2)
+  TEST_EQUAL(mrmtrgroupsub.hasPrecursorChromatogram("prec1"), true)
+  TEST_EQUAL(mrmtrgroupsub.hasPrecursorChromatogram("prec2"), true)
 }
 END_SECTION
 
@@ -292,6 +310,16 @@ START_SECTION ( inline bool isInternallyConsistent() const)
 {
   MRMTransitionGroupType mrmtrgroup;
   TEST_EQUAL(mrmtrgroup.isInternallyConsistent(), true)
+
+  // the answer is computed, not only asserted, so it is also available in a release build
+  TransitionType incons_trans;
+  incons_trans.setNativeID("incons_trans");
+  mrmtrgroup.addTransition(incons_trans, "incons_trans");
+  TEST_EQUAL(mrmtrgroup.isInternallyConsistent(), false)
+
+  // same number of transitions and chromatograms, but the chromatogram is keyed differently
+  mrmtrgroup.addChromatogram(chrom1, "other_key");
+  TEST_EQUAL(mrmtrgroup.isInternallyConsistent(), false)
 }
 END_SECTION
 
@@ -338,16 +366,44 @@ START_SECTION ( MRMTransitionGroup subsetDependent(std::vector<std::string> tr_i
   new_trans2.setMetaValue("detecting_transition","false");
   mrmtrgroup.addTransition(new_trans1, "new_trans1");
   mrmtrgroup.addTransition(new_trans2, "new_trans2");
+  // subsetDependent takes the chromatogram of every selected transition along
+  mrmtrgroup.addChromatogram(chrom1, "new_trans1");
+  mrmtrgroup.addChromatogram(chrom2, "new_trans2");
+  // and copies each feature as a whole (in contrast to subset, which rebuilds it)
+  MRMFeature mrmfeature;
+  Feature sub_feature;
+  sub_feature.setMetaValue("dummy", 1);
+  mrmfeature.addFeature(sub_feature, "new_trans1");
+  mrmfeature.addFeature(sub_feature, "new_trans2");
+  mrmtrgroup.addFeature(mrmfeature);
+
   std::vector< std::string > transition_ids;
   transition_ids.push_back("new_trans1");
   transition_ids.push_back("new_trans2");
 
   std::vector< double > result;
-  mrmtrgroupsub = mrmtrgroup.subset(transition_ids);
+  mrmtrgroupsub = mrmtrgroup.subsetDependent(transition_ids);
   mrmtrgroupsub.getLibraryIntensity(result);
   TEST_EQUAL(result.size(), 2)
   TEST_REAL_SIMILAR(result[0], 3)
   TEST_REAL_SIMILAR(result[1], 0)
+
+  // selecting a single transition keeps the feature unchanged, i.e. it still carries the
+  // sub-feature of the transition that was not selected
+  std::vector< std::string > single_id;
+  single_id.push_back("new_trans1");
+  MRMTransitionGroupType mrmtrgroupsub_single = mrmtrgroup.subsetDependent(single_id);
+  TEST_EQUAL(mrmtrgroupsub_single.getTransitions().size(), 1)
+  TEST_EQUAL(mrmtrgroupsub_single.getChromatograms().size(), 1)
+  TEST_EQUAL(mrmtrgroupsub_single.getFeatures().size(), 1)
+  std::vector< std::string > feature_ids;
+  mrmtrgroupsub_single.getFeatures()[0].getFeatureIDs(feature_ids);
+  TEST_EQUAL(feature_ids.size(), 2)
+
+  // a selected transition without a chromatogram is reported with its native ID
+  MRMTransitionGroupType mrmtrgroup_nochrom;
+  mrmtrgroup_nochrom.addTransition(new_trans1, "new_trans1");
+  TEST_EXCEPTION(Exception::ElementNotFound, mrmtrgroup_nochrom.subsetDependent(single_id))
 }
 END_SECTION
 

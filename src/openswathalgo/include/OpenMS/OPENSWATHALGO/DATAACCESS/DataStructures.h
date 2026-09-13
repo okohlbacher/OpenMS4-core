@@ -156,6 +156,7 @@ public:
   struct OPENSWATHALGO_DLLAPI OSSpectrumMeta
   {
     /// the zero-based, consecutive index of the spectrum in the SpectrumList.
+    /// @note Not every ISpectrumAccess implementation fills it; those that do not leave it at 0.
     size_t index;
 
     /// a unique identifier for this spectrum.
@@ -257,6 +258,11 @@ public:
       // or contains "ion mobility array".
       for (auto & bda : binaryDataArrayPtrs)
       {
+        // array pointers may be null (see the getters above), so skip them
+        if (bda == nullptr)
+        {
+          continue;
+        }
         if (bda->description.find("Ion Mobility") == 0
             || bda->description.find("inverse reduced ion mobility") != std::string::npos
             || bda->description.find("ion mobility array") != std::string::npos)

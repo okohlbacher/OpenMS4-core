@@ -192,6 +192,7 @@ namespace std
    * Hashes all fields used in operator==:
    * - MetaInfoInterface (via getKeys/getMetaValue)
    * - type_ (SpectrumType enum)
+   * - im_type_ (IMFormat enum) and im_peak_type_ (IMPeakType enum)
    * - native_id_ (String)
    * - comment_ (String)
    * - instrument_settings_ (InstrumentSettings - hashes scan_mode, zoom_scan, polarity, scan_windows)
@@ -215,6 +216,10 @@ namespace std
 
       // Hash type_ (enum)
       OpenMS::hash_combine(seed, OpenMS::hash_int(static_cast<int>(s.getType())));
+
+      // Hash im_type_ and im_peak_type_ (enums, both compared by operator==)
+      OpenMS::hash_combine(seed, OpenMS::hash_int(static_cast<int>(s.getIMFormat())));
+      OpenMS::hash_combine(seed, OpenMS::hash_int(static_cast<int>(s.getIMPeakType())));
 
       // Hash native_id_ (String)
       OpenMS::hash_combine(seed, OpenMS::fnv1a_hash_string(s.getNativeID()));

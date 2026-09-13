@@ -7,6 +7,7 @@
 // --------------------------------------------------------------------------
 
 #include <OpenMS/METADATA/USI.h>
+#include <OpenMS/SYSTEM/File.h>
 #include <OpenMS/METADATA/SpectrumNativeIDParser.h>
 #include <OpenMS/CONCEPT/Exception.h>
 #include <OpenMS/DATASTRUCTURES/ListUtils.h>
@@ -346,16 +347,8 @@ namespace OpenMS
 
     std::string path = filepath;
 
-    // Handle file:// URIs
-    if (StringUtils::hasPrefix(path, "file://"))
-    {
-      path = StringUtils::substr(path, 7);  // Remove "file://"
-      // Handle Windows paths like file:///C:/path
-      if (path.size() > 2 && path[0] == '/' && path[2] == ':')
-      {
-        path = StringUtils::substr(path, 1);  // Remove leading slash for Windows paths
-      }
-    }
+    // Handle file:// URIs, including Windows paths like file:///C:/path
+    path = File::localPath(path);
 
     // Find the last path separator (handle both Unix and Windows)
     size_t last_sep = path.rfind('/');

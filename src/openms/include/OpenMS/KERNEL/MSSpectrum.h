@@ -77,9 +77,27 @@ public:
     struct Chunks {
       public:
         Chunks(const MSSpectrum& s) : spec_(s) {}
+        /**
+          @brief Records the peaks appended since the last add() as one chunk
+
+          @param[in] is_sorted Whether the peaks in the new chunk are already sorted by position
+          @exception Exception::Precondition if the spectrum has fewer peaks than the end of the
+                     previously recorded chunk
+        */
         void add(bool is_sorted)
         {
-          chunks_.emplace_back((chunks_.empty() ? 0 : chunks_.back().end), spec_.size(), is_sorted);
+          const Size start = chunks_.empty() ? 0 : chunks_.back().end;
+          // Chunk boundaries are unsigned, so a spectrum that lost peaks since the last add()
+          // (pop_back, erase, clear, select with a subset) would silently record start > end, and
+          // sortByPositionPresorted() would hand that inverted -- or past-the-end -- iterator pair
+          // to std::stable_sort/std::inplace_merge. Refuse to record such a chunk at all.
+          if (spec_.size() < start)
+          {
+            throw Exception::Precondition(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+                                          "Spectrum shrank to " + StringUtils::toStr(spec_.size()) +
+                                            " peaks, which is less than the end of the last chunk (" + StringUtils::toStr(start) + ")");
+          }
+          chunks_.emplace_back(start, spec_.size(), is_sorted);
         }
         std::vector<Chunk>& getChunks()
         {

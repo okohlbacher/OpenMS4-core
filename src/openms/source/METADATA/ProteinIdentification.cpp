@@ -486,9 +486,10 @@ namespace OpenMS
     if (ms_path.size() == 1)
     {
       FileTypes::Type filetype = FileNameUtils::getTypeByFileName(ms_path[0]);
-      if ((filetype == FileTypes::MZML) && File::exists(ms_path[0]))
+      // the recorded location is usually a file:// URI, which File::exists() cannot resolve
+      if ((filetype == FileTypes::MZML) && File::exists(File::localPath(ms_path[0])))
       {
-        setMetaValue("spectra_data", DataValue(StringList({ms_path[0]})));
+        setMetaValue("spectra_data", DataValue(StringList({File::localPath(ms_path[0])})));
         return; // don't do anything else in this case
       }
       if (filetype == FileTypes::RAW)

@@ -27,6 +27,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iomanip>
+#include <map>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -1704,7 +1705,8 @@ namespace
 
     The sum of the diff mono masses is authoritative. The diff formulas are summed as well but only used
     when their mass agrees with that sum (a database entry can carry a formula that contradicts its
-    mass); otherwise the result is a mass-only modification. Interned via resolveFormulaTag_.
+    mass) and they carry no net charge; otherwise the result is a mass-only modification. Interned via
+    resolveFormulaTag_.
 
     @param[out] net_zero true when the components cancel; the caller then applies no modification
     @return the combined modification, or nullptr when @p net_zero or the residue is unknown
@@ -1731,14 +1733,19 @@ namespace
       return nullptr;
     }
 
-    if (all_have_formulas && !formula_sum.isEmpty() && std::fabs(formula_sum.getMonoWeight() - mass_sum) <= 1e-3)
+    const bool formula_agrees = all_have_formulas && !formula_sum.isEmpty()
+                                && std::fabs(formula_sum.getMonoWeight() - mass_sum) <= 1e-3;
+
+    // a net charge cannot take the formula route: toString() drops it and the re-parsed neutral formula would
+    // lose charge * PROTON_MASS_U that the agreement check just counted, so a charged sum keeps its mass
+    if (formula_agrees && formula_sum.getCharge() == 0)
     {
       FormulaTag ft;
       ft.formula_string = formula_sum.toString();
       return resolveFormulaTag_(ft, residue, ResidueModification::ANYWHERE);
     }
 
-    if (all_have_formulas)
+    if (all_have_formulas && !formula_agrees)
     {
       OPENMS_LOG_WARN << "ProForma: the summed diff formula of the modifications on one residue ("
                       << formula_sum.toString() << ", " << formula_sum.getMonoWeight()
@@ -1885,6 +1892,16 @@ namespace
     return false;
   }
 
+  /// The cross-link label of this bracket, on whichever alternative carries it, or nullptr
+  const Label* crossLinkLabel_(const Modification& mod)
+  {
+    for (const auto& [tag, label] : mod.alternatives)
+    {
+      if (label.has_value() && label->type == Label::Type::CROSSLINK) return &label.value();
+    }
+    return nullptr;
+  }
+
   // Helper to get modification mass from a Modification struct
   std::pair<bool, double> getModificationMass_(const Modification& mod)
   {
@@ -1920,21 +1937,30 @@ namespace
     }
   }
 
-  double calculateChainMass_(const Peptidoform& pf_resolved, std::set<std::string>& counted_crosslinks)
+  /// @param[in,out] counted_crosslinks the linker mass already counted per cross-link label, shared across chains
+  double calculateChainMass_(const Peptidoform& pf_resolved, std::map<std::string, double>& counted_crosslinks)
   {
     double mass = 0.0;
 
     auto addModMass = [&](const Modification& mod) {
-      if (!mod.alternatives.empty() && mod.alternatives[0].second.has_value())
-      {
-        const auto& label = mod.alternatives[0].second.value();
-        if (label.type == Label::Type::CROSSLINK)
-        {
-          if (counted_crosslinks.contains(label.identifier)) return;
-          counted_crosslinks.insert(label.identifier);
-        }
-      }
       auto [has_mass, mod_mass] = getModificationMass_(mod);
+      const Label* link = crossLinkLabel_(mod);
+      // only an endpoint that defines chemistry claims the link: a label-only "[#XL1]" claiming it first
+      // would skip the linker at the other endpoint, making the mass depend on the order of the chains
+      if (link != nullptr && (mod.resolved_mod != nullptr || carriesChemistry_(mod)))
+      {
+        const auto counted = counted_crosslinks.find(link->identifier);
+        if (counted != counted_crosslinks.end())
+        {
+          if (has_mass && std::fabs(counted->second - mod_mass) > 1e-3)
+          {
+            OPENMS_LOG_WARN << "ProForma: the endpoints of cross-link '" << link->identifier << "' define different linker masses ("
+                            << counted->second << " and " << mod_mass << " Da); using the first." << std::endl;
+          }
+          return;
+        }
+        counted_crosslinks.emplace(link->identifier, has_mass ? mod_mass : 0.0);
+      }
       if (has_mass) mass += mod_mass;
     };
 
@@ -1961,6 +1987,8 @@ namespace
         {
           const Residue* res = ResidueDB::getInstance()->getResidue(elem.amino_acid);
           mass += res->getMonoWeight(Residue::Internal);
+          // a residue inside a range keeps its own localised modifications, e.g. the oxidation in "(M[Oxidation]A)[+1]"
+          for (const auto& mod : elem.modifications) addModMass(mod);
         }
         for (const auto& mod : range->modifications) addModMass(mod);
       }
@@ -2014,31 +2042,91 @@ namespace
   }
 
   // Spectrum generation helpers
-  std::tuple<bool, size_t, double, std::string> findCrossLink(const Peptidoform& chain)
+
+  /// One chain's end of a cross-link, as handed to TheoreticalSpectrumGeneratorXLMS
+  struct CrossLinkEndpoint_
   {
+    bool found = false;
+    std::string label;
+    size_t position = 0;        ///< residue index in the sequence toAASequence emits for this chain
+    size_t section = 0;         ///< index of the SequenceElement in Peptidoform::sequence
+    size_t modification = 0;    ///< index of the labelled bracket in that element's modifications
+    bool defines_mass = false;  ///< false for a label-only or annotation-only endpoint
+    bool mass_known = false;
+    double mass = 0.0;
+  };
+
+  /// The first cross-link bracket on a residue of @p chain; resolve the chain first so CV and named linkers have a mass
+  CrossLinkEndpoint_ findCrossLink(const Peptidoform& chain)
+  {
+    CrossLinkEndpoint_ endpoint;
+    // count residues exactly as toAASequence(BEST_EFFORT) emits them: a range contributes all of its residues
+    // and a non-empty ambiguous region one, otherwise the XLMS fragment boundaries are shifted
     size_t position = 0;
-    for (const auto& section : chain.sequence)
+    for (size_t s = 0; s < chain.sequence.size(); ++s)
     {
+      const SequenceSection& section = chain.sequence[s];
       if (const auto* elem = std::get_if<SequenceElement>(&section))
       {
-        for (const auto& mod : elem->modifications)
+        for (size_t m = 0; m < elem->modifications.size(); ++m)
         {
-          if (!mod.alternatives.empty() && mod.alternatives[0].second.has_value())
+          const Modification& mod = elem->modifications[m];
+          const Label* link = crossLinkLabel_(mod);
+          if (link == nullptr) continue;
+
+          endpoint.found = true;
+          endpoint.label = link->identifier;
+          endpoint.position = position;
+          endpoint.section = s;
+          endpoint.modification = m;
+          endpoint.defines_mass = (mod.resolved_mod != nullptr) || carriesChemistry_(mod);
+          const auto [has_mass, mod_mass] = getModificationMass_(mod);
+          if (const auto* md = std::get_if<MassDelta>(&mod.alternatives[0].first))
           {
-            const auto& label = mod.alternatives[0].second.value();
-            if (label.type == Label::Type::CROSSLINK)
-            {
-              double mass = 0.0;
-              if (const auto* md = std::get_if<MassDelta>(&mod.alternatives[0].first)) mass = md->mass;
-              else if (mod.resolved_mod != nullptr) mass = mod.resolved_mod->getDiffMonoMass();
-              return {true, position, mass, label.identifier};
-            }
+            endpoint.mass_known = true;
+            endpoint.mass = md->mass;
           }
+          else
+          {
+            endpoint.mass_known = has_mass;
+            endpoint.mass = has_mass ? mod_mass : 0.0;
+          }
+          return endpoint;
         }
         ++position;
       }
+      else if (const auto* region = std::get_if<AmbiguousRegion>(&section))
+      {
+        if (!region->elements.empty()) ++position;
+      }
+      else if (const auto* range = std::get_if<ModifiedRange>(&section))
+      {
+        position += range->elements.size();
+      }
     }
-    return {false, 0, 0.0, ""};
+    return endpoint;
+  }
+
+  /// Issues of a two-chain cross-link whose chains were resolved before findCrossLink
+  std::vector<ConversionIssue> collectCrossLinkIssues_(const CrossLinkEndpoint_& alpha, const CrossLinkEndpoint_& beta)
+  {
+    std::vector<ConversionIssue> issues;
+    if (!alpha.found || !beta.found)
+    {
+      issues.push_back({ConversionIssueType::UNSUPPORTED_FEATURE, "Cross-link label not found in both chains", 0});
+      return issues;
+    }
+    if (alpha.label != beta.label)
+    {
+      issues.push_back({ConversionIssueType::UNSUPPORTED_FEATURE, "Cross-link labels don't match between chains", 0});
+      return issues;
+    }
+    // the linker mass is passed to the XLMS generator on its own: unresolvable linker chemistry would silently become 0 Da
+    if ((alpha.defines_mass && !alpha.mass_known) || (beta.defines_mass && !beta.mass_known))
+    {
+      issues.push_back({ConversionIssueType::UNRESOLVED_MOD, "Cross-link '" + alpha.label + "' has no resolvable linker mass", 0});
+    }
+    return issues;
   }
 
   std::vector<ConversionIssue> collectPeptidoformSpectrumIssues(const Peptidoform& pf)
@@ -2074,20 +2162,11 @@ namespace
       return issues;
     }
 
-    auto [alpha_found, alpha_pos, alpha_mass, alpha_label] = findCrossLink(pfi.chains[0]);
-    auto [beta_found, beta_pos, beta_mass, beta_label] = findCrossLink(pfi.chains[1]);
-
-    if (!alpha_found || !beta_found)
-    {
-      issues.push_back({ConversionIssueType::UNSUPPORTED_FEATURE, "Cross-link label not found in both chains", 0});
-      return issues;
-    }
-    if (alpha_label != beta_label)
-    {
-      issues.push_back({ConversionIssueType::UNSUPPORTED_FEATURE, "Cross-link labels don't match between chains", 0});
-      return issues;
-    }
-    return issues;
+    Peptidoform alpha_pf = pfi.chains[0];
+    Peptidoform beta_pf = pfi.chains[1];
+    ProForma::resolveModifications(alpha_pf);
+    ProForma::resolveModifications(beta_pf);
+    return collectCrossLinkIssues_(findCrossLink(alpha_pf), findCrossLink(beta_pf));
   }
 } // anonymous namespace
 
@@ -2112,6 +2191,10 @@ void ProForma::resolveModifications(Peptidoform& pf)
     }
     else if (auto* range = std::get_if<ModifiedRange>(&section))
     {
+      // the residues inside a range carry their own localised modifications, resolved like ordinary residues
+      for (auto& elem : range->elements)
+        for (auto& mod : elem.modifications)
+          resolveModification_(mod, elem.amino_acid, ResidueModification::NUMBER_OF_TERM_SPECIFICITY);
       for (auto& mod : range->modifications)
         resolveModification_(mod, '\0', ResidueModification::NUMBER_OF_TERM_SPECIFICITY);
     }
@@ -2235,6 +2318,9 @@ std::vector<ProForma::ConversionIssue> collectConversionIssues_(const ProForma::
     }
     if (hasGenuineAlternatives_(mod))
       issues.push_back({ConversionIssueType::ALTERNATIVE_MODS, "N-terminal modification has multiple alternatives", SIZE_MAX});
+    // as for residues: an AASequence terminus cannot hold the link, so FAIL_ON_LOSS must not drop it silently
+    if (crossLinkLabel_(mod) != nullptr)
+      issues.push_back({ConversionIssueType::CROSS_LINK, "N-terminal modification is part of a cross-link", SIZE_MAX});
   }
 
   {
@@ -2257,6 +2343,8 @@ std::vector<ProForma::ConversionIssue> collectConversionIssues_(const ProForma::
     }
     if (hasGenuineAlternatives_(mod))
       issues.push_back({ConversionIssueType::ALTERNATIVE_MODS, "C-terminal modification has multiple alternatives", SIZE_MAX});
+    if (crossLinkLabel_(mod) != nullptr)
+      issues.push_back({ConversionIssueType::CROSS_LINK, "C-terminal modification is part of a cross-link", SIZE_MAX});
   }
 
   return issues;
@@ -2306,7 +2394,9 @@ AASequence ProForma::toAASequence(const Peptidoform& pf, ConversionPolicy policy
       for (const auto& mod : elem->modifications)
       {
         if (mod.resolved_mod != nullptr) resolved.push_back(mod.resolved_mod);
-        else if (policy == ConversionPolicy::FAIL_ON_LOSS)
+        // same predicate as collectConversionIssues_: a label- or annotation-only bracket (e.g. "[INFO:note]")
+        // is not an unresolved modification there, so it must not make a conversion fail that passed the checks
+        else if (policy == ConversionPolicy::FAIL_ON_LOSS && carriesChemistry_(mod))
           throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
             "Unresolved modification at position " + std::to_string(seq_pos));
       }
@@ -2330,7 +2420,11 @@ AASequence ProForma::toAASequence(const Peptidoform& pf, ConversionPolicy policy
       }
       seq_pos++;
     }
-    else if (std::holds_alternative<AmbiguousRegion>(section)) seq_pos++;
+    else if (const auto* region = std::get_if<AmbiguousRegion>(&section))
+    {
+      // advance exactly as the residue emission above: an empty region emitted no residue
+      if (!region->elements.empty()) seq_pos++;
+    }
     else if (const auto* range = std::get_if<ModifiedRange>(&section)) seq_pos += range->elements.size();
   }
 
@@ -2485,63 +2579,119 @@ ProForma::Peptidoform ProForma::fromAASequence(const AASequence& seq)
 // Mass calculation methods
 //============================================================================
 
-std::vector<ProForma::ConversionIssue> ProForma::getMassCalculationIssues(const Peptidoform& pf)
+namespace
 {
-  std::vector<ConversionIssue> issues;
-  Peptidoform pf_copy = pf;
-  resolveModifications(pf_copy);
+  /**
+    @brief Mass calculation issues of an already resolved peptidoform
 
-  size_t position = 0;
-  for (const auto& section : pf_copy.sequence)
+    The mass methods validate the very copy they then calculate: resolution interns Formula tags into
+    ModificationsDB, so a second resolving copy can resolve names the calculated copy left unresolved.
+  */
+  std::vector<ConversionIssue> collectMassCalculationIssues_(const Peptidoform& pf_resolved)
   {
-    if (const auto* elem = std::get_if<SequenceElement>(&section))
+    std::vector<ConversionIssue> issues;
+
+    size_t position = 0;
+    for (const auto& section : pf_resolved.sequence)
     {
-      const Residue* res = ResidueDB::getInstance()->getResidue(elem->amino_acid);
-      if (res == nullptr)
-        issues.push_back({ConversionIssueType::UNSUPPORTED_FEATURE,
-          std::string("Unknown amino acid '") + elem->amino_acid + "' at position " + StringUtils::toStr(position), position});
-      for (const auto& mod : elem->modifications) checkModificationForMass_(mod, position, issues);
-      ++position;
-    }
-    else if (const auto* region = std::get_if<AmbiguousRegion>(&section))
-    {
-      std::set<double> masses;
-      for (const auto& elem : region->elements)
+      if (const auto* elem = std::get_if<SequenceElement>(&section))
       {
-        const Residue* res = ResidueDB::getInstance()->getResidue(elem.amino_acid);
-        if (res != nullptr) masses.insert(res->getMonoWeight(Residue::Internal));
-        else issues.push_back({ConversionIssueType::UNSUPPORTED_FEATURE,
-          std::string("Unknown amino acid '") + elem.amino_acid + "' in ambiguous region", position});
-      }
-      if (masses.size() > 1)
-        issues.push_back({ConversionIssueType::AMBIGUOUS_REGION,
-          "Ambiguous region contains amino acids with different masses", position});
-      ++position;
-    }
-    else if (const auto* range = std::get_if<ModifiedRange>(&section))
-    {
-      for (const auto& elem : range->elements)
-      {
-        const Residue* res = ResidueDB::getInstance()->getResidue(elem.amino_acid);
+        const Residue* res = ResidueDB::getInstance()->getResidue(elem->amino_acid);
         if (res == nullptr)
           issues.push_back({ConversionIssueType::UNSUPPORTED_FEATURE,
-            std::string("Unknown amino acid '") + elem.amino_acid + "' in range", position});
+            std::string("Unknown amino acid '") + elem->amino_acid + "' at position " + StringUtils::toStr(position), position});
+        for (const auto& mod : elem->modifications) checkModificationForMass_(mod, position, issues);
         ++position;
       }
-      for (const auto& mod : range->modifications)
-        checkModificationForMass_(mod, position - range->elements.size(), issues);
+      else if (const auto* region = std::get_if<AmbiguousRegion>(&section))
+      {
+        // the accumulation takes the first candidate, so every candidate must be resolvable and weigh the same
+        // including its modifications; otherwise the mass would depend on the order of the candidates
+        bool have_reference = false;
+        bool masses_differ = false;
+        double reference_mass = 0.0;
+        for (const auto& elem : region->elements)
+        {
+          for (const auto& mod : elem.modifications) checkModificationForMass_(mod, position, issues);
+          const Residue* res = ResidueDB::getInstance()->getResidue(elem.amino_acid);
+          if (res == nullptr)
+          {
+            issues.push_back({ConversionIssueType::UNSUPPORTED_FEATURE,
+              std::string("Unknown amino acid '") + elem.amino_acid + "' in ambiguous region", position});
+            continue;
+          }
+          double candidate_mass = res->getMonoWeight(Residue::Internal);
+          for (const auto& mod : elem.modifications)
+          {
+            auto [has_mass, mod_mass] = getModificationMass_(mod);
+            if (has_mass) candidate_mass += mod_mass;
+          }
+          if (!have_reference)
+          {
+            reference_mass = candidate_mass;
+            have_reference = true;
+          }
+          else if (std::fabs(candidate_mass - reference_mass) > 1e-6)
+          {
+            masses_differ = true;
+          }
+        }
+        if (masses_differ)
+          issues.push_back({ConversionIssueType::AMBIGUOUS_REGION,
+            "Ambiguous region contains candidates with different masses", position});
+        ++position;
+      }
+      else if (const auto* range = std::get_if<ModifiedRange>(&section))
+      {
+        for (const auto& elem : range->elements)
+        {
+          const Residue* res = ResidueDB::getInstance()->getResidue(elem.amino_acid);
+          if (res == nullptr)
+            issues.push_back({ConversionIssueType::UNSUPPORTED_FEATURE,
+              std::string("Unknown amino acid '") + elem.amino_acid + "' in range", position});
+          // the residue's own modifications count towards the mass, so they must be checked like ordinary ones
+          for (const auto& mod : elem.modifications) checkModificationForMass_(mod, position, issues);
+          ++position;
+        }
+        for (const auto& mod : range->modifications)
+          checkModificationForMass_(mod, position - range->elements.size(), issues);
+      }
     }
+
+    for (const auto& mod : pf_resolved.n_term_mods) checkModificationForMass_(mod, 0, issues);
+    for (const auto& mod : pf_resolved.c_term_mods) checkModificationForMass_(mod, position > 0 ? position - 1 : 0, issues);
+    for (const auto& um : pf_resolved.unlocalised_mods)
+      for (const auto& mod : um.modifications) checkModificationForMass_(mod, SIZE_MAX, issues);
+    for (const auto& lm : pf_resolved.labile_mods) checkModificationForMass_(lm.modification, SIZE_MAX, issues);
+    for (const auto& entry : pf_resolved.global_mods)
+      if (const auto* gm = std::get_if<GlobalModification>(&entry)) checkModificationForMass_(gm->modification, SIZE_MAX, issues);
+
+    return issues;
   }
 
-  for (const auto& mod : pf_copy.n_term_mods) checkModificationForMass_(mod, 0, issues);
-  for (const auto& mod : pf_copy.c_term_mods) checkModificationForMass_(mod, position > 0 ? position - 1 : 0, issues);
-  for (const auto& um : pf_copy.unlocalised_mods)
-    for (const auto& mod : um.modifications) checkModificationForMass_(mod, SIZE_MAX, issues);
-  for (const auto& lm : pf_copy.labile_mods) checkModificationForMass_(lm.modification, SIZE_MAX, issues);
-  for (const auto& entry : pf_copy.global_mods)
-    if (const auto* gm = std::get_if<GlobalModification>(&entry)) checkModificationForMass_(gm->modification, SIZE_MAX, issues);
+  /// Resolve copies of all chains once and collect their mass issues, prefixed with the chain index
+  std::vector<Peptidoform> resolveChainsForMass_(const PeptidoformIon& pfi, std::vector<ConversionIssue>& issues)
+  {
+    std::vector<Peptidoform> chains = pfi.chains;
+    for (size_t i = 0; i < chains.size(); ++i)
+    {
+      ProForma::resolveModifications(chains[i]);
+      auto chain_issues = collectMassCalculationIssues_(chains[i]);
+      for (auto& issue : chain_issues)
+      {
+        issue.description = "Chain " + std::to_string(i) + ": " + issue.description;
+        issues.push_back(std::move(issue));
+      }
+    }
+    return chains;
+  }
+} // namespace
 
-  return issues;
+std::vector<ProForma::ConversionIssue> ProForma::getMassCalculationIssues(const Peptidoform& pf)
+{
+  Peptidoform pf_copy = pf;
+  resolveModifications(pf_copy);
+  return collectMassCalculationIssues_(pf_copy);
 }
 
 std::vector<ProForma::ConversionIssue> ProForma::getMassCalculationIssues(const PeptidoformIon& pfi)
@@ -2564,20 +2714,21 @@ bool ProForma::canCalculateMass(const PeptidoformIon& pfi) { return getMassCalcu
 
 double ProForma::getMonoWeight(const Peptidoform& pf)
 {
-  auto issues = getMassCalculationIssues(pf);
+  Peptidoform pf_copy = pf;
+  resolveModifications(pf_copy);
+  auto issues = collectMassCalculationIssues_(pf_copy);
   if (!issues.empty())
     throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
       "Cannot calculate mass: " + issues[0].description, "");
 
-  Peptidoform pf_copy = pf;
-  resolveModifications(pf_copy);
-  std::set<std::string> counted_crosslinks;
+  std::map<std::string, double> counted_crosslinks;
   return calculateChainMass_(pf_copy, counted_crosslinks);
 }
 
 double ProForma::getMonoWeight(const PeptidoformIon& pfi)
 {
-  auto issues = getMassCalculationIssues(pfi);
+  std::vector<ConversionIssue> issues;
+  const std::vector<Peptidoform> chains = resolveChainsForMass_(pfi, issues);
   if (!issues.empty())
     throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
       "Cannot calculate mass: " + issues[0].description, "");
@@ -2588,14 +2739,9 @@ double ProForma::getMonoWeight(const PeptidoformIon& pfi)
     throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
       "Cannot calculate single mass for chimeric spectra.", "");
 
-  std::set<std::string> counted_crosslinks;
+  std::map<std::string, double> counted_crosslinks;
   double total = 0.0;
-  for (const auto& chain : pfi.chains)
-  {
-    Peptidoform chain_copy = chain;
-    resolveModifications(chain_copy);
-    total += calculateChainMass_(chain_copy, counted_crosslinks);
-  }
+  for (const auto& chain : chains) total += calculateChainMass_(chain, counted_crosslinks);
   return total;
 }
 
@@ -2641,9 +2787,10 @@ std::optional<double> ProForma::tryGetMonoWeight(const Peptidoform& pf, std::vec
   issues_out.clear();
   Peptidoform pf_copy = pf;
   resolveModifications(pf_copy);
-  issues_out = getMassCalculationIssues(pf_copy);
+  // validate the copy that is calculated: getMassCalculationIssues() would resolve a second copy
+  issues_out = collectMassCalculationIssues_(pf_copy);
   if (!issues_out.empty()) return std::nullopt;
-  std::set<std::string> counted_crosslinks;
+  std::map<std::string, double> counted_crosslinks;
   return calculateChainMass_(pf_copy, counted_crosslinks);
 }
 
@@ -2665,27 +2812,12 @@ std::optional<double> ProForma::tryGetMonoWeight(const PeptidoformIon& pfi, std:
     return std::nullopt;
   }
 
-  for (size_t i = 0; i < pfi.chains.size(); ++i)
-  {
-    Peptidoform chain_copy = pfi.chains[i];
-    resolveModifications(chain_copy);
-    auto chain_issues = getMassCalculationIssues(chain_copy);
-    for (auto& issue : chain_issues)
-    {
-      issue.description = "Chain " + std::to_string(i) + ": " + issue.description;
-      issues_out.push_back(std::move(issue));
-    }
-  }
+  const std::vector<Peptidoform> chains = resolveChainsForMass_(pfi, issues_out);
   if (!issues_out.empty()) return std::nullopt;
 
-  std::set<std::string> counted_crosslinks;
+  std::map<std::string, double> counted_crosslinks;
   double total = 0.0;
-  for (const auto& chain : pfi.chains)
-  {
-    Peptidoform chain_copy = chain;
-    resolveModifications(chain_copy);
-    total += calculateChainMass_(chain_copy, counted_crosslinks);
-  }
+  for (const auto& chain : chains) total += calculateChainMass_(chain, counted_crosslinks);
   return total;
 }
 
@@ -2814,23 +2946,37 @@ MSSpectrum ProForma::generateSpectrum(
   if (pfi.chains.size() == 1)
     return generateSpectrum(pfi.chains[0], min_charge, max_charge, ion_types, add_losses, add_metainfo);
 
-  const Peptidoform& alpha_pf = pfi.chains[0];
-  const Peptidoform& beta_pf = pfi.chains[1];
+  // resolved copies: a CV or named linker only has a mass once resolved, and the linker bracket is removed below
+  Peptidoform alpha_pf = pfi.chains[0];
+  Peptidoform beta_pf = pfi.chains[1];
+  resolveModifications(alpha_pf);
+  resolveModifications(beta_pf);
 
-  auto [alpha_found, alpha_pos, alpha_mass, alpha_label] = findCrossLink(alpha_pf);
-  auto [beta_found, beta_pos, beta_mass, beta_label] = findCrossLink(beta_pf);
+  const CrossLinkEndpoint_ alpha = findCrossLink(alpha_pf);
+  const CrossLinkEndpoint_ beta = findCrossLink(beta_pf);
+
+  // the XLMS generator adds cross_linker_mass to both chain masses itself; left on a chain, the linker bracket
+  // would count the linker again in the precursor and in every linked fragment
+  auto removeLinker = [](Peptidoform& chain, const CrossLinkEndpoint_& endpoint) {
+    if (!endpoint.found) return;
+    auto& mods = std::get<SequenceElement>(chain.sequence[endpoint.section]).modifications;
+    mods.erase(mods.begin() + static_cast<SignedSize>(endpoint.modification));
+  };
+  removeLinker(alpha_pf, alpha);
+  removeLinker(beta_pf, beta);
 
   AASequence alpha_seq = toAASequence(alpha_pf, ConversionPolicy::BEST_EFFORT);
   AASequence beta_seq = toAASequence(beta_pf, ConversionPolicy::BEST_EFFORT);
 
-  double linker_mass = (alpha_mass > 0.001) ? alpha_mass : beta_mass;
+  // the endpoint that defines chemistry supplies the linker, whatever the sign of its mass; a label-only one only marks the site
+  const double linker_mass = alpha.defines_mass ? alpha.mass : beta.mass;
 
   OPXLDataStructs::ProteinProteinCrossLink crosslink;
   crosslink.alpha = &alpha_seq;
   crosslink.beta = &beta_seq;
-  crosslink.cross_link_position = {static_cast<SignedSize>(alpha_pos), static_cast<SignedSize>(beta_pos)};
+  crosslink.cross_link_position = {static_cast<SignedSize>(alpha.position), static_cast<SignedSize>(beta.position)};
   crosslink.cross_linker_mass = linker_mass;
-  crosslink.cross_linker_name = alpha_label;
+  crosslink.cross_linker_name = alpha.label;
 
   TheoreticalSpectrumGeneratorXLMS generator;
   Param param = generator.getParameters();

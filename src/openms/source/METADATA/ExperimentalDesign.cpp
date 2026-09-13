@@ -981,6 +981,16 @@ namespace OpenMS
       }
       const StringList& sample_row = content_.at(sample_idx);
       const Size col_index = columnname_to_columnindex_.at(factor);
+      // Neither the constructor nor addSample() (whose row defaults to empty) reconciles a row
+      // with the column map, so a row can be shorter than the factor's column index.
+      if (col_index >= sample_row.size())
+      {
+        throw Exception::MissingInformation(
+          __FILE__,
+          __LINE__,
+          OPENMS_PRETTY_FUNCTION,
+          "Sample row " + StringUtils::toStr(sample_idx) + " has no value for factor " + factor);
+      }
       return sample_row[col_index];
     }
 
@@ -1004,6 +1014,16 @@ namespace OpenMS
      }
      const StringList& sample_row = content_.at(sample_to_rowindex_.at(sample_name));
      const Size col_index = columnname_to_columnindex_.at(factor);
+     // A row can be shorter than the column map (see the overload above); report it instead of
+     // reading past the end of the row.
+     if (col_index >= sample_row.size())
+     {
+      throw Exception::MissingInformation(
+                  __FILE__,
+                  __LINE__,
+                  OPENMS_PRETTY_FUNCTION,
+                  "Sample " + sample_name + " has no value for factor " + factor);
+     }
      return sample_row[col_index];
     }
 

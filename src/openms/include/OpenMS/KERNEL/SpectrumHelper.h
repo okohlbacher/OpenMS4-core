@@ -139,6 +139,9 @@ namespace OpenMS
    * The method combines peaks with the same position to a single one with the
    * intensity determined by method m.
    *
+   * @note Data arrays cannot be merged and are therefore dropped; all other metadata of @p p
+   *       (retention time, MS level, native ID, precursors, meta values, ...) is kept.
+   *
    * @param[in] p The peak container to be manipulated.
    * @param[in] m The method for determining peak intensity from peaks with same position (median, mean, sum, min, max).
    **/
@@ -155,7 +158,11 @@ namespace OpenMS
     p.sortByPosition();
     
     double current_position = p.begin()->getPos();
-    PeakContainerT p_new;
+    // start from a copy of the input, so that the record (RT/MS level/native ID/precursors/
+    // metadata for a spectrum, the name and settings for a chromatogram) survives; clear(false)
+    // drops only the peaks and the data arrays, which is exactly the loss announced above
+    PeakContainerT p_new = p;
+    p_new.clear(false);
     double intensity_new(0);
     std::vector<double> intensities_at_same_position;
     for (typename PeakContainerT::PeakType& peak : p)

@@ -8,6 +8,8 @@
 
 #include <OpenMS/FORMAT/DATAACCESS/MSDataSqlConsumer.h>
 
+#include <OpenMS/CONCEPT/Exception.h>
+#include <OpenMS/CONCEPT/LogStream.h>
 #include <OpenMS/FORMAT/HANDLERS/MzMLSqliteHandler.h>
 
 namespace OpenMS
@@ -19,31 +21,58 @@ namespace OpenMS
         flush_after_(flush_after),
         full_meta_(full_meta)
   {
+    // A negative size would wrap to a huge size_t buffer; reject it before
+    // createTables() replaces an existing file.
+    if (flush_after < 0)
+    {
+      throw Exception::IllegalArgument(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+          std::string("Buffer size must not be negative, got ") + flush_after);
+    }
+
     spectra_.reserve(flush_after_);
     chromatograms_.reserve(flush_after_);
 
-    handler_->setConfig(full_meta, lossy_compression, linear_mass_acc, flush_after_);
+    handler_->setConfig(full_meta, lossy_compression, linear_mass_acc, flush_after);
     handler_->createTables();
   }
 
   MSDataSqlConsumer::~MSDataSqlConsumer()
   {
+    // An exception escaping a destructor terminates the program, so a failed
+    // final write can only be reported here; finalize() lets callers handle it.
+    try
+    {
+      finalize();
+    }
+    catch (const std::exception& e)
+    {
+      OPENMS_LOG_ERROR << "Failed to write sqMass file '" << filename_ << "': " << e.what() << std::endl;
+    }
+    catch (...)
+    {
+      OPENMS_LOG_ERROR << "Failed to write sqMass file '" << filename_ << "': unknown exception." << std::endl;
+    }
+  }
+
+  void MSDataSqlConsumer::finalize()
+  {
     flush();
 
     // Write run level information into the file (e.g. run id, run name and mzML structure)
-    peak_meta_.setLoadedFilePath(filename_);
     // Only write run-level information if a run hasn't already been written
     if (!wrote_any_run_)
     {
+      peak_meta_.setLoadedFilePath(filename_);
       handler_->writeRunLevelInformation(peak_meta_, full_meta_);
       wrote_any_run_ = true;
     }
-
-    delete handler_;
   }
 
   void MSDataSqlConsumer::addRun(const std::string& filename, const UInt64 run_id)
   {
+    // the buffers do not record their run, so write them under the id they were consumed with
+    flush();
+
     // set handler's run id and write run level information
     handler_->setRunId(run_id);
     MSExperiment meta;
@@ -54,6 +83,8 @@ namespace OpenMS
 
   void MSDataSqlConsumer::setRunId(const UInt64 run_id)
   {
+    // the buffers do not record their run, so write them under the id they were consumed with
+    flush();
     handler_->setRunId(run_id);
   }
 
@@ -104,7 +135,15 @@ namespace OpenMS
 
   void MSDataSqlConsumer::setExpectedSize(Size /* expectedSpectra */, Size /* expectedChromatograms */) {;}
 
-  void MSDataSqlConsumer::setExperimentalSettings(const ExperimentalSettings& /* exp */) {;}
+  void MSDataSqlConsumer::setExperimentalSettings(const ExperimentalSettings& exp)
+  {
+    // the full meta-data snapshot promises the complete input structure, which
+    // includes the run's settings and not only the spectrum/chromatogram headers
+    if (full_meta_)
+    {
+      static_cast<ExperimentalSettings&>(peak_meta_) = exp;
+    }
+  }
 
 } // namespace OpenMS
 

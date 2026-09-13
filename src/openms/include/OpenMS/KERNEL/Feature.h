@@ -95,8 +95,12 @@ public:
       @brief Returns the overall convex hull of the feature (calculated from the convex hulls of the mass traces)
 
       @note the bounding box of the feature can be accessed through the returned convex hull
+
+      @note the hull is computed on first access and cached, so this method writes to the cache
+      members although it is const. It is therefore not safe to call it concurrently on the same
+      feature (e.g. from an OpenMP loop) - call it once up front to fill the cache.
     */
-    ConvexHull2D& getConvexHull() const;
+    const ConvexHull2D& getConvexHull() const;
 
     /// Returns if the mass trace convex hulls of the feature enclose the position specified by @p rt and @p mz
     bool encloses(double rt, double mz) const;

@@ -9,9 +9,19 @@
 #include <OpenMS/IMAGING/IonImage.h>
 
 #include <OpenMS/CONCEPT/Exception.h>
+#include <OpenMS/DATASTRUCTURES/StringUtils.h>
 
 namespace OpenMS
 {
+
+  namespace
+  {
+    /// Pixel ceiling for a single ion image: 2^31 pixels, about 17 GB of intensities. Whole-slide
+    /// rasters stay far below it (a 76 x 26 mm slide at 5 um is 79 million pixels), while a corrupt
+    /// or hostile header declaring billions of rows and columns is refused here instead of being
+    /// handed to the allocator. The dimensions of an extracted image come from the file being read.
+    const Size MAX_IMAGE_PIXELS = Size(1) << 31;
+  } // namespace
 
   IonImage::IonImage(UInt width, UInt height)
   {
@@ -20,9 +30,16 @@ namespace OpenMS
 
   void IonImage::resize(UInt width, UInt height)
   {
+    const Size n = static_cast<Size>(width) * static_cast<Size>(height);
+    if (n > MAX_IMAGE_PIXELS)
+    {
+      throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+                                    "Ion image dimensions exceed the supported pixel count ("
+                                      + StringUtils::toStr(MAX_IMAGE_PIXELS) + ")",
+                                    StringUtils::toStr(width) + "x" + StringUtils::toStr(height));
+    }
     width_ = width;
     height_ = height;
-    const Size n = static_cast<Size>(width) * static_cast<Size>(height);
     intensities_.assign(n, 0.0);
     mask_.assign(n, false);
   }

@@ -492,7 +492,9 @@ END_SECTION
 START_SECTION((double computeSmoothedPeakArea() const))
 {
   double peak_area = test_mt.computeSmoothedPeakArea();
-  TEST_REAL_SIMILAR(peak_area, 70303689.0475001)
+  // the trapezoidal area under the smoothed intensities (numpy.trapezoid gives the same value);
+  // 70303689.0475 was the old result, which mixed in the raw peak intensities
+  TEST_REAL_SIMILAR(peak_area, 70322464.7770001)
 }
 END_SECTION
 

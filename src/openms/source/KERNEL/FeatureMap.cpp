@@ -325,6 +325,10 @@ namespace OpenMS
     // swap features and ranges
     swapFeaturesOnly(from);
 
+    // swap meta values: operator==() and clear(true) treat them as part of the map, so
+    // leaving them behind would hand each map the other's data with its own annotation
+    MetaInfoInterface::swap(from);
+
     // swap DocumentIdentifier
     DocumentIdentifier::swap(from);
 
@@ -437,9 +441,10 @@ namespace OpenMS
   {
     StringList ms_path;
     e.getPrimaryMSRunPath(ms_path);
-    if (ms_path.size() == 1 && StringUtils::hasSuffix(ms_path[0], "mzML") && File::exists(ms_path[0]))
+    // the recorded location is usually a file:// URI, which File::exists() cannot resolve
+    if (ms_path.size() == 1 && StringUtils::hasSuffix(ms_path[0], "mzML") && File::exists(File::localPath(ms_path[0])))
     {
-      setPrimaryMSRunPath(ms_path);
+      setPrimaryMSRunPath({File::localPath(ms_path[0])});
     }
     else
     {
@@ -451,6 +456,10 @@ namespace OpenMS
   /// get the file path to the first MS run
   void FeatureMap::getPrimaryMSRunPath(StringList& toFill) const
   {
+    // toFill is an output, not an accumulator: without the reset a caller reusing one list
+    // across maps would read the previous map's paths back as if they were this map's
+    toFill.clear();
+
     if (this->metaValueExists("spectra_data"))
     {
       toFill = this->getMetaValue("spectra_data");

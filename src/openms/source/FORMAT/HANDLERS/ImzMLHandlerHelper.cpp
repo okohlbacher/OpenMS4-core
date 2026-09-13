@@ -9,8 +9,11 @@
 #include <OpenMS/FORMAT/HANDLERS/ImzMLHandlerHelper.h>
 #include <OpenMS/CONCEPT/Exception.h>
 #include <OpenMS/CONCEPT/Types.h>
+#include <OpenMS/SYSTEM/File.h>
 
 #include <cstdint>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -47,6 +50,72 @@ namespace
     if (count > static_cast<uint64_t>(std::numeric_limits<Size>::max()))
     {
       throwReadError_(ibd_path, std::string(context) + ": element count exceeds platform limit");
+    }
+  }
+
+  /// Stored width in bytes of one array element; 0 for an unsupported/unknown type.
+  uint64_t elementWidth_(const ImzMLSpectrumIndex::DataType dt)
+  {
+    switch (dt)
+    {
+      case ImzMLSpectrumIndex::DataType::FLOAT32:
+      case ImzMLSpectrumIndex::DataType::INT32:
+        return 4;
+      case ImzMLSpectrumIndex::DataType::FLOAT64:
+      case ImzMLSpectrumIndex::DataType::INT64:
+        return 8;
+      default:
+        return 0;
+    }
+  }
+
+  /// Reject a declared array range that the .ibd cannot answer, *before* the output vector
+  /// is sized from it: offset and count come from the .imzML while the bytes live in the
+  /// companion .ibd, so the file's own length is the only fact that makes the request
+  /// answerable. Without this, a malformed IMS:1000103 commits the full allocation (up to
+  /// MAX_IBD_ARRAY_ELEMENTS elements, plus the staging vector of the widening readers) and
+  /// learns of the truncation only when fread comes up short. The length comes from fstat() on
+  /// the open handle: it leaves the handle's position and stdio buffer untouched, and unlike a
+  /// stat of the path it costs no filesystem lookup on this per-array hot path.
+  void validateRange_(FILE* ibd,
+                      const uint64_t offset,
+                      const uint64_t count,
+                      const ImzMLSpectrumIndex::DataType dt,
+                      const std::string& ibd_path,
+                      const char* context)
+  {
+    const uint64_t width = elementWidth_(dt);
+    if (width == 0)
+    {
+      throwReadError_(ibd_path, std::string("unsupported ") + context + " data type in .ibd");
+    }
+    // count is already bounded by MAX_IBD_ARRAY_ELEMENTS and width by 8, so the product
+    // cannot overflow; only the offset (unbounded in the XML) can push the end past uint64.
+    const uint64_t bytes = count * width;
+    if (offset > std::numeric_limits<uint64_t>::max() - bytes)
+    {
+      throwReadError_(ibd_path, std::string(context) + ": byte offset "
+                      + OpenMS::StringConversions::toString(offset) + " plus "
+                      + OpenMS::StringConversions::toString(bytes) + " bytes overflows");
+    }
+#ifdef _WIN32
+    struct _stat64 st;
+    const bool have_length = _fstat64(_fileno(ibd), &st) == 0;
+#else
+    struct stat st;
+    const bool have_length = fstat(fileno(ibd), &st) == 0;
+#endif
+    if (!have_length || st.st_size < 0)
+    { // cannot tell the length: the short-read check in the caller remains the guard
+      return;
+    }
+    const uint64_t length = static_cast<uint64_t>(st.st_size);
+    if (offset + bytes > length)
+    {
+      throwReadError_(ibd_path, std::string(context) + ": declared range [offset "
+                      + OpenMS::StringConversions::toString(offset) + ", "
+                      + OpenMS::StringConversions::toString(bytes) + " bytes] extends past the .ibd length "
+                      + OpenMS::StringConversions::toString(length));
     }
   }
 
@@ -128,6 +197,7 @@ void ImzMLBinaryIO::readMzArray(FILE* ibd,
   }
 
   validateCount_(count, ibd_path, "m/z array");
+  validateRange_(ibd, offset, count, dt, ibd_path, "m/z array");
 
   seekIbd_(ibd, offset, ibd_path, "m/z array");
 
@@ -207,6 +277,7 @@ namespace
     }
 
     validateCount_(count, ibd_path, context.c_str());
+    validateRange_(ibd, offset, count, dt, ibd_path, context.c_str());
 
     seekIbd_(ibd, offset, ibd_path, context.c_str());
 

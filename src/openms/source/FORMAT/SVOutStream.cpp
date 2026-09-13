@@ -105,11 +105,16 @@ namespace OpenMS
     // this doesn't work in LLVM/clang's libc++ (used on Mac OS X 10.9):
     // ostream& (*const endlPointer)(ostream&) = &endl;
     // if (fp == endlPointer) newline_ = true;
+    // start every probe from an empty, good buffer: output left behind by an
+    // earlier manipulator (e.g. the NUL of std::ends) would otherwise stay in
+    // front of every later std::endl, so no line end would be recognised again
+    // and each following line would start with a separator
+    ss_.str("");
+    ss_.clear();
     fp(ss_);
     if (ss_.str() == "\n")
     {
       newline_ = true;
-      ss_.str("");
     }
     (ostream&) *this << fp;
     return *this;

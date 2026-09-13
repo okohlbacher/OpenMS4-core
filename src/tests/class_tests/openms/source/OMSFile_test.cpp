@@ -172,6 +172,15 @@ START_SECTION(void store(const std::string& filename, const ConsensusMap& consen
     run.setScoreType(run.getScoreType() + "_protein");
   }
   IdentificationDataConverter::importConsensusIDs(consensus);
+  // the fixture carries no ratios; give one feature two, so the load section can check them
+  std::vector<ConsensusFeature::Ratio> ratios(2);
+  ratios[0].ratio_value_ = 0.5;
+  ratios[0].numerator_ref_ = "light";
+  ratios[0].denominator_ref_ = "heavy";
+  ratios[1].ratio_value_ = 2.25;
+  ratios[1].numerator_ref_ = "medium";
+  ratios[1].denominator_ref_ = "light";
+  consensus[1].setRatios(ratios);
 
   NEW_TMP_FILE(oms_tmp);
   OMSFile().store(oms_tmp, consensus);
@@ -187,6 +196,15 @@ START_SECTION(void load(const std::string& filename, ConsensusMap& consensus))
   TEST_EQUAL(consensus.size(), 6);
   TEST_EQUAL(consensus.at(0).getFeatures().size(), 1);
   TEST_EQUAL(consensus.at(1).getFeatures().size(), 2);
+  // ratios survive the round trip (they were dropped when the feature was appended before them)
+  TEST_EQUAL(consensus.at(0).getRatios().size(), 0);
+  TEST_EQUAL(consensus.at(1).getRatios().size(), 2);
+  ABORT_IF(consensus.at(1).getRatios().size() != 2)
+  TEST_REAL_SIMILAR(consensus.at(1).getRatios()[0].ratio_value_, 0.5);
+  TEST_EQUAL(consensus.at(1).getRatios()[0].numerator_ref_, "light");
+  TEST_EQUAL(consensus.at(1).getRatios()[0].denominator_ref_, "heavy");
+  TEST_REAL_SIMILAR(consensus.at(1).getRatios()[1].ratio_value_, 2.25);
+  TEST_EQUAL(consensus.at(1).getRatios()[1].numerator_ref_, "medium");
 
   IdentificationDataConverter::exportConsensusIDs(consensus);
   // sort for reproducibility

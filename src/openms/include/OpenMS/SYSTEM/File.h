@@ -149,6 +149,12 @@ public:
     /// Replaces the relative path in the argument with the absolute path.
     static std::string absolutePath(const std::string& file);
 
+    /// Returns @p file without a leading file:// URI scheme, so it can be handed to exists() and friends.
+    /// The slash that precedes a Windows drive letter belongs to the URI: 'file:///C:/data/run.mzML'
+    /// becomes 'C:/data/run.mzML', while 'file:///home/data/run.mzML' keeps its root and becomes
+    /// '/home/data/run.mzML'. Anything without the scheme is returned unchanged.
+    static std::string localPath(const std::string& file);
+
     /// Returns the basename of the file (without the path).
     /// No checking is done on the filesystem, i.e. '/path/some_entity' will return 'some_entity', irrespective of 'some_entity' is a file or a directory.
     /// However, '/path/some_entity/' will return ''.
