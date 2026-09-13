@@ -10,95 +10,110 @@
 #include <OpenMS/MATH/STATISTICS/GumbelMaxLikelihoodFitter.h>
 #include <OpenMS/CONCEPT/Exception.h>
 
-#include <unsupported/Eigen/NonLinearOptimization>
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <string>
+#include <utility>
 
 using namespace std;
 
 namespace OpenMS::Math
 {
-    namespace // anonymous namespace to prevent name clashes with GumbleDistributionFitter
+    namespace
     {
-      // Generic functor
-      template<typename _Scalar, int NX = Eigen::Dynamic, int NY = Eigen::Dynamic>
-      struct Functor
+      /// log(sum w * exp(-x / b)) with the largest exponent factored out, and the mean of x under
+      /// those tilted weights, so neither overflows nor underflows for a small scale b
+      std::pair<double, double> tiltedSums_(const std::vector<double>& x, const std::vector<double>& w, const double b)
       {
-        typedef _Scalar Scalar;
-        enum {
-          InputsAtCompileTime = NX,
-          ValuesAtCompileTime = NY
-        };
-        typedef Eigen::Matrix<Scalar,InputsAtCompileTime,1> InputType;
-        typedef Eigen::Matrix<Scalar,ValuesAtCompileTime,1> ValueType;
-        typedef Eigen::Matrix<Scalar,ValuesAtCompileTime,InputsAtCompileTime> JacobianType;
-
-        int m_inputs, m_values;
-
-        Functor() : m_inputs(InputsAtCompileTime), m_values(ValuesAtCompileTime) {}
-        Functor(int inputs, int values) : m_inputs(inputs), m_values(values) {}
-
-        int inputs() const { return m_inputs; }
-        int values() const { return m_values; }
-
-      };
-
-      struct GumbelDistributionFunctor : Functor<double>
-      {
-
-        GumbelDistributionFunctor(const std::vector<double>& data, const std::vector<double>& weights):
-            Functor<double>(2,2),
-            m_data(data), m_weights(weights)
+        double max_exponent = -std::numeric_limits<double>::infinity();
+        for (Size i = 0; i < x.size(); ++i)
         {
+          if (w[i] > 0.0) max_exponent = std::max(max_exponent, -x[i] / b);
         }
-
-        int operator()(const Eigen::VectorXd &x, Eigen::VectorXd &fvec) const
+        double sum = 0.0;
+        double weighted = 0.0;
+        for (Size i = 0; i < x.size(); ++i)
         {
-          fvec(0) = 0.0;
-          double sigma = fabs(x(1));
-          double logsigma = log(sigma);
-          auto wit = m_weights.cbegin();
-          for (auto it = m_data.cbegin(); it != m_data.cend(); ++it, ++wit)
-          {
-            double diff = (*it - x(0)) / sigma;
-            fvec(0) += *wit * (-logsigma - diff - exp(-diff));
-          }
-          double foo = -fvec(0);
-          fvec(0) = foo;
-          fvec(1) = 0.0;
-          return 0;
+          if (w[i] <= 0.0) continue;
+          const double factor = w[i] * std::exp(-x[i] / b - max_exponent);
+          sum += factor;
+          weighted += factor * x[i];
         }
-        const std::vector<double>& m_data;
-        const std::vector<double>& m_weights;
-      };
+        return {max_exponent + std::log(sum), weighted / sum};
+      }
     }
 
     GumbelMaxLikelihoodFitter::GumbelDistributionFitResult GumbelMaxLikelihoodFitter::fitWeighted(const std::vector<double> & x, const std::vector<double> & w)
     {
-      Eigen::VectorXd x_init (2);
-      x_init(0) = init_param_.a;
-      x_init(1) = init_param_.b;
-      GumbelDistributionFunctor functor (x, w);
-      Eigen::NumericalDiff<GumbelDistributionFunctor> numDiff(functor);
-      Eigen::LevenbergMarquardt<Eigen::NumericalDiff<GumbelDistributionFunctor>,double> lm(numDiff);
-      Eigen::LevenbergMarquardtSpace::Status status = lm.minimize(x_init);
-
-      //the states are poorly documented. after checking the source, we believe that
-      //all states except NotStarted, Running and ImproperInputParameters are good
-      //termination states.
-      if (status <= Eigen::LevenbergMarquardtSpace::Status::ImproperInputParameters)
+      // one weight per value: the old objective walked the weights alongside the values and read
+      // past the end of a shorter weight vector
+      if (x.size() != w.size())
       {
-        throw Exception::UnableToFit(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "UnableToFit-GumbelMaxLikelihoodFitter", "Could not fit the gumbel distribution to the data");
+        throw Exception::IllegalArgument(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+          "Gumbel fit needs one weight per value (" + std::to_string(x.size()) + " values, " + std::to_string(w.size()) + " weights)");
       }
+      double total = 0.0;
+      double mean = 0.0;
+      double x_min = std::numeric_limits<double>::infinity();
+      double x_max = -std::numeric_limits<double>::infinity();
+      for (Size i = 0; i < x.size(); ++i)
+      {
+        if (!std::isfinite(x[i]) || !std::isfinite(w[i]) || w[i] < 0.0)
+        {
+          throw Exception::IllegalArgument(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+            "Gumbel fit needs finite values and finite, non-negative weights");
+        }
+        if (w[i] == 0.0) continue;
+        total += w[i];
+        mean += w[i] * x[i];
+        x_min = std::min(x_min, x[i]);
+        x_max = std::max(x_max, x[i]);
+      }
+      if (!(total > 0.0))
+      {
+        return init_param_; // no weighted data: nothing to fit, the parameters stay as they are
+      }
+      if (!(x_max > x_min))
+      {
+        throw Exception::UnableToFit(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "UnableToFit-GumbelMaxLikelihoodFitter",
+          "Could not fit the gumbel distribution: fewer than two distinct values carry weight");
+      }
+      mean /= total;
 
-#ifdef GUMBEL_DISTRIBUTION_FITTER_VERBOSE
-      // build a formula with the fitted parameters for gnuplot
-      stringstream formula;
-      formula << "f(x)=" << "(1/" << x_init(1) << ") * " << "exp(( " << x_init(0) << "- x)/" << x_init(1) << ") * exp(-exp((" << x_init(0) << " - x)/" << x_init(1) << "))";
-      cout << formula.str() << endl;
-#endif
-      init_param_.a = x_init(0);
-      init_param_.b = fabs(x_init(1));
+      // The likelihood equations of the Gumbel (maximum) distribution give the location in closed
+      // form, a = -b * log(sum w exp(-x / b) / sum w), and leave the scale as the root of
+      // g(b) = b - mean + tilted mean(b), which rises monotonically from x_min - mean < 0 towards
+      // +infinity. The fitter used to hand the negative log-likelihood to Levenberg-Marquardt, which
+      // minimises its square: that shares the minimum only while the negative log-likelihood stays
+      // positive, and for a narrow sample (scale well below 1) it settles on the contour where the
+      // negative log-likelihood is zero instead of on the maximum-likelihood estimate.
+      const auto g = [&](const double b) { return b - mean + tiltedSums_(x, w, b).second; };
+      const double spread = x_max - x_min;
+      double lo = spread * 1e-12;
+      double hi = spread;
+      while (g(hi) <= 0.0)
+      {
+        hi *= 2.0; // g(b) >= b - (mean - x_min), so doubling ends
+      }
+      for (int iteration = 0; iteration < 200 && hi - lo > 1e-15 * hi; ++iteration)
+      {
+        const double mid = 0.5 * (lo + hi);
+        if (g(mid) > 0.0)
+        {
+          hi = mid;
+        }
+        else
+        {
+          lo = mid;
+        }
+      }
+      const double b = 0.5 * (lo + hi);
+      const double a = -b * (tiltedSums_(x, w, b).first - std::log(total));
 
-      return {x_init(0), fabs(x_init(1))};
+      init_param_.a = a;
+      init_param_.b = b;
+      return {a, b};
     }
 
     double GumbelMaxLikelihoodFitter::GumbelDistributionFitResult::log_eval_no_normalize(const double x) const

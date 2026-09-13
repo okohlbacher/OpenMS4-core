@@ -462,5 +462,35 @@ END_SECTION
 
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
+START_SECTION([EXTRA_NEGATIVE_LINEAR] void store(const std::string& filename, MapType& map))
+{
+  // lossy linear Numpress cannot hold a negative first or second value; such an array must come
+  // back unchanged instead of wrapped into a large positive number
+  MSChromatogram chrom;
+  chrom.setNativeID("negative_rt");
+  chrom.push_back(ChromatogramPeak(-100.0, 10.0));
+  chrom.push_back(ChromatogramPeak(-99.0, 20.0));
+  chrom.push_back(ChromatogramPeak(-98.0, 30.0));
+  MSExperiment exp;
+  exp.addChromatogram(chrom);
+
+  SqMassFile::SqMassConfig config;
+  config.use_lossy_numpress = true;
+  config.linear_fp_mass_acc = 1e-4;
+  SqMassFile file;
+  file.setConfig(config);
+  std::string tmp_filename;
+  NEW_TMP_FILE(tmp_filename);
+  file.store(tmp_filename, exp);
+
+  MSExperiment loaded;
+  file.load(tmp_filename, loaded);
+  ABORT_IF(loaded.getNrChromatograms() != 1 || loaded.getChromatograms()[0].size() != 3)
+  TEST_REAL_SIMILAR(loaded.getChromatograms()[0][0].getRT(), -100.0)
+  TEST_REAL_SIMILAR(loaded.getChromatograms()[0][1].getRT(), -99.0)
+  TEST_REAL_SIMILAR(loaded.getChromatograms()[0][2].getRT(), -98.0)
+}
+END_SECTION
+
 END_TEST
 

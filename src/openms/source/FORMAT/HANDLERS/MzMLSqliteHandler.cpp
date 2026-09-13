@@ -1149,6 +1149,17 @@ namespace OpenMS::Internal
       conn.executeStatement(create_sql);
     }
 
+    namespace
+    {
+      /// Linear Numpress stores the first two values as unsigned 32-bit integers after scaling them
+      /// by a positive fixed point, so a negative one comes back as a large positive number. The
+      /// writers skip the codec's accuracy check for speed, so such an array is stored with zlib only.
+      bool linearNumpressCanStore_(const std::vector<double>& data)
+      {
+        return (data.empty() || data[0] >= 0.0) && (data.size() < 2 || data[1] >= 0.0);
+      }
+    }
+
     void MzMLSqliteHandler::writeSpectra(const std::vector<MSSpectrum>& spectra)
     {
       // prevent writing of empty data which would throw an SQL exception
@@ -1205,6 +1216,7 @@ namespace OpenMS::Internal
       int sql_it = 1;
 
       std::vector<std::string> encoded_strings_mz(spectra.size());
+      std::vector<char> lossy_mz(spectra.size(), 0); // per array: stored lossy (1) or zlib only (0)
       std::vector<std::string> encoded_strings_int(spectra.size());
 #ifdef _OPENMP
 #pragma omp parallel for
@@ -1224,7 +1236,8 @@ namespace OpenMS::Internal
 
           std::string uncompressed_str;
           std::string encoded_string;
-          if (use_lossy_compression_)
+          lossy_mz[k] = use_lossy_compression_ && linearNumpressCanStore_(data_to_encode);
+          if (lossy_mz[k])
           {
             MSNumpressCoder().encodeNPRaw(data_to_encode, uncompressed_str, npconfig_mz);
             OpenMS::ZlibCompression::compressString(uncompressed_str, encoded_string);
@@ -1358,7 +1371,7 @@ namespace OpenMS::Internal
         // encode mz data (zlib or np-linear + zlib)
         {
           data.push_back(encoded_strings_mz[k]);
-          if (use_lossy_compression_)
+          if (lossy_mz[k])
           {
             prepare_statement +=std::string("(") + spec_id_ + ", 0, 5, ?" + sql_it++ + " ),";
           }
@@ -1473,6 +1486,7 @@ namespace OpenMS::Internal
 
       // Perform encoding in parallel
       std::vector<std::string> encoded_strings_rt(chroms.size());
+      std::vector<char> lossy_rt(chroms.size(), 0); // per array: stored lossy (1) or zlib only (0)
       std::vector<std::string> encoded_strings_int(chroms.size());
 #ifdef _OPENMP
 #pragma omp parallel for
@@ -1491,7 +1505,8 @@ namespace OpenMS::Internal
 
           std::string uncompressed_str;
           std::string encoded_string;
-          if (use_lossy_compression_)
+          lossy_rt[k] = use_lossy_compression_ && linearNumpressCanStore_(data_to_encode);
+          if (lossy_rt[k])
           {
             MSNumpressCoder().encodeNPRaw(data_to_encode, uncompressed_str, npconfig_mz);
             OpenMS::ZlibCompression::compressString(uncompressed_str, encoded_string);
@@ -1594,7 +1609,7 @@ namespace OpenMS::Internal
         // encode retention time data (zlib or np-linear + zlib)
         {
           data.push_back(encoded_strings_rt[k]);
-          if (use_lossy_compression_)
+          if (lossy_rt[k])
           {
             prepare_statement +=std::string("(") + chrom_id_ + ", 2, 5, ?" + sql_it++ + " ),";
           }

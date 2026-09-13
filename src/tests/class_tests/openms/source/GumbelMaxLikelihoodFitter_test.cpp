@@ -119,4 +119,25 @@ END_SECTION
 
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
+START_SECTION(([EXTRA] fitWeighted rejects a weight vector of another length))
+{
+  GumbelMaxLikelihoodFitter f(FitResult(1.0, 1.0));
+  TEST_EXCEPTION(Exception::IllegalArgument, f.fitWeighted({1.0, 2.0}, {1.0}))
+  TEST_EXCEPTION(Exception::IllegalArgument, f.fitWeighted({1.0, 2.0}, {1.0, 1.0, 1.0}))
+  TEST_EXCEPTION(Exception::UnableToFit, f.fitWeighted({1.0, 1.0}, {1.0, 1.0}))
+}
+END_SECTION
+
+START_SECTION(([EXTRA] fitWeighted finds the maximum-likelihood estimate of a narrow sample))
+{
+  // the negative log-likelihood at the optimum is -13.4 here; squaring it for a least-squares
+  // solver made every parameter pair on its zero contour an equally good answer
+  GumbelMaxLikelihoodFitter f(FitResult(1.0, 2.0));
+  FitResult r = f.fitWeighted({0.10, 0.12, 0.15, 0.11, 0.13}, {1.0, 1.0, 1.0, 1.0, 1.0});
+  TOLERANCE_ABSOLUTE(1e-6)
+  TEST_REAL_SIMILAR(r.a, 0.11378962)
+  TEST_REAL_SIMILAR(r.b, 0.01413100)
+}
+END_SECTION
+
 END_TEST

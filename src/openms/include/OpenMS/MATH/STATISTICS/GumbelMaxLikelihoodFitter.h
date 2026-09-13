@@ -23,9 +23,6 @@ namespace OpenMS
       The results as well as the initial guess are specified using the struct
       GumbelDistributionFitResult.
 
-      The formula with the fitted parameters can be transformed into a
-      gnuplot formula using getGnuplotFormula() after fitting.
-
       @ingroup Math
       */
     class OPENMS_DLLAPI GumbelMaxLikelihoodFitter
@@ -61,13 +58,19 @@ public:
       void setInitialParameters(const GumbelDistributionFitResult & result);
 
       /**
-          @brief Fits a gumbel distribution to the given data x values. Fills a
-          weighted histogram first and generates y values.
+          @brief Maximum-likelihood fit of the location a and scale b of a Gumbel (maximum)
+          distribution to the samples @p x, each counted with its weight in @p w.
+
+          The initial parameters are not needed for this fit; the result also becomes the new
+          initial parameters. When no value carries weight (including empty input) the initial
+          parameters are returned unchanged.
 
           @param[in] x Input x values
-          @param[in] w Input weights
+          @param[in] w Input weights, one per value, finite and non-negative
 
-          @exception Exception::UnableToFit is thrown if fitting cannot be performed
+          @exception Exception::IllegalArgument is thrown if @p w does not have one finite,
+                     non-negative weight per finite value in @p x
+          @exception Exception::UnableToFit is thrown if fewer than two distinct values carry weight
       */
       GumbelDistributionFitResult fitWeighted(const std::vector<double> & x, const std::vector<double> & w);
 

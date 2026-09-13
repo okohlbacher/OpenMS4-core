@@ -1519,4 +1519,35 @@ START_SECTION((Thermo metadata survives mzML serialization, sorting, and reloadi
 }
 END_SECTION
 
+START_SECTION(([EXTRA] chromatogram precursors keep supplemental activation))
+{
+  MSChromatogram chrom;
+  chrom.setNativeID("SRM SIC 500.5,250.5");
+  chrom.push_back(ChromatogramPeak(10.0, 100.0));
+  Precursor precursor;
+  precursor.setMZ(500.5);
+  precursor.getActivationMethods().insert(Precursor::ActivationMethod::ETD);
+  precursor.getActivationMethods().insert(Precursor::ActivationMethod::EThcD);
+  precursor.setMetaValue("supplemental beam-type collision-induced dissociation", "");
+  precursor.setMetaValue("supplemental collision energy", 25.0);
+  chrom.setPrecursor(precursor);
+  PeakMap exp;
+  exp.addChromatogram(chrom);
+
+  MzMLFile file;
+  std::string buffer;
+  file.storeBuffer(buffer, exp);
+  TEST_TRUE(StringUtils::hasSubstring(buffer, "MS:1002678"))
+  TEST_TRUE(StringUtils::hasSubstring(buffer, "MS:1002680"))
+
+  PeakMap loaded;
+  file.loadBuffer(buffer, loaded);
+  ABORT_IF(loaded.getNrChromatograms() != 1)
+  const Precursor& reloaded = loaded.getChromatograms()[0].getPrecursor();
+  TEST_TRUE(reloaded.metaValueExists("supplemental beam-type collision-induced dissociation"))
+  TEST_TRUE(reloaded.metaValueExists("supplemental collision energy"))
+  TEST_EQUAL(reloaded.getActivationMethods().count(Precursor::ActivationMethod::EThcD), 1)
+}
+END_SECTION
+
 END_TEST

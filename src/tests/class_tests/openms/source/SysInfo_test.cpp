@@ -63,4 +63,19 @@ START_SECTION(static bool getProcessMemoryConsumption(size_t& mem_virtual))
 }
 END_SECTION
 
+START_SECTION(([EXTRA] MemUsage::delta keeps the sign of a decrease))
+{
+  SysInfo::MemUsage usage;
+  usage.mem_before = 4096;
+  usage.mem_after = 1024;
+  usage.mem_before_peak = 0;
+  usage.mem_after_peak = 0; // no peak line
+  const std::string text = usage.delta("release");
+  TEST_TRUE(StringUtils::hasSubstring(text, "-3 MB"))
+  usage.mem_before = 1024;
+  usage.mem_after = 4096;
+  TEST_TRUE(StringUtils::hasSubstring(usage.delta("growth"), ": 3 MB"))
+}
+END_SECTION
+
 END_TEST

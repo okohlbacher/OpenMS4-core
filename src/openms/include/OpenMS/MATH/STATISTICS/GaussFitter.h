@@ -26,9 +26,6 @@ namespace OpenMS
         This class fits a Gaussian distribution to a number of data points.
         The results as well as the initial guess are specified using the struct GaussFitResult.
 
-        The complete Gaussian formula with the fitted parameters can be transformed into a
-        gnuplot formula using getGnuplotFormula after fitting.
-
         @ingroup Math
     */
     class OPENMS_DLLAPI GaussFitter

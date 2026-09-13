@@ -27,6 +27,13 @@ namespace OpenMS::Math
       return -log(b) - diff - exp(- diff);
     }
 
+    double GumbelDistributionFitter::GumbelDistributionFitResult::eval(const double x) const
+    {
+      // declared since the first release but never defined, so any client calling it failed to link
+      const double z = exp((a - x) / b);
+      return (z * exp(-z)) / b;
+    }
+
     GumbelDistributionFitter::GumbelDistributionFitter()
     {
       init_param_ = GumbelDistributionFitResult(0.25, 0.1);

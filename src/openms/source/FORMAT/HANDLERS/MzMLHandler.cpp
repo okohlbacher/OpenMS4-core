@@ -2162,6 +2162,21 @@ namespace OpenMS::Internal
           {
             chromatogram_.getPrecursor().getActivationMethods().insert(Precursor::ActivationMethod::ETD);
           }
+          else if (accession == "MS:1002679" || accession == "MS:1002678" || accession == "MS:1002680")
+          {
+            // the supplemental activation terms that writePrecursor_ emits for spectra and
+            // chromatograms alike; without this branch a chromatogram precursor lost them, and the
+            // combined method they imply, on reload (see the spectrum branch above)
+            chromatogram_.getPrecursor().setMetaValue(cv_.getTerm(accession).name, termValue);
+            if (accession == "MS:1002679")
+            {
+              chromatogram_.getPrecursor().getActivationMethods().insert(Precursor::ActivationMethod::ETciD);
+            }
+            else if (accession == "MS:1002678")
+            {
+              chromatogram_.getPrecursor().getActivationMethods().insert(Precursor::ActivationMethod::EThcD);
+            }
+          }
           else if (accession == "MS:1003182") //electron transfer and collision-induced dissociation
           {
             chromatogram_.getPrecursor().getActivationMethods().insert(Precursor::ActivationMethod::ETciD);
