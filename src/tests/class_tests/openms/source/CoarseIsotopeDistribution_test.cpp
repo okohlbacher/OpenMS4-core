@@ -716,6 +716,68 @@ START_SECTION(IsotopeDistribution calcFragmentIsotopeDist(const CoarseIsotopePat
 }
 END_SECTION
 
+START_SECTION(([EXTRA] fragment isotope distributions truncated by a nonzero max_isotope))
+{
+  // Regression test: a nonzero max_isotope shorter than the fragment distribution truncates the
+  // result; the accumulation over the fragment distribution must stop at the truncated length
+  // instead of writing past the end of the result.
+  //
+  // The old out-of-bounds write changes none of the returned values, so no assertion here can see
+  // it. Only a heap checker detects it reliably: AddressSanitizer, or glibc malloc checking
+  // (LD_PRELOAD=libc_malloc_debug.so.0 GLIBC_TUNABLES=glibc.malloc.check=3, which CMakeLists.txt
+  // sets for this test on Linux unless the build uses a sanitizer). With malloc checking, each part
+  // aborts on its own.
+  //
+  // Without a checker, plain glibc aborts only when the write happens to corrupt heap metadata, so
+  // the result depends on the environment. Against the old code on glibc 2.39, part (a) alone and
+  // part (b) alone each passed with OMP_NUM_THREADS unset or empty, and aborted with it set to a
+  // number (1, 2, 4 or 48; CI sets 1). The whole section aborted with it unset as well as set.
+  // Other allocators (e.g. macOS) may not notice the write at all.
+  std::set<UInt> precursor_isotopes = {0, 1, 2};
+
+  // (a) estimateForFragmentFromPeptideWeight
+
+  // estimateForFragmentFromPeptideWeight computes the fragment and complementary fragment
+  // distributions with max(precursor_isotopes) + 1 = 3 peaks, independent of this generator's max_isotope
+  IsotopeDistribution untruncated = CoarseIsotopePatternGenerator(0).estimateForFragmentFromPeptideWeight(2000.0, 1000.0, precursor_isotopes);
+  TEST_EQUAL(untruncated.size(), 3)
+
+  CoarseIsotopePatternGenerator gen_max2(2);
+  IsotopeDistribution truncated = gen_max2.estimateForFragmentFromPeptideWeight(2000.0, 1000.0, precursor_isotopes);
+  TEST_EQUAL(truncated.size(), 2)
+  ABORT_IF(truncated.size() != 2 || untruncated.size() != 3)
+  for (Size i = 0; i < truncated.size(); ++i)
+  {
+    TEST_REAL_SIMILAR(truncated.getContainer()[i].getMZ(), untruncated.getContainer()[i].getMZ())
+    TEST_REAL_SIMILAR(truncated.getContainer()[i].getIntensity(), untruncated.getContainer()[i].getIntensity())
+  }
+  TEST_EQUAL(truncated.getContainer()[0].getIntensity() > 0.0, true)
+  TEST_EQUAL(truncated.getContainer()[1].getIntensity() > 0.0, true)
+
+  // (b) calcFragmentIsotopeDist on inputs much longer than a nonzero max_isotope
+  EmpiricalFormula ef_fragment("C100");
+  EmpiricalFormula ef_complementary_fragment("C200");
+  IsotopeDistribution fragment(ef_fragment.getIsotopeDistribution(CoarseIsotopePatternGenerator(11, true)));
+  IsotopeDistribution complementary_fragment(ef_complementary_fragment.getIsotopeDistribution(CoarseIsotopePatternGenerator(11, true)));
+  TEST_EQUAL(fragment.size(), 11)
+  TEST_EQUAL(complementary_fragment.size(), 11)
+  std::set<UInt> isolated = {0, 1, 2, 3, 4};
+
+  IsotopeDistribution full = CoarseIsotopePatternGenerator(0).calcFragmentIsotopeDist(fragment, complementary_fragment, isolated, ef_fragment.getMonoWeight());
+  TEST_EQUAL(full.size(), 11)
+
+  CoarseIsotopePatternGenerator gen_max3(3);
+  IsotopeDistribution short_result = gen_max3.calcFragmentIsotopeDist(fragment, complementary_fragment, isolated, ef_fragment.getMonoWeight());
+  TEST_EQUAL(short_result.size(), 3)
+  ABORT_IF(short_result.size() != 3 || full.size() != 11)
+  for (Size i = 0; i < short_result.size(); ++i)
+  {
+    TEST_REAL_SIMILAR(short_result.getContainer()[i].getMZ(), full.getContainer()[i].getMZ())
+    TEST_REAL_SIMILAR(short_result.getContainer()[i].getIntensity(), full.getContainer()[i].getIntensity())
+  }
+}
+END_SECTION
+
 delete solver;
 
 /////////////////////////////////////////////////////////////

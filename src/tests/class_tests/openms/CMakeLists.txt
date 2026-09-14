@@ -309,6 +309,37 @@ if (CMAKE_COMPILER_IS_INTELCXX OR CMAKE_COMPILER_IS_GNUCXX OR CMAKE_COMPILER_IS_
 endif()
 
 #------------------------------------------------------------------------------
+# CoarseIsotopeDistribution_test covers an out-of-bounds heap write (CPP-005) that changes no
+# returned value, so only a heap checker can reliably see it if it comes back. On Linux with
+# glibc >= 2.34, run the test with glibc malloc checking, appended to any LD_PRELOAD and
+# GLIBC_TUNABLES the caller has set.
+# Not in sanitizer builds: a sanitizer sees the write itself, and AddressSanitizer refuses to start
+# when libc_malloc_debug is preloaded. Such a build is recognised by the ADDRESS_SANITIZER option or
+# by -fsanitize in the C/C++ compiler or linker flags, including those of the build configuration(s).
+# It comes after the Release flags are restored above, so it sees the flags the tests are built with.
+set(_sanitizer_flags "${CMAKE_C_FLAGS} ${CMAKE_CXX_FLAGS} ${CMAKE_EXE_LINKER_FLAGS} ${CMAKE_SHARED_LINKER_FLAGS}")
+get_property(_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if (_multi_config)
+  set(_sanitizer_configs ${CMAKE_CONFIGURATION_TYPES})
+else()
+  set(_sanitizer_configs ${CMAKE_BUILD_TYPE})
+endif()
+foreach(_config IN LISTS _sanitizer_configs)
+  string(TOUPPER "${_config}" _config)
+  string(APPEND _sanitizer_flags " ${CMAKE_C_FLAGS_${_config}} ${CMAKE_CXX_FLAGS_${_config}}"
+                                 " ${CMAKE_EXE_LINKER_FLAGS_${_config}} ${CMAKE_SHARED_LINKER_FLAGS_${_config}}")
+endforeach()
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ADDRESS_SANITIZER AND NOT _sanitizer_flags MATCHES "-fsanitize")
+  foreach(_malloc_debug_dir /lib/${CMAKE_SYSTEM_PROCESSOR}-linux-gnu /usr/lib/${CMAKE_SYSTEM_PROCESSOR}-linux-gnu /lib64 /usr/lib64)
+    if (EXISTS "${_malloc_debug_dir}/libc_malloc_debug.so.0")
+      set_tests_properties(CoarseIsotopeDistribution_test PROPERTIES ENVIRONMENT_MODIFICATION
+        "LD_PRELOAD=path_list_append:${_malloc_debug_dir}/libc_malloc_debug.so.0;GLIBC_TUNABLES=path_list_append:glibc.malloc.check=3")
+      break()
+    endif()
+  endforeach()
+endif()
+
+#------------------------------------------------------------------------------
 # add filenames to Visual Studio solution tree
 set(sources_VS)
 foreach(i ${TEST_executables})
