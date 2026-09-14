@@ -52,8 +52,9 @@ namespace OpenMS
     /// opens an OSW file for reading.
     /// @throws Exception::FileNotReadable if @p filename does not exist
     OSWFile(const std::string& filename);
-    OSWFile(const OSWFile& rhs) = default;
-    OSWFile& operator=(const OSWFile& rhs) = default;
+    /// The file owns its SqliteConnector, which cannot be copied.
+    OSWFile(const OSWFile& rhs) = delete;
+    OSWFile& operator=(const OSWFile& rhs) = delete;
 
     /// read data from an SQLLite OSW file into @p swath_result
     /// Depending on the number of proteins, this could take a while. 

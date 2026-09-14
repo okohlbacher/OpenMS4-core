@@ -1,3 +1,11 @@
+Core SDK 4.0.0-ci.5 candidate (2026-09-14)
+-----------------------------------------
+- Delete OSWFile's copy constructor and assignment. OSWFile holds a SqliteConnector, whose copy
+  operations the review deleted (CPP-181), so the defaulted declarations were already deleted and
+  clang warns about them wherever the header is not a system header: in Core's macOS build and in
+  consumers. TOPP's macOS x64 Homebrew cask build treats that warning as an error. Nothing copies an
+  OSWFile, so behavior is unchanged.
+
 Core SDK 4.0.0-ci.4 candidate (2026-09-13)
 -----------------------------------------
 - core-v4.0.0-ci.3 passed its Core CI, but against it the installed console regression suite failed
