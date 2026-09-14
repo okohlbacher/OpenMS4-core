@@ -541,10 +541,19 @@ namespace OpenMS
       /// Checks whether Sample Section has a specific factor (i.e. column name)
       bool hasFactor(const std::string &factor) const;
 
-      /// Returns value of factor for given sample NAME and factor name
+      /// @brief Returns value of factor for given sample NAME and factor name
+      ///
+      /// @throws Exception::MissingInformation if the section has no row for @p sample_name,
+      ///         @p factor is not one of its columns, or the row has no value for @p factor. A
+      ///         design loaded from a file has a value for every column, but rows passed to the
+      ///         constructor or addSample() are not checked against the columns and can be short.
       std::string getFactorValue(const std::string& sample_name, const std::string &factor) const;
 
-      /// Returns value of factor for given sample ROW INDEX (zero-based) and factor name
+      /// @brief Returns value of factor for given sample ROW INDEX (zero-based) and factor name
+      ///
+      /// @throws Exception::MissingInformation if @p factor is not one of the columns, or the row
+      ///         has no value for @p factor (see the overload above)
+      /// @throws std::out_of_range if there is no row @p sample_idx
       std::string getFactorValue(unsigned sample_idx, const std::string &factor) const;
 
       /// @brief Returns column index of factor
