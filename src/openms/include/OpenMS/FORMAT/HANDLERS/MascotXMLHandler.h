@@ -65,36 +65,45 @@ private:
       void checkQueryNumber_(Int number, const std::string& source) const;
 
       /**
-        @brief Returns the identification that the enclosing <peptide>, <u_peptide> or <q_peptide> element refers to
+        @brief Returns the identification that the innermost open <peptide>, <u_peptide> or <q_peptide> element refers to
 
-        The 'query' attribute is checked when that element opens. The index is checked again at every use, because an
-        element outside of such a peptide element still sees the initial or a previous index.
-
-        @param element Name of the element being read (used in the error message)
-
-        @exception Exception::ParseError if the index is not within id_data_
+        Its 'query' attribute was checked against <NumQueries> when the element opened.
+        Only call this while such an element is open.
       */
-      PeptideIdentification& peptideIdentification_(const std::string& element);
+      PeptideIdentification& peptideIdentification_();
 
       /**
-        @brief Returns the identification of the enclosing <query number="..."> element
+        @brief Returns the identification of the innermost open <query number="..."> element
 
-        @param element Name of the element being read (used in the error message)
+        Only call this while a <query> element is open.
 
-        @exception Exception::ParseError if no <query> element was read yet, or if its number is not within the <NumQueries> entries
+        @exception Exception::ParseError if no <NumQueries> header was read, or if the query number exceeds <NumQueries>
       */
-      PeptideIdentification& queryIdentification_(const std::string& element);
+      PeptideIdentification& queryIdentification_();
+
+      /**
+        @brief Warns that the element that just closed (tag_, with the text in character_buffer_) is ignored
+
+        Used for elements that only make sense inside an @p enclosing element but were found outside of it.
+        Valid files never contain such elements.
+
+        @param enclosing The required enclosing element(s), e.g. "a <query> element" (used in the warning)
+      */
+      void warnIgnoredElement_(const std::string& enclosing) const;
 
       ProteinIdentification& protein_identification_; ///< the protein identifications
       PeptideIdentificationList& id_data_; ///< the identifications (storing the peptide hits)
       ProteinHit actual_protein_hit_;
       PeptideHit actual_peptide_hit_;
       PeptideEvidence actual_peptide_evidence_;
-      UInt peptide_identification_index_;
+      /// indices into id_data_ of the open <peptide>, <u_peptide> and <q_peptide> elements, innermost last
+      /// (valid files do not nest them, so this holds at most one index); empty outside of these elements
+      std::vector<Size> open_peptide_indices_;
       std::string tag_;
       DateTime date_;
       std::string date_time_string_;
-      UInt actual_query_; ///< number of the current <query> element (1-based); 0 before the first one
+      /// numbers (1-based) of the open <query> elements, innermost last; empty outside of <query> elements
+      std::vector<Int> open_query_numbers_;
       bool num_queries_read_; ///< id_data_ was sized from <NumQueries>; a repeated <NumQueries> is ignored
       ProteinIdentification::SearchParameters search_parameters_;
       std::string identifier_;
