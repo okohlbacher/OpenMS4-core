@@ -13,10 +13,14 @@ using namespace std;
 
 namespace OpenMS::Internal
 {
+    namespace
+    {
+      const std::string show_header_hint = "(make sure to use the 'show_header=1' option in the ./export_dat.pl script)";
+    }
 
     MascotXMLHandler::MascotXMLHandler(ProteinIdentification& protein_identification, PeptideIdentificationList& id_data, const std::string& filename, map<std::string, vector<AASequence> >& modified_peptides, const SpectrumMetaDataLookup& lookup):
       XMLHandler(filename, ""), protein_identification_(protein_identification),
-      id_data_(id_data), peptide_identification_index_(0), actual_query_(0), actual_title_(""),
+      id_data_(id_data), peptide_identification_index_(0), actual_query_(0), num_queries_read_(false), actual_title_(""),
       modified_peptides_(modified_peptides), lookup_(lookup),
       no_rt_error_(false)
     {
@@ -24,6 +28,43 @@ namespace OpenMS::Internal
 
     MascotXMLHandler::~MascotXMLHandler()
     = default;
+
+    void MascotXMLHandler::checkQueryNumber_(Int number, const std::string& source) const
+    {
+      // query numbers are 1-based indices into the <NumQueries> entries: check before subtracting, so that 0 or a
+      // negative number cannot wrap around and a number beyond <NumQueries> is never used as an index
+      if (number <= 0)
+      {
+        fatalError(LOAD, "Invalid " + source + " '" + std::to_string(number) + "': query numbers start at 1.");
+      }
+      if (!num_queries_read_)
+      {
+        fatalError(LOAD, "No or conflicting header information present " + show_header_hint);
+      }
+      if (static_cast<Size>(number) > id_data_.size())
+      {
+        fatalError(LOAD, source + " '" + std::to_string(number) + "' exceeds <NumQueries> (" + std::to_string(id_data_.size()) + ").");
+      }
+    }
+
+    PeptideIdentification& MascotXMLHandler::peptideIdentification_(const std::string& element)
+    {
+      if (peptide_identification_index_ >= id_data_.size())
+      {
+        fatalError(LOAD, "<" + element + "> element is not inside a <peptide>, <u_peptide> or <q_peptide> element that refers to one of the <NumQueries> queries " + show_header_hint);
+      }
+      return id_data_[peptide_identification_index_];
+    }
+
+    PeptideIdentification& MascotXMLHandler::queryIdentification_(const std::string& element)
+    {
+      if (actual_query_ == 0) // <query number> is checked to be positive when read, so no <query> was read yet
+      {
+        fatalError(LOAD, "<" + element + "> element is not inside a <query> element.");
+      }
+      checkQueryNumber_(static_cast<Int>(actual_query_), "<query> 'number' attribute");
+      return id_data_[actual_query_ - 1];
+    }
 
     void MascotXMLHandler::onStartElement(const char16_t* qname, const XMLAttributes& attributes)
     {
@@ -49,18 +90,18 @@ namespace OpenMS::Internal
       }
       else if (tag_ == "query")
       {
-        actual_query_ = attributeAsInt_(attributes, s_queries_query_number);
+        Int number = attributeAsInt_(attributes, s_queries_query_number);
+        // 0 is reserved for "no <query> read yet"; the range check against <NumQueries> happens where the number is used
+        if (number <= 0)
+        {
+          fatalError(LOAD, "Invalid <query> 'number' attribute '" + std::to_string(number) + "': query numbers start at 1.");
+        }
+        actual_query_ = number;
       }
       else if (tag_ == "peptide" || tag_ == "u_peptide" || tag_ == "q_peptide")
       {
         Int attribute_value = attributeAsInt_(attributes, s_peptide_query);
-        // query numbers are 1-based indices into the <NumQueries> entries: validate before subtracting,
-        // so that 0 or a negative number cannot wrap around and query == NumQueries + 1 (one past the
-        // end of id_data_) is rejected instead of being used as an index later on
-        if (attribute_value <= 0 || static_cast<Size>(attribute_value) > id_data_.size())
-        {
-          fatalError(LOAD, "No or conflicting header information present (make sure to use the 'show_header=1' option in the ./export_dat.pl script)");
-        }
+        checkQueryNumber_(attribute_value, "<" + tag_ + "> 'query' attribute");
         peptide_identification_index_ = attribute_value - 1;
       }
     }
@@ -79,7 +120,16 @@ namespace OpenMS::Internal
 
       if (tag_ == "NumQueries")
       {
-        id_data_.resize(StringUtils::toInt32(StringUtils::trim(character_buffer_)));
+        // size id_data_ only once: a repeated <NumQueries> must not shrink it below query numbers already checked against it
+        if (num_queries_read_)
+        {
+          warning(LOAD, "Ignoring repeated <NumQueries> element.");
+        }
+        else
+        {
+          id_data_.resize(StringUtils::toInt32(StringUtils::trim(character_buffer_)));
+          num_queries_read_ = true;
+        }
       }
       else if (tag_ == "prot_score")
       {
@@ -87,27 +137,28 @@ namespace OpenMS::Internal
       }
       else if (tag_ == "pep_exp_mz")
       {
-        id_data_[peptide_identification_index_].setMZ(
+        peptideIdentification_(tag_).setMZ(
           StringUtils::toDouble(StringUtils::trimmed(character_buffer_)));
       }
       else if (tag_ == "pep_scan_title")
       {
         // extract RT (and possibly m/z, if not already set) from title:
         std::string title = StringUtils::trim(character_buffer_);
+        PeptideIdentification& peptide_id = peptideIdentification_(tag_);
         SpectrumMetaDataLookup::SpectrumMetaData meta;
         SpectrumMetaDataLookup::MetaDataFlags flags = SpectrumMetaDataLookup::MDF_RT;
-        if (!id_data_[peptide_identification_index_].hasMZ())
+        if (!peptide_id.hasMZ())
         {
           flags |= SpectrumMetaDataLookup::MDF_PRECURSORMZ;
         }
         try
         {
           lookup_.getSpectrumMetaData(title, meta, flags);
-          id_data_[peptide_identification_index_].setRT(meta.rt);
+          peptide_id.setRT(meta.rt);
           // have we looked up the m/z value?
           if ((flags & SpectrumMetaDataLookup::MDF_PRECURSORMZ) == SpectrumMetaDataLookup::MDF_PRECURSORMZ)
           {
-            id_data_[peptide_identification_index_].setMZ(meta.precursor_mz);
+            peptide_id.setMZ(meta.precursor_mz);
           }
         }
         catch (...)
@@ -117,7 +168,7 @@ namespace OpenMS::Internal
         }
         // did it work? A failed look-up leaves the RT NaN, while 0 is a valid RT, so test hasRT()
         // rather than the truth value of the double
-        if (!id_data_[peptide_identification_index_].hasRT())
+        if (!peptide_id.hasRT())
         {
           if (!no_rt_error_) // report the error only the first time
           {
@@ -148,22 +199,23 @@ namespace OpenMS::Internal
       }
       else if (tag_ == "pep_homol")
       {
-        id_data_[peptide_identification_index_].setSignificanceThreshold(StringUtils::toDouble(StringUtils::trimmed(character_buffer_)));
+        peptideIdentification_(tag_).setSignificanceThreshold(StringUtils::toDouble(StringUtils::trimmed(character_buffer_)));
       }
       else if (tag_ == "pep_ident")
       {
+        PeptideIdentification& peptide_id = peptideIdentification_(tag_);
         double temp_homology = 0;
         double temp_identity = 0;
 
         // According to Matrix Science the homology threshold is only used if it
         // exists and is smaller than the identity threshold.
-        temp_homology = id_data_[peptide_identification_index_].getSignificanceThreshold();
+        temp_homology = peptide_id.getSignificanceThreshold();
         temp_identity = StringUtils::toDouble(StringUtils::trimmed(character_buffer_));
         actual_peptide_hit_.setMetaValue("homology_threshold", temp_homology);
         actual_peptide_hit_.setMetaValue("identity_threshold", temp_identity);
         if (temp_homology > temp_identity || temp_homology == 0)
         {
-          id_data_[peptide_identification_index_].setSignificanceThreshold(temp_identity);
+          peptide_id.setSignificanceThreshold(temp_identity);
         }
       }
       else if (tag_ == "pep_seq")
@@ -337,19 +389,13 @@ namespace OpenMS::Internal
       {
         std::string title = StringUtils::trim(character_buffer_);
         vector<std::string> parts;
-
-        // <query number> is 1-based and not checked at its start tag; it is first used as an index here
-        // (0 would wrap around, a number beyond <NumQueries> would run past the end of id_data_)
-        if (actual_query_ == 0 || actual_query_ > id_data_.size())
-        {
-          fatalError(LOAD, "No or conflicting header information present (make sure to use the 'show_header=1' option in the ./export_dat.pl script)");
-        }
+        PeptideIdentification& query_id = queryIdentification_(tag_);
 
         actual_title_ = title;
         if (modified_peptides_.contains(title))
         {
           vector<AASequence>& temp_hits = modified_peptides_[title];
-          vector<PeptideHit> temp_peptide_hits = id_data_[actual_query_ - 1].getHits();
+          vector<PeptideHit> temp_peptide_hits = query_id.getHits();
 
           if (temp_hits.size() != temp_peptide_hits.size())
           {
@@ -370,25 +416,20 @@ namespace OpenMS::Internal
               }
             }
           }
-          id_data_[actual_query_ - 1].setHits(temp_peptide_hits);
+          query_id.setHits(temp_peptide_hits);
         }
-        if (!id_data_[actual_query_ - 1].hasRT())
+        if (!query_id.hasRT())
         {
           StringUtils::split(title, '_', parts);
           if (parts.size() == 2)
           {
-            id_data_[actual_query_ - 1].setRT(StringUtils::toDouble(parts[1]));
+            query_id.setRT(StringUtils::toDouble(parts[1]));
           }
         }
       }
       else if (tag_ == "RTINSECONDS")
       {
-        // same 1-based <query number> range check as for <StringTitle>
-        if (actual_query_ == 0 || actual_query_ > id_data_.size())
-        {
-          fatalError(LOAD, "No or conflicting header information present (make sure to use the 'show_header=1' option in the ./export_dat.pl script)");
-        }
-        id_data_[actual_query_ - 1].setRT(StringUtils::toDouble(StringUtils::trimmed(character_buffer_)));
+        queryIdentification_(tag_).setRT(StringUtils::toDouble(StringUtils::trimmed(character_buffer_)));
       }
       else if (tag_ == "MascotVer")
       {
@@ -553,7 +594,8 @@ namespace OpenMS::Internal
       {
         bool already_stored(false);
 
-        vector<PeptideHit> temp_peptide_hits = id_data_[peptide_identification_index_].getHits();
+        PeptideIdentification& peptide_id = peptideIdentification_(tag_);
+        vector<PeptideHit> temp_peptide_hits = peptide_id.getHits();
 
         vector<PeptideHit>::iterator it = temp_peptide_hits.begin();
         while (it != temp_peptide_hits.end())
@@ -568,26 +610,27 @@ namespace OpenMS::Internal
 
         if (!already_stored)
         {
-          id_data_[peptide_identification_index_].setIdentifier(identifier_);
-          id_data_[peptide_identification_index_].setScoreType("Mascot");
+          peptide_id.setIdentifier(identifier_);
+          peptide_id.setScoreType("Mascot");
           actual_peptide_evidence_.setProteinAccession(actual_protein_hit_.getAccession());
           actual_peptide_hit_.addPeptideEvidence(actual_peptide_evidence_);
-          id_data_[peptide_identification_index_].insertHit(actual_peptide_hit_);
+          peptide_id.insertHit(actual_peptide_hit_);
         }
         else
         {
           actual_peptide_evidence_.setProteinAccession(actual_protein_hit_.getAccession());
           it->addPeptideEvidence(actual_peptide_evidence_);
-          id_data_[peptide_identification_index_].setHits(temp_peptide_hits);
+          peptide_id.setHits(temp_peptide_hits);
         }
         actual_peptide_evidence_ = PeptideEvidence();
         actual_peptide_hit_ = PeptideHit();
       }
       else if (tag_ == "u_peptide" || tag_ == "q_peptide")
       {
-        id_data_[peptide_identification_index_].setIdentifier(identifier_);
-        id_data_[peptide_identification_index_].setScoreType("Mascot");
-        id_data_[peptide_identification_index_].insertHit(actual_peptide_hit_);
+        PeptideIdentification& peptide_id = peptideIdentification_(tag_);
+        peptide_id.setIdentifier(identifier_);
+        peptide_id.setScoreType("Mascot");
+        peptide_id.insertHit(actual_peptide_hit_);
         actual_peptide_evidence_ = PeptideEvidence();
         actual_peptide_hit_ = PeptideHit();
       }

@@ -22,9 +22,39 @@
 #include <OpenMS/METADATA/ProteinIdentification.h>
 #include <OpenMS/METADATA/PeptideIdentification.h>
 
+#include <fstream>
 #include <vector>
 
 ///////////////////////////
+
+namespace
+{
+  // writes a minimal Mascot XML file whose <mascot_search_results> element contains @p body
+  void writeMascotXML(const std::string& path, const std::string& body)
+  {
+    std::ofstream out(path);
+    out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        << "<mascot_search_results majorVersion=\"2\" minorVersion=\"1\">\n"
+        << body
+        << "</mascot_search_results>\n";
+  }
+
+  // the what() of the ParseError that XMLHandler::fatalError() throws for @p message while loading @p path
+  std::string loadError(const std::string& path, const std::string& message)
+  {
+    return "While loading '" + path + "': " + message + " in: " + path;
+  }
+
+  const std::string show_header_hint = "(make sure to use the 'show_header=1' option in the ./export_dat.pl script)";
+
+  // one hit for query @p query with an m/z and a sequence
+  std::string peptideHit(const std::string& query)
+  {
+    return "<hits><hit number=\"1\"><protein accession=\"P1\"><peptide query=\"" + query + "\">"
+           "<pep_exp_mz>500.0</pep_exp_mz><pep_seq>PEPTIDE</pep_seq>"
+           "</peptide></protein></hit></hits>\n";
+  }
+}
 
 START_TEST(MascotXMLFile, "$Id$")
 
@@ -303,6 +333,99 @@ START_SECTION((void load(const std::string& filename, ProteinIdentification& pro
   TEST_EQUAL(peptide_identifications[0].getHits()[0].getSequence(), aa_sequence_1)
   TEST_EQUAL(peptide_identifications[0].getHits()[1].getSequence(), aa_sequence_2)
   TEST_EQUAL(peptide_identifications[1].getHits()[0].getSequence(), aa_sequence_3)
+END_SECTION
+
+START_SECTION(([EXTRA] query numbers that are not within <NumQueries> are rejected with a ParseError))
+{
+  // Query numbers are 1-based indices into the list of identifications sized by <NumQueries>. Numbers outside of it
+  // used to index outside of that list (heap out-of-bounds reads and writes, or a crash).
+  const std::string header = "<header><NumQueries>1</NumQueries></header>\n";
+  SpectrumMetaDataLookup lookup;
+  std::string filename;
+
+  // control: the minimal file loads
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename, header + peptideHit("1") +
+    "<queries><query number=\"1\"><StringTitle>scan1</StringTitle><RTINSECONDS>12.5</RTINSECONDS></query></queries>\n");
+  xml_file.load(filename, protein_identification, peptide_identifications, lookup);
+  TEST_EQUAL(peptide_identifications.size(), 1)
+  ABORT_IF(peptide_identifications.size() != 1)
+  TEST_REAL_SIMILAR(peptide_identifications[0].getMZ(), 500.0)
+  TEST_REAL_SIMILAR(peptide_identifications[0].getRT(), 12.5)
+  TEST_EQUAL(peptide_identifications[0].getHits().size(), 1)
+  TEST_EQUAL(peptide_identifications[0].getHits()[0].getSequence(), AASequence::fromString("PEPTIDE"))
+
+  // an export without header (no <NumQueries>) whose first peptide is query 1
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename, peptideHit("1"));
+  TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, xml_file.load(filename, protein_identification, peptide_identifications, lookup),
+    loadError(filename, "No or conflicting header information present " + show_header_hint))
+
+  // a peptide query above <NumQueries> (one past the end)
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename, header + peptideHit("2"));
+  TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, xml_file.load(filename, protein_identification, peptide_identifications, lookup),
+    loadError(filename, "<peptide> 'query' attribute '2' exceeds <NumQueries> (1)."))
+
+  // a peptide query of 0
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename, header + peptideHit("0"));
+  TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, xml_file.load(filename, protein_identification, peptide_identifications, lookup),
+    loadError(filename, "Invalid <peptide> 'query' attribute '0': query numbers start at 1."))
+
+  // <query number="0">
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename, header + "<queries><query number=\"0\"><StringTitle>scan1</StringTitle></query></queries>\n");
+  TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, xml_file.load(filename, protein_identification, peptide_identifications, lookup),
+    loadError(filename, "Invalid <query> 'number' attribute '0': query numbers start at 1."))
+
+  // <query number> out of range, used by <StringTitle> and by <RTINSECONDS>
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename, header + "<queries><query number=\"3\"><StringTitle>scan3</StringTitle></query></queries>\n");
+  TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, xml_file.load(filename, protein_identification, peptide_identifications, lookup),
+    loadError(filename, "<query> 'number' attribute '3' exceeds <NumQueries> (1)."))
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename, header + "<queries><query number=\"3\"><RTINSECONDS>12.5</RTINSECONDS></query></queries>\n");
+  TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, xml_file.load(filename, protein_identification, peptide_identifications, lookup),
+    loadError(filename, "<query> 'number' attribute '3' exceeds <NumQueries> (1)."))
+
+  // <StringTitle> and <RTINSECONDS> before any <query>
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename, header + "<queries><StringTitle>scan1</StringTitle></queries>\n");
+  TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, xml_file.load(filename, protein_identification, peptide_identifications, lookup),
+    loadError(filename, "<StringTitle> element is not inside a <query> element."))
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename, header + "<queries><RTINSECONDS>12.5</RTINSECONDS></queries>\n");
+  TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, xml_file.load(filename, protein_identification, peptide_identifications, lookup),
+    loadError(filename, "<RTINSECONDS> element is not inside a <query> element."))
+
+  // a pep_* element outside of any peptide element, in an export without header
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename, "<hits><pep_exp_mz>500.0</pep_exp_mz></hits>\n");
+  TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, xml_file.load(filename, protein_identification, peptide_identifications, lookup),
+    loadError(filename, "<pep_exp_mz> element is not inside a <peptide>, <u_peptide> or <q_peptide> element that refers to one of the <NumQueries> queries " + show_header_hint))
+}
+END_SECTION
+
+START_SECTION(([EXTRA] a repeated <NumQueries> does not shrink the identifications after query numbers were checked))
+{
+  // The 'query' attribute of <peptide> is checked against <NumQueries> when the element opens. A second, smaller
+  // <NumQueries> inside that peptide used to shrink the list, so the following pep_* elements wrote past its end.
+  SpectrumMetaDataLookup lookup;
+  std::string filename;
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename,
+    "<header><NumQueries>2</NumQueries></header>\n"
+    "<hits><hit number=\"1\"><protein accession=\"P1\"><peptide query=\"2\">"
+    "<NumQueries>1</NumQueries><pep_exp_mz>500.0</pep_exp_mz><pep_seq>PEPTIDE</pep_seq>"
+    "</peptide></protein></hit></hits>\n");
+  xml_file.load(filename, protein_identification, peptide_identifications, lookup);
+  TEST_EQUAL(peptide_identifications.size(), 1)
+  ABORT_IF(peptide_identifications.size() != 1)
+  TEST_REAL_SIMILAR(peptide_identifications[0].getMZ(), 500.0)
+  TEST_EQUAL(peptide_identifications[0].getHits().size(), 1)
+  TEST_EQUAL(peptide_identifications[0].getHits()[0].getSequence(), AASequence::fromString("PEPTIDE"))
+}
 END_SECTION
 
 /////////////////////////////////////////////////////////////

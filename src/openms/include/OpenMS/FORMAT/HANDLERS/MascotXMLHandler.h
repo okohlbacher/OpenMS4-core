@@ -54,6 +54,37 @@ public:
 
 private:
 
+      /**
+        @brief Checks that a 1-based query number read from the file refers to one of the <NumQueries> entries of id_data_
+
+        @param number The query number
+        @param source Where @p number was read from, e.g. "<peptide> 'query' attribute" (used in the error message)
+
+        @exception Exception::ParseError if @p number is not positive, if no <NumQueries> header was read, or if @p number exceeds <NumQueries>
+      */
+      void checkQueryNumber_(Int number, const std::string& source) const;
+
+      /**
+        @brief Returns the identification that the enclosing <peptide>, <u_peptide> or <q_peptide> element refers to
+
+        The 'query' attribute is checked when that element opens. The index is checked again at every use, because an
+        element outside of such a peptide element still sees the initial or a previous index.
+
+        @param element Name of the element being read (used in the error message)
+
+        @exception Exception::ParseError if the index is not within id_data_
+      */
+      PeptideIdentification& peptideIdentification_(const std::string& element);
+
+      /**
+        @brief Returns the identification of the enclosing <query number="..."> element
+
+        @param element Name of the element being read (used in the error message)
+
+        @exception Exception::ParseError if no <query> element was read yet, or if its number is not within the <NumQueries> entries
+      */
+      PeptideIdentification& queryIdentification_(const std::string& element);
+
       ProteinIdentification& protein_identification_; ///< the protein identifications
       PeptideIdentificationList& id_data_; ///< the identifications (storing the peptide hits)
       ProteinHit actual_protein_hit_;
@@ -63,7 +94,8 @@ private:
       std::string tag_;
       DateTime date_;
       std::string date_time_string_;
-      UInt actual_query_;
+      UInt actual_query_; ///< number of the current <query> element (1-based); 0 before the first one
+      bool num_queries_read_; ///< id_data_ was sized from <NumQueries>; a repeated <NumQueries> is ignored
       ProteinIdentification::SearchParameters search_parameters_;
       std::string identifier_;
       std::string actual_title_;
