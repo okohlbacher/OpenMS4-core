@@ -3,8 +3,9 @@ Core SDK 4.0.0-ci.4 candidate (2026-09-13)
 - core-v4.0.0-ci.3 passed its Core CI, but against it the installed console regression suite failed
   107 of 2047 tests: several review fixes change what the console tools write, and the Core class
   tests do not compare those outputs. ci.4 restores or keeps each of them deliberately:
-- Write processingMethod order as 0 again (CPP-026 reverted, kept open): 210 of the 267 TOPP reference
-  mzML files record 0 for every step, so the index needs a coordinated reference update.
+- Write processingMethod order as 0 again (CPP-026 reverted, kept open): 252 of the 267 TOPP reference
+  mzML files record 0 for every step and 211 would change, so the index needs a coordinated reference
+  update.
 - Restore the ci.2 cross-link spectrum generators (CPP-042, its SimpleTSGXLMS sibling and CPP-043
   reverted, kept open): the corrected charge-two suffix losses and isotope companions changed
   OpenPepXL scores and fragment annotations.

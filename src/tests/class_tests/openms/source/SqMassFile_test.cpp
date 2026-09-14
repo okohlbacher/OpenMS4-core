@@ -16,6 +16,7 @@
 #include <OpenMS/FORMAT/FileTypes.h>
 #include <OpenMS/KERNEL/MSExperiment.h>
 #include <OpenMS/FORMAT/DATAACCESS/MSDataStoringConsumer.h>
+#include <OpenMS/FORMAT/DATAACCESS/MSDataSqlConsumer.h>
 
 using namespace OpenMS;
 using namespace std;
@@ -495,12 +496,14 @@ END_SECTION
 
 START_SECTION([EXTRA_TRANSFORM_META] void transform(const std::string& filename_in, Interfaces::IMSDataConsumer* consumer, bool skip_full_count, bool skip_first_pass))
 {
-  // transform() rebuilt chromatograms from the SQL tables alone, so an SRM chromatogram came out
-  // as a mass chromatogram while load() kept its type from the full-meta record
+  // transform() rebuilt spectra and chromatograms from the SQL tables alone, so e.g. an SRM
+  // chromatogram came out as a mass chromatogram and a centroided spectrum as unknown, while
+  // load() kept both from the full-meta record
   MSExperiment exp_orig;
   MzMLFile().load(OPENMS_GET_TEST_DATA_PATH("MzMLSqliteHandler_1.mzML"), exp_orig);
-  ABORT_IF(exp_orig.getNrChromatograms() == 0)
+  ABORT_IF(exp_orig.getNrChromatograms() == 0 || exp_orig.getNrSpectra() == 0)
   exp_orig.getChromatogram(0).setChromatogramType(ChromatogramSettings::ChromatogramType::SELECTED_REACTION_MONITORING_CHROMATOGRAM);
+  exp_orig.getSpectrum(0).setType(SpectrumSettings::SpectrumType::CENTROID);
 
   SqMassFile::SqMassConfig config;
   config.write_full_meta = true;
@@ -514,10 +517,33 @@ START_SECTION([EXTRA_TRANSFORM_META] void transform(const std::string& filename_
   file.transform(tmp_filename, &consumer, true, true);
   const MSExperiment& transformed = consumer.getData();
   TEST_EQUAL(transformed.getNrChromatograms(), exp_orig.getNrChromatograms())
-  ABORT_IF(transformed.getNrChromatograms() == 0)
+  TEST_EQUAL(transformed.getNrSpectra(), exp_orig.getNrSpectra())
+  ABORT_IF(transformed.getNrChromatograms() == 0 || transformed.getNrSpectra() == 0)
   TEST_EQUAL(transformed.getChromatogram(0).getNativeID(), exp_orig.getChromatogram(0).getNativeID())
   TEST_EQUAL(transformed.getChromatogram(0).getChromatogramType() == ChromatogramSettings::ChromatogramType::SELECTED_REACTION_MONITORING_CHROMATOGRAM, true)
   TEST_EQUAL(transformed.getChromatogram(0).size(), exp_orig.getChromatogram(0).size())
+  TEST_EQUAL(transformed.getSpectrum(0).getNativeID(), exp_orig.getSpectrum(0).getNativeID())
+  TEST_EQUAL(transformed.getSpectrum(0).getType() == SpectrumSettings::SpectrumType::CENTROID, true)
+  TEST_REAL_SIMILAR(transformed.getSpectrum(0).getRT(), exp_orig.getSpectrum(0).getRT())
+  TEST_EQUAL(transformed.getSpectrum(0).size(), exp_orig.getSpectrum(0).size())
+
+  // The low-memory sqMass-to-sqMass conversion streams into the SQL consumer; the settings have
+  // to survive its full-meta record, so load the converted file back.
+  std::string converted_filename;
+  NEW_TMP_FILE(converted_filename);
+  {
+    MSDataSqlConsumer sql_consumer(converted_filename, 0, 500, true, false, 1e-4);
+    file.transform(tmp_filename, &sql_consumer, true, true);
+    sql_consumer.finalize();
+  }
+  MSExperiment converted;
+  file.load(converted_filename, converted);
+  ABORT_IF(converted.getNrChromatograms() != exp_orig.getNrChromatograms() || converted.getNrSpectra() != exp_orig.getNrSpectra())
+  TEST_EQUAL(converted.getChromatogram(0).getNativeID(), exp_orig.getChromatogram(0).getNativeID())
+  TEST_EQUAL(converted.getChromatogram(0).getChromatogramType() == ChromatogramSettings::ChromatogramType::SELECTED_REACTION_MONITORING_CHROMATOGRAM, true)
+  TEST_EQUAL(converted.getChromatogram(0).size(), exp_orig.getChromatogram(0).size())
+  TEST_EQUAL(converted.getSpectrum(0).getType() == SpectrumSettings::SpectrumType::CENTROID, true)
+  TEST_EQUAL(converted.getSpectrum(0).size(), exp_orig.getSpectrum(0).size())
 }
 END_SECTION
 

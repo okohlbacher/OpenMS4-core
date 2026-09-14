@@ -71,6 +71,15 @@ namespace OpenMS
         sql_mass.readSpectra(tmp_spectra, indices, false);
         for (Size k = 0; k < tmp_spectra.size(); k++)
         {
+          // As for chromatograms below: the SQL tables restore only part of the spectrum settings
+          // (e.g. not the spectrum type or data processing), so take them from the full-meta record.
+          // RT, MS level and drift time belong to MSSpectrum itself and stay as read from SQL.
+          const Size idx = idx_start + k;
+          if (idx < experimental_settings.getNrSpectra() &&
+              experimental_settings.getSpectrum(idx).getNativeID() == tmp_spectra[k].getNativeID())
+          {
+            static_cast<SpectrumSettings&>(tmp_spectra[k]) = experimental_settings.getSpectrum(idx);
+          }
           consumer->consumeSpectrum(tmp_spectra[k]);
         }
       }

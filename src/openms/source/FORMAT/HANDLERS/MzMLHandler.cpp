@@ -3899,9 +3899,9 @@ namespace OpenMS::Internal
       {
         // per method: the fallback action below depends on this method alone
         bool written = false;
-        // ponytail: order stays 0 for every method (CPP-026, deferred). The mzML schema orders
-        // consecutive steps by it, but 210 of the 267 TOPP reference mzML files record 0 for every
-        // step; writing the index belongs with a coordinated update of those references.
+        // order stays 0 for every method (CPP-026, open). The mzML schema orders consecutive steps
+        // by it, but the TOPP reference mzML files expect 0 for every step; writing the index
+        // belongs with a coordinated update of those references.
         //data processing action
         os << "\t\t\t<processingMethod order=\"0\" softwareRef=\"so_" << id << "_pm_" << i << "\">\n";
         if (dps[i]->getProcessingActions().count(DataProcessing::DATA_PROCESSING) == 1)
