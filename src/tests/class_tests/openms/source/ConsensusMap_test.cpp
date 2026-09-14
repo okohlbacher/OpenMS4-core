@@ -1035,6 +1035,73 @@ START_SECTION(([EXTRA] std::vector<FeatureMap> split(SplitMeta mode = SplitMeta:
 }
 END_SECTION
 
+START_SECTION(([EXTRA] std::vector<FeatureMap> split(SplitMeta mode = SplitMeta::DISCARD) const with IsobaricAnalyzer data and sparse or missing column header keys))
+{
+  // For IsobaricAnalyzer data the features are resolved through the column header keys as well, but every
+  // identification goes to the first map, the one of map index 0, whatever its map_index meta value.
+  DataProcessing isobaric_analyzer;
+  isobaric_analyzer.setSoftware(Software("IsobaricAnalyzer"));
+
+  // column headers keyed {0, 3}: two channels of one run
+  ConsensusMap cm;
+  cm.getDataProcessing().push_back(isobaric_analyzer);
+  cm.getColumnHeaders()[0].filename = "run.mzML";
+  cm.getColumnHeaders()[0].label = "channel_0";
+  cm.getColumnHeaders()[3].filename = "run.mzML";
+  cm.getColumnHeaders()[3].label = "channel_3";
+
+  ConsensusFeature cf;
+  cf.insert(FeatureHandle(0, Peak2D({ 10, 433.33 }, 100000), 0));
+  cf.insert(FeatureHandle(3, Peak2D({ 10, 433.33 }, 200000), 0));
+  PeptideIdentification id;
+  id.insertHit(PeptideHit(0.1, 1, 3, AASequence::fromString("AAA")));
+  id.setMetaValue("map_index", 7); // not a column header key, but not used for IsobaricAnalyzer data
+  cf.getPeptideIdentifications().push_back(id);
+  cm.push_back(cf);
+
+  PeptideIdentification uid;
+  uid.insertHit(PeptideHit(0.1, 1, 3, AASequence::fromString("KKK")));
+  uid.setMetaValue("map_index", 3);
+  cm.getUnassignedPeptideIdentifications().push_back(uid);
+  cm.getProteinIdentifications().resize(1);
+  cm.getProteinIdentifications()[0].setIdentifier("run");
+  TEST_TRUE(cm.isMapConsistent())
+
+  vector<FeatureMap> fmaps = cm.split();
+  TEST_EQUAL(fmaps.size(), 2)
+  ABORT_IF(fmaps.size() != 2)
+  // map index 0: its feature, all peptide identifications and all protein identifications
+  TEST_EQUAL(fmaps[0].size(), 1)
+  ABORT_IF(fmaps[0].size() != 1)
+  TEST_EQUAL(fmaps[0][0].getIntensity(), 100000)
+  TEST_EQUAL(fmaps[0][0].getPeptideIdentifications().size(), 1)
+  ABORT_IF(fmaps[0][0].getPeptideIdentifications().size() != 1)
+  TEST_EQUAL(fmaps[0][0].getPeptideIdentifications()[0].getHits()[0].getSequence().toString(), "AAA")
+  TEST_EQUAL(fmaps[0].getUnassignedPeptideIdentifications().size(), 1)
+  ABORT_IF(fmaps[0].getUnassignedPeptideIdentifications().size() != 1)
+  TEST_EQUAL(fmaps[0].getUnassignedPeptideIdentifications()[0].getHits()[0].getSequence().toString(), "KKK")
+  TEST_EQUAL(fmaps[0].getProteinIdentifications().size(), 1)
+  // map index 3: only its feature
+  TEST_EQUAL(fmaps[1].size(), 1)
+  ABORT_IF(fmaps[1].size() != 1)
+  TEST_EQUAL(fmaps[1][0].getIntensity(), 200000)
+  TEST_EQUAL(fmaps[1][0].getPeptideIdentifications().empty(), true)
+  TEST_EQUAL(fmaps[1].getUnassignedPeptideIdentifications().empty(), true)
+  TEST_EQUAL(fmaps[1].getProteinIdentifications().empty(), true)
+
+  // Without a column of map index 0 there is no first map for the identifications: neither with columns {1},
+  // where the only output map belongs to map index 1, nor without any column.
+  ConsensusMap no_column_0;
+  no_column_0.getDataProcessing().push_back(isobaric_analyzer);
+  no_column_0.getColumnHeaders()[1].filename = "run.mzML";
+  no_column_0.getColumnHeaders()[1].label = "channel_1";
+  no_column_0.getUnassignedPeptideIdentifications().push_back(uid);
+  TEST_EXCEPTION(Exception::ElementNotFound, no_column_0.split())
+  no_column_0.getColumnHeaders().clear();
+  TEST_EXCEPTION(Exception::ElementNotFound, no_column_0.split())
+}
+END_SECTION
+
 START_SECTION(([EXTRA] std::vector<FeatureMap> split(SplitMeta mode = SplitMeta::DISCARD) const with several FeatureHandles of the same map index))
 {
   // A consensus feature can hold several handles of one map index (the handle set orders them by map index,
