@@ -57,29 +57,49 @@ START_SECTION((static ExperimentalDesign load(const TextFile&, bool, String) rej
 }
 END_SECTION
 
-START_SECTION((static ExperimentalDesign load(const TextFile&, bool, String) pads sample rows whose last values are blank))
+START_SECTION((static ExperimentalDesign load(const TextFile&, bool, String) pads sample rows that lack trailing cells))
 {
-  // A spreadsheet export with an optional factor left empty: the line is trimmed before it is split,
-  // so the S1 row has one cell less than the sample header.
+  // Sample rows are split before they are trimmed, so a blank last value that keeps its tab is a cell of its own
+  // (S1, S2) and needs no padding. A row whose trailing tabs are missing, e.g. because an editor strips trailing
+  // whitespace, has fewer cells than the sample header (S3, S4). It is padded with empty values.
   TextFile tf;
   tf.addLine("Fraction_Group\tFraction\tSpectra_Filepath\tLabel\tSample");
   tf.addLine("1\t1\ta.mzML\t1\tS1");
   tf.addLine("2\t1\tb.mzML\t1\tS2");
+  tf.addLine("3\t1\tc.mzML\t1\tS3");
+  tf.addLine("4\t1\td.mzML\t1\tS4");
   tf.addLine("");
   tf.addLine("Sample\tMSstats_Condition\tMSstats_BioReplicate");
   tf.addLine("S1\tA\t");
   tf.addLine("S2\t\t"); // both values blank
+  tf.addLine("S3\tC");  // one cell short
+  tf.addLine("S4");     // two cells short
 
-  const ExperimentalDesign design = ExperimentalDesignFile::load(tf, false, "inline_blank_last_value.tsv");
-  const ExperimentalDesign::SampleSection& ss = design.getSampleSection();
-  TEST_EQUAL(ss.getContentSize(), 2)
-  TEST_EQUAL(ss.getFactorValue("S1", "MSstats_Condition"), "A")
-  TEST_EQUAL(ss.getFactorValue("S1", "MSstats_BioReplicate"), "")
-  TEST_EQUAL(ss.getFactorValue(0, "MSstats_BioReplicate"), "")
-  TEST_EQUAL(ss.getFactorValue("S2", "MSstats_Condition"), "")
-  TEST_EQUAL(ss.getFactorValue("S2", "MSstats_BioReplicate"), "")
+  const auto test_design = [](const ExperimentalDesign& design)
+  {
+    const ExperimentalDesign::SampleSection& ss = design.getSampleSection();
+    TEST_EQUAL(ss.getContentSize(), 4)
+    TEST_EQUAL(ss.getFactorValue("S1", "MSstats_Condition"), "A")
+    TEST_EQUAL(ss.getFactorValue("S1", "MSstats_BioReplicate"), "")
+    TEST_EQUAL(ss.getFactorValue(0, "MSstats_BioReplicate"), "")
+    TEST_EQUAL(ss.getFactorValue("S2", "MSstats_Condition"), "")
+    TEST_EQUAL(ss.getFactorValue("S2", "MSstats_BioReplicate"), "")
+    TEST_EQUAL(ss.getFactorValue("S3", "MSstats_Condition"), "C")
+    TEST_EQUAL(ss.getFactorValue("S3", "MSstats_BioReplicate"), "")
+    TEST_EQUAL(ss.getFactorValue(2, "MSstats_BioReplicate"), "")
+    TEST_EQUAL(ss.getFactorValue("S4", "MSstats_Condition"), "")
+    TEST_EQUAL(ss.getFactorValue("S4", "MSstats_BioReplicate"), "")
+    TEST_EQUAL(ss.getFactorValue(3, "MSstats_Condition"), "")
+  };
+  test_design(ExperimentalDesignFile::load(tf, false, "inline_short_sample_rows.tsv"));
 
-  // a row that lacks the sample name itself is still an error
+  // the same from a file
+  std::string filename;
+  NEW_TMP_FILE(filename);
+  tf.store(filename);
+  test_design(ExperimentalDesignFile::load(filename, false));
+
+  // a row that lacks the sample name itself is still an error: a blank name, and a row too short to reach the Sample column
   TextFile no_name;
   no_name.addLine("Fraction_Group\tFraction\tSpectra_Filepath\tLabel\tSample");
   no_name.addLine("1\t1\ta.mzML\t1\tS1");
@@ -87,6 +107,13 @@ START_SECTION((static ExperimentalDesign load(const TextFile&, bool, String) pad
   no_name.addLine("MSstats_Condition\tSample");
   no_name.addLine("A\t");
   TEST_EXCEPTION(Exception::ParseError, ExperimentalDesignFile::load(no_name, false, "inline_missing_sample_name.tsv"))
+  TextFile short_of_name;
+  short_of_name.addLine("Fraction_Group\tFraction\tSpectra_Filepath\tLabel\tSample");
+  short_of_name.addLine("1\t1\ta.mzML\t1\tS1");
+  short_of_name.addLine("");
+  short_of_name.addLine("MSstats_Condition\tSample");
+  short_of_name.addLine("A");
+  TEST_EXCEPTION(Exception::ParseError, ExperimentalDesignFile::load(short_of_name, false, "inline_short_of_sample_name.tsv"))
 }
 END_SECTION
 
