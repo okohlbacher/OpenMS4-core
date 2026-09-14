@@ -12,11 +12,16 @@
 
 ///////////////////////////
 
+#include <OpenMS/CONCEPT/LogStream.h>
 #include <OpenMS/FORMAT/FileTypes.h>
 #include <OpenMS/FORMAT/MzXMLFile.h>
 #include <OpenMS/KERNEL/MSExperiment.h>
 #include <OpenMS/KERNEL/StandardTypes.h>
+#include <algorithm>
 #include <fstream>
+#include <regex>
+#include <sstream>
+#include <vector>
 
 using namespace OpenMS;
 using namespace std;
@@ -645,6 +650,59 @@ START_SECTION(void transform(const std::string& filename_in, Interfaces::IMSData
 }
 END_SECTION
 
+/// Collects what OPENMS_LOG_WARN writes while it exists, on this thread and on the OpenMP threads that decode the
+/// scans. OPENMS_LOG_WARN writes to a per-thread stream that copies the sinks of the global warning stream when the
+/// thread first logs, so the capture is added to the global stream (for threads that have not logged yet) and to
+/// the stream of each thread of a parallel region (for threads that have).
+class WarningCapture
+{
+public:
+  WarningCapture()
+  {
+    getGlobalLogWarn().insert(text_);
+#ifdef _OPENMP
+    #pragma omp parallel
+#endif
+    getThreadLocalLogWarn().insert(text_);
+  }
+
+  ~WarningCapture()
+  {
+#ifdef _OPENMP
+    #pragma omp parallel
+#endif
+    getThreadLocalLogWarn().remove(text_);
+    getGlobalLogWarn().remove(text_);
+  }
+
+  /// Returns the lines written since the last call, sorted (threads log in any order) and each without its
+  /// colour codes (written to any stream other than a console) and its "While loading '<file>': " prefix.
+  /// A line without that exact prefix is kept whole.
+  std::string take(const std::string& file)
+  {
+    const std::string loading = "While loading '" + file + "': ";
+    const std::regex colour("\x1b\\[[0-9;]*m");
+    std::istringstream written(text_.str());
+    text_.str("");
+    std::vector<std::string> lines;
+    for (std::string line; std::getline(written, line);)
+    {
+      line = std::regex_replace(line, colour, "");
+      lines.push_back(line.compare(0, loading.size(), loading) == 0 ? line.substr(loading.size()) : line);
+    }
+    std::sort(lines.begin(), lines.end());
+    std::string joined;
+    for (const std::string& line : lines)
+    {
+      joined += line + "\n";
+    }
+    return joined;
+  }
+
+private:
+  std::ostringstream text_;
+};
+
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
@@ -674,7 +732,10 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
   TEST_STRING_EQUAL(result.getInstrument().getMetaValue("#comment").toString(), "Instrument Comment")
 
   // A peaksCount that disagrees with the decoded payload does not fail the file: each such scan keeps the
-  // pairs that are both declared and decoded (all decoded pairs for a negative count), and a warning is logged.
+  // pairs that are both declared and decoded (all decoded pairs for a count that is negative or outside the
+  // Int range), and one warning names the file, the scan, the declared text and the decoded length. Every
+  // case has its own scan numbers, so LogStream's suppression of a repeated line cannot hide a warning.
+  WarningCapture warnings;
   const std::string one_pair = "QvAAAELIAAA=";                     // (120, 100)
   const std::string two_pairs = "QvAAAELIAABDAgAAQ0gAAA==";        // (120, 100), (130, 200)
   const std::string three_values = "QvAAAELIAABDAgAA";             // (120, 100), 130
@@ -683,18 +744,22 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
     return "<scan num=\"" + num + "\" msLevel=\"1\" peaksCount=\"" + count + "\" retentionTime=\"PT" + num
            + "S\"><peaks precision=\"" + precision + "\" byteOrder=\"network\" contentType=\"m/z-int\">" + payload + "</peaks></scan>";
   };
+  std::string warned; // the warnings of the last loadScans, see WarningCapture::take
   auto loadScans = [&](const std::string& scans) {
     std::string malformed;
     NEW_TMP_FILE(malformed)
     std::ofstream(malformed) << prefix << scans << "</msRun></mzXML>";
     PeakMap loaded;
+    warnings.take(malformed);
     file.load(malformed, loaded);
+    warned = warnings.take(malformed);
     File::remove(malformed);
     return loaded;
   };
 
   // declared larger than decoded: only the decoded pair is read, nothing past the payload
-  PeakMap larger = loadScans(scan("1", "2", "32", one_pair));
+  PeakMap larger = loadScans(scan("11", "2", "32", one_pair));
+  TEST_STRING_EQUAL(warned, "Scan 'scan=11' declares peaksCount=\"2\", but its peaks decode to 2 values (1 m/z-intensity pairs). Reading 1 pairs.\n")
   TEST_EQUAL(larger.size(), 1)
   ABORT_IF(larger.size() != 1)
   TEST_EQUAL(larger[0].size(), 1)
@@ -703,7 +768,8 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
   TEST_REAL_SIMILAR(larger[0][0].getIntensity(), 100.0)
 
   // the same in 64-bit precision
-  PeakMap larger_64 = loadScans(scan("1", "3", "64", two_pairs_64));
+  PeakMap larger_64 = loadScans(scan("12", "3", "64", two_pairs_64));
+  TEST_STRING_EQUAL(warned, "Scan 'scan=12' declares peaksCount=\"3\", but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 2 pairs.\n")
   TEST_EQUAL(larger_64.size(), 1)
   ABORT_IF(larger_64.size() != 1)
   TEST_EQUAL(larger_64[0].size(), 2)
@@ -712,7 +778,8 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
   TEST_REAL_SIMILAR(larger_64[0][1].getIntensity(), 200.0)
 
   // an odd number of decoded values: the unpaired trailing m/z is not read together with an intensity past the end
-  PeakMap odd = loadScans(scan("1", "2", "32", three_values));
+  PeakMap odd = loadScans(scan("13", "2", "32", three_values));
+  TEST_STRING_EQUAL(warned, "Scan 'scan=13' declares peaksCount=\"2\", but its peaks decode to 3 values (1 m/z-intensity pairs). Reading 1 pairs.\n")
   TEST_EQUAL(odd.size(), 1)
   ABORT_IF(odd.size() != 1)
   TEST_EQUAL(odd[0].size(), 1)
@@ -720,7 +787,9 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
   TEST_REAL_SIMILAR(odd[0][0].getMZ(), 120.0)
 
   // declared smaller than decoded: only the declared pairs are read
-  PeakMap smaller = loadScans(scan("1", "1", "32", two_pairs) + scan("2", "0", "32", one_pair));
+  PeakMap smaller = loadScans(scan("14", "1", "32", two_pairs) + scan("15", "0", "32", one_pair));
+  TEST_STRING_EQUAL(warned, "Scan 'scan=14' declares peaksCount=\"1\", but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 1 pairs.\n"
+                            "Scan 'scan=15' declares peaksCount=\"0\", but its peaks decode to 2 values (1 m/z-intensity pairs). Reading 0 pairs.\n")
   TEST_EQUAL(smaller.size(), 2)
   ABORT_IF(smaller.size() != 2)
   TEST_EQUAL(smaller[0].size(), 1)
@@ -730,7 +799,8 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
   TEST_EQUAL(smaller[1].size(), 0)
 
   // negative declared: the decoded length is used (and the reserve stays bounded)
-  PeakMap negative = loadScans(scan("1", "-1", "32", two_pairs));
+  PeakMap negative = loadScans(scan("16", "-1", "32", two_pairs));
+  TEST_STRING_EQUAL(warned, "Scan 'scan=16' declares peaksCount=\"-1\" (not a valid count), but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 2 pairs.\n")
   TEST_EQUAL(negative.size(), 1)
   ABORT_IF(negative.size() != 1)
   TEST_EQUAL(negative[0].size(), 2)
@@ -739,18 +809,94 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
   TEST_REAL_SIMILAR(negative[0][1].getMZ(), 130.0)
   TEST_REAL_SIMILAR(negative[0][1].getIntensity(), 200.0)
 
-  // a bad scan does not affect a consistent scan next to it in the same file
-  PeakMap mixed = loadScans(scan("1", "2", "32", two_pairs) + scan("2", "5", "32", one_pair) + scan("3", "2", "32", two_pairs));
+  // a bad scan does not affect a consistent scan next to it in the same file, and only the bad scan is reported
+  PeakMap mixed = loadScans(scan("17", "2", "32", two_pairs) + scan("18", "5", "32", one_pair) + scan("19", "2", "32", two_pairs));
+  TEST_STRING_EQUAL(warned, "Scan 'scan=18' declares peaksCount=\"5\", but its peaks decode to 2 values (1 m/z-intensity pairs). Reading 1 pairs.\n")
   TEST_EQUAL(mixed.size(), 3)
   ABORT_IF(mixed.size() != 3)
   TEST_EQUAL(mixed[0].size(), 2)
   TEST_EQUAL(mixed[1].size(), 1)
   TEST_EQUAL(mixed[2].size(), 2)
   ABORT_IF(mixed[0].size() != 2 || mixed[1].size() != 1 || mixed[2].size() != 2)
-  TEST_STRING_EQUAL(mixed[1].getNativeID(), "scan=2")
+  TEST_STRING_EQUAL(mixed[1].getNativeID(), "scan=18")
   TEST_REAL_SIMILAR(mixed[1][0].getMZ(), 120.0)
   TEST_REAL_SIMILAR(mixed[2][1].getMZ(), 130.0)
   TEST_REAL_SIMILAR(mixed[2][1].getIntensity(), 200.0)
+
+  // consistent scans log nothing: 32 and 64 bit, an empty payload with peaksCount 0, and a count with the
+  // surrounding whitespace and leading '+' that the attribute parser accepts
+  PeakMap consistent = loadScans(scan("20", "2", "32", two_pairs) + scan("21", "2", "64", two_pairs_64)
+                                 + scan("22", "0", "32", "") + scan("23", " +2 ", "32", two_pairs));
+  TEST_STRING_EQUAL(warned, "")
+  TEST_EQUAL(consistent.size(), 4)
+  ABORT_IF(consistent.size() != 4)
+  TEST_EQUAL(consistent[0].size(), 2)
+  TEST_EQUAL(consistent[1].size(), 2)
+  TEST_EQUAL(consistent[2].size(), 0)
+  TEST_EQUAL(consistent[3].size(), 2)
+
+  // an empty payload with a nonzero or negative count is reported like a whitespace-only payload
+  PeakMap empty = loadScans(scan("24", "5", "32", "") + scan("25", "5", "32", "\n  ") + scan("26", "-1", "32", "")
+                            + scan("27", "4294967296", "64", ""));
+  TEST_STRING_EQUAL(warned, "Scan 'scan=24' declares peaksCount=\"5\", but its peaks decode to 0 values (0 m/z-intensity pairs). Reading 0 pairs.\n"
+                            "Scan 'scan=25' declares peaksCount=\"5\", but its peaks decode to 0 values (0 m/z-intensity pairs). Reading 0 pairs.\n"
+                            "Scan 'scan=26' declares peaksCount=\"-1\" (not a valid count), but its peaks decode to 0 values (0 m/z-intensity pairs). Reading 0 pairs.\n"
+                            "Scan 'scan=27' declares peaksCount=\"4294967296\" (not a valid count), but its peaks decode to 0 values (0 m/z-intensity pairs). Reading 0 pairs.\n")
+  TEST_EQUAL(empty.size(), 4)
+  ABORT_IF(empty.size() != 4)
+  TEST_EQUAL(empty[0].size() + empty[1].size() + empty[2].size() + empty[3].size(), 0)
+
+  // <peaks> before <precursorMz> (not schema order) is decoded when the precursor starts; its count is checked
+  // once there, not a second time against the payload that decoding has already consumed
+  auto peaksFirst = [](const std::string& num, const std::string& count, const std::string& payload) {
+    return "<scan num=\"" + num + "\" msLevel=\"2\" peaksCount=\"" + count + "\" retentionTime=\"PT" + num
+           + "S\"><peaks precision=\"32\" byteOrder=\"network\" contentType=\"m/z-int\">" + payload
+           + "</peaks><precursorMz precursorIntensity=\"5\">500.5</precursorMz></scan>";
+  };
+  PeakMap peaks_first = loadScans(peaksFirst("28", "1", one_pair) + peaksFirst("29", "3", one_pair));
+  TEST_STRING_EQUAL(warned, "Scan 'scan=29' declares peaksCount=\"3\", but its peaks decode to 2 values (1 m/z-intensity pairs). Reading 1 pairs.\n")
+  TEST_EQUAL(peaks_first.size(), 2)
+  ABORT_IF(peaks_first.size() != 2)
+  TEST_EQUAL(peaks_first[0].size(), 1)
+  TEST_EQUAL(peaks_first[1].size(), 1)
+  TEST_EQUAL(peaks_first[0].getPrecursors().size(), 1)
+  ABORT_IF(peaks_first[0].getPrecursors().size() != 1)
+  TEST_REAL_SIMILAR(peaks_first[0].getPrecursors()[0].getMZ(), 500.5)
+
+  // a count outside the Int range is not wrapped into a different count: like a negative count, it reads
+  // the decoded pairs, and the warning shows the text of the file. INT_MAX and INT_MIN are still counts.
+  PeakMap out_of_range = loadScans(scan("30", "4294967296", "32", two_pairs) + scan("31", "4294967295", "32", two_pairs)
+                                   + scan("32", "99999999999", "32", two_pairs) + scan("33", "2147483648", "32", two_pairs)
+                                   + scan("34", "-2147483649", "32", two_pairs) + scan("35", "2147483647", "32", two_pairs)
+                                   + scan("36", "-2147483648", "32", two_pairs));
+  TEST_STRING_EQUAL(warned, "Scan 'scan=30' declares peaksCount=\"4294967296\" (not a valid count), but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 2 pairs.\n"
+                            "Scan 'scan=31' declares peaksCount=\"4294967295\" (not a valid count), but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 2 pairs.\n"
+                            "Scan 'scan=32' declares peaksCount=\"99999999999\" (not a valid count), but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 2 pairs.\n"
+                            "Scan 'scan=33' declares peaksCount=\"2147483648\" (not a valid count), but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 2 pairs.\n"
+                            "Scan 'scan=34' declares peaksCount=\"-2147483649\" (not a valid count), but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 2 pairs.\n"
+                            "Scan 'scan=35' declares peaksCount=\"2147483647\", but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 2 pairs.\n"
+                            "Scan 'scan=36' declares peaksCount=\"-2147483648\" (not a valid count), but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 2 pairs.\n")
+  TEST_EQUAL(out_of_range.size(), 7)
+  ABORT_IF(out_of_range.size() != 7)
+  for (const MSSpectrum& spectrum : out_of_range)
+  {
+    TEST_EQUAL(spectrum.size(), 2)
+  }
+
+  // text that is not an integer still fails the load
+  std::string not_a_count;
+  NEW_TMP_FILE(not_a_count)
+  std::ofstream(not_a_count) << prefix << scan("37", "2x", "32", two_pairs) << "</msRun></mzXML>";
+  PeakMap not_loaded;
+  TEST_EXCEPTION(Exception::ParseError, file.load(not_a_count, not_loaded))
+  File::remove(not_a_count);
+
+  // a count beyond the 64-bit range is outside the Int range too
+  PeakMap beyond_64 = loadScans(scan("38", "99999999999999999999", "32", two_pairs));
+  TEST_STRING_EQUAL(warned, "Scan 'scan=38' declares peaksCount=\"99999999999999999999\" (not a valid count), but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 2 pairs.\n")
+  TEST_EQUAL(beyond_64.size(), 1)
+  ABORT_IF(beyond_64.size() != 1)
+  TEST_EQUAL(beyond_64[0].size(), 2)
 
   // Deliberately incomplete reader fixtures are excluded from writer-schema checks.
   File::remove(input);

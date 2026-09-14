@@ -117,13 +117,17 @@ protected:
       */
       struct SpectrumData
       {
-        /// peaksCount as declared in the file (negative in a malformed file); the peaks are bounded by the decoded payload
+        /// peaksCount as declared in the file, or -1 if it is outside the Int range (negative only in a malformed file); the peaks are bounded by the decoded payload
         Int peak_count_;
+        /// peaksCount as written in the file (reported when it disagrees with the decoded payload)
+        std::string peak_count_text_;
         std::string precision_;
         std::string compressionType_;
         std::string char_rest_;
         SpectrumType spectrum;
         bool skip_data;
+        /// true once the payload has been decoded (a \<precursorMz\> after \<peaks\> decodes it early)
+        bool peaks_decoded_ = false;
       };
 
       /// Vector of spectrum data stored for later parallel processing

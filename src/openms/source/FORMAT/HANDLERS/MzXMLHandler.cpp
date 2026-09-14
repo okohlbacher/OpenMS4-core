@@ -14,11 +14,37 @@
 
 #include <algorithm>
 #include <atomic>
+#include <charconv>
 #include <stack>
+#include <system_error>
 #include <xercesc/util/XMLString.hpp>
 
 namespace OpenMS::Internal
 {
+    namespace
+    {
+      /// How the text of an integer attribute converts to an Int
+      enum class IntText { IN_RANGE, OUT_OF_RANGE, NOT_AN_INTEGER };
+
+      /// Converts @p text to an Int like XMLHandler::attributeAsInt_ does (surrounding XML whitespace and a leading
+      /// '+' are accepted), but reports an integer outside the Int range instead of wrapping it into another value.
+      /// @p value is only set for IntText::IN_RANGE.
+      IntText parseIntAttribute(const std::string& text, Int& value)
+      {
+        auto is_space = [](const char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; };
+        const char* first = text.data();
+        const char* last = text.data() + text.size();
+        while (first != last && is_space(*first)) ++first;
+        while (last != first && is_space(*(last - 1))) --last;
+        if (last - first > 1 && *first == '+' && first[1] != '-') ++first; // from_chars rejects a '+' sign
+        const auto [end, ec] = std::from_chars(first, last, value);
+        if (ec == std::errc::invalid_argument || end != last)
+        {
+          return IntText::NOT_AN_INTEGER;
+        }
+        return ec == std::errc::result_out_of_range ? IntText::OUT_OF_RANGE : IntText::IN_RANGE;
+      }
+    }
 
     // class holding the byte offsets to '<scan>' tags in the mzXML file; req. to create the index at the end
     struct IndexPos
@@ -306,7 +332,17 @@ namespace OpenMS::Internal
         spectrum_data_.back().spectrum.setMSLevel(ms_level);
         spectrum_data_.back().spectrum.setRT(retention_time);
         spectrum_data_.back().spectrum.setNativeID(std::string("scan=") + attributeAsString_(attributes, s_num_));
-        const Int peak_count = attributeAsInt_(attributes, s_peakscount_);
+        // peaksCount is kept as written for the mismatch warning in doPopulateSpectraWithData_. attributeAsInt_
+        // would wrap a count outside the Int range into an unrelated count (4294967296 into 0), so such a count
+        // is stored as -1 and, like a negative count, lets the decoded payload decide how many pairs are read.
+        std::string& peak_count_text = spectrum_data_.back().peak_count_text_;
+        peak_count_text = attributeAsString_(attributes, s_peakscount_);
+        Int peak_count = -1;
+        if (parseIntAttribute(peak_count_text, peak_count) == IntText::NOT_AN_INTEGER)
+        {
+          fatalError(LOAD, std::string("Scan '") + spectrum_data_.back().spectrum.getNativeID() + "' declares peaksCount=\""
+                           + peak_count_text + "\", which is not an integer.");
+        }
         spectrum_data_.back().peak_count_ = peak_count;
         // peaksCount is only compared with the decoded payload later (doPopulateSpectraWithData_), so it must
         // not size an allocation directly: a corrupt or negative count must not abort the load with OutOfMemory.
@@ -1191,20 +1227,20 @@ namespace OpenMS::Internal
       typedef SpectrumType::PeakType PeakType;
 
       //std::cout << "reading scan" << "\n";
-      if (spectrum_data.char_rest_.empty()) // no peaks
+      // A <precursorMz> after <peaks> decodes the payload early (onStartElement). The count was checked then,
+      // so the payload that decoding consumed must not be reported again as missing.
+      if (spectrum_data.peaks_decoded_)
       {
         return;
       }
-
-      //remove whitespaces from binary data
-      //this should not be necessary, but line breaks inside the base64 data are unfortunately no exception
-      StringUtils::removeWhitespaces(spectrum_data.char_rest_);
+      spectrum_data.peaks_decoded_ = true;
 
       // peaksCount is read from the file and may disagree with the payload, so the loops below must be
       // bounded by the decoded length at runtime (an assert is compiled out of release builds, which then
       // read past a payload that is shorter than declared). A disagreeing scan does not fail the whole
       // file: it keeps the pairs that are both declared and decoded (all decoded pairs if peaksCount is
-      // negative), and the mismatch is logged with the scan and both counts.
+      // negative or outside the Int range), and the mismatch is logged with the scan, the declared text
+      // and the decoded length.
       auto boundDecodedPairs = [&](const Size decoded_values) -> Size
       {
         const Size decoded_pairs = decoded_values / 2;
@@ -1216,10 +1252,23 @@ namespace OpenMS::Internal
         const Size loaded_pairs = declared_pairs < 0 ? decoded_pairs : std::min(decoded_pairs, static_cast<Size>(declared_pairs));
         // warning() only logs at debug level in release builds, but a truncated or inconsistent scan must be visible
         OPENMS_LOG_WARN << "While loading '" << file_ << "': Scan '" << spectrum_data.spectrum.getNativeID()
-                        << "' declares peaksCount=" << declared_pairs << ", but its peaks decode to " << decoded_values
-                        << " values (" << decoded_pairs << " m/z-intensity pairs). Reading " << loaded_pairs << " pairs." << std::endl;
+                        << "' declares peaksCount=\"" << spectrum_data.peak_count_text_ << "\""
+                        << (declared_pairs < 0 ? " (not a valid count)" : "") << ", but its peaks decode to "
+                        << decoded_values << " values (" << decoded_pairs << " m/z-intensity pairs). Reading "
+                        << loaded_pairs << " pairs." << std::endl;
         return loaded_pairs;
       };
+
+      if (spectrum_data.char_rest_.empty()) // no peaks
+      {
+        // a nonzero or negative count is reported like it is for a whitespace-only payload (a lost payload)
+        boundDecodedPairs(0);
+        return;
+      }
+
+      //remove whitespaces from binary data
+      //this should not be necessary, but line breaks inside the base64 data are unfortunately no exception
+      StringUtils::removeWhitespaces(spectrum_data.char_rest_);
 
       if (spectrum_data.precision_ == "64")
       {
