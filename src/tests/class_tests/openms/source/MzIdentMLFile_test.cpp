@@ -159,6 +159,25 @@ START_SECTION(([EXTRA] read mzIdentML Modification without the optional location
 }
 END_SECTION
 
+START_SECTION(([EXTRA] read a Peptide with an empty PeptideSequence element))
+{
+  // An empty <PeptideSequence/> has no text child node. The reader used to dereference that missing node and crash.
+  // The Peptide must now be reported as unreadable, so its identification gets an empty sequence.
+  std::vector<ProteinIdentification> protein_ids;
+  PeptideIdentificationList peptide_ids;
+  MzIdentMLFile().load(OPENMS_GET_TEST_DATA_PATH("MzIdentMLFile_empty_peptide_sequence.mzid"), protein_ids, peptide_ids);
+
+  ABORT_IF(peptide_ids.size() != 2)
+  for (Size i = 0; i < peptide_ids.size(); ++i)
+  {
+    ABORT_IF(peptide_ids[i].getHits().size() != 1)
+  }
+  TEST_TRUE(peptide_ids[0].getHits()[0].getSequence().empty())
+  // control: a regular PeptideSequence in the same file is still read
+  TEST_EQUAL(peptide_ids[1].getHits()[0].getSequence().toString(), "PEPTIDEK")
+}
+END_SECTION
+
 START_SECTION(void store(std::string filename, const std::vector<ProteinIdentification>& protein_ids, const PeptideIdentificationList& peptide_ids) )
 {
   //store and load data from various sources, starting with idxml, contents already checked above, so checking integrity of the data over repeated r/w

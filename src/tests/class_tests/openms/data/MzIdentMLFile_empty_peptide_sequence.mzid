@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MzIdentML xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://psidev.info/psi/pi/mzIdentML/1.1 http://psi-pi.googlecode.com/svn/trunk/schema/mzIdentML1.1.0.xsd"
+	xmlns="http://psidev.info/psi/pi/mzIdentML/1.1"
+	version="1.1.0"
+	id="OpenMS_empty_peptide_sequence"
+	creationDate="2014-11-02T22:32:45">
+<cvList>
+ 	<cv id="PSI-MS" fullName="Proteomics Standards Initiative Mass Spectrometry Vocabularies"  uri="http://psidev.cvs.sourceforge.net/viewvc/*checkout*/psidev/psi/psi-ms/mzML/controlledVocabulary/psi-ms.obo" version="3.15.0"></cv>
+ 	<cv id="UNIMOD" fullName="UNIMOD"        uri="http://www.unimod.org/obo/unimod.obo"></cv>
+ 	<cv id="UO"     fullName="UNIT-ONTOLOGY" uri="http://obo.cvs.sourceforge.net/*checkout*/obo/obo/ontology/phenotype/unit.obo"></cv>
+</cvList>
+<AnalysisSoftwareList>
+	<AnalysisSoftware version="2.1.0" name="Mascot" id="SOF_1">
+		<SoftwareName>
+ 			<cvParam accession="MS:1001207" cvRef="PSI-MS" name="Mascot"/>
+		</SoftwareName>
+	</AnalysisSoftware>
+</AnalysisSoftwareList>
+<SequenceCollection>
+	<DBSequence accession="PROT1" searchDatabase_ref="DB_1" length="34" id="DBS_1">
+	<Seq>PEPTIDEKPEPTIDEMPEPTIDERPEPTIDECKR</Seq>
+		<cvParam accession="MS:1001088" cvRef="PSI-MS" name="protein description" value="PROT1"/></DBSequence>
+	<!-- Empty PeptideSequence element: it has no text child node (the reader must not crash; the Peptide gets an empty sequence) -->
+	<Peptide id="PEP_empty">
+		<PeptideSequence/>
+	</Peptide>
+	<!-- Control: a regular PeptideSequence is still read -->
+	<Peptide id="PEP_control">
+		<PeptideSequence>PEPTIDEK</PeptideSequence>
+	</Peptide>
+	<PeptideEvidence id="PEV_empty" peptide_ref="PEP_empty" dBSequence_ref="DBS_1" post="P" pre="K" isDecoy="0"/>
+	<PeptideEvidence id="PEV_control" peptide_ref="PEP_control" dBSequence_ref="DBS_1" post="P" pre="K" isDecoy="0"/>
+</SequenceCollection>
+<AnalysisCollection>
+	<SpectrumIdentification id="SI_1" spectrumIdentificationProtocol_ref="SIP_1" spectrumIdentificationList_ref="SIL_1" activityDate="2006-01-12T12:13:14">
+		<InputSpectra spectraData_ref="SDAT_1"/>
+		<SearchDatabaseRef searchDatabase_ref="DB_1"/>
+	</SpectrumIdentification>
+</AnalysisCollection>
+<AnalysisProtocolCollection>
+	<SpectrumIdentificationProtocol id="SIP_1" analysisSoftware_ref="SOF_1">
+		<SearchType>
+			<cvParam accession="MS:1001083" cvRef="PSI-MS" name="ms-ms search"/>
+		</SearchType>
+		<AdditionalSearchParams>
+			<userParam name="charges" unitName="xsd:string" value="+1, +2"/>
+		</AdditionalSearchParams>
+		<Enzymes independent="false">
+			<Enzyme missedCleavages="1" id="ENZ_1">
+				<EnzymeName>
+					<cvParam accession="MS:1001251" cvRef="PSI-MS" name="Trypsin"/>
+				</EnzymeName>
+			</Enzyme>
+		</Enzymes>
+		<Threshold>
+			<cvParam accession="MS:1001494" cvRef="PSI-MS" name="no threshold"/>
+		</Threshold>
+	</SpectrumIdentificationProtocol>
+</AnalysisProtocolCollection>
+<DataCollection>
+	<Inputs>
+		<SearchDatabase location="MSDB" version="1.2.3" id="DB_1" >
+			<FileFormat>
+ 				<cvParam accession="MS:1001348" cvRef="PSI-MS" name="FASTA format"/>
+			</FileFormat>
+			<DatabaseName>
+				<userParam name="MSDB"/>
+			</DatabaseName>
+		</SearchDatabase>
+		<SpectraData location="UNKNOWN" id="SDAT_1">
+			<FileFormat>
+				<cvParam accession="MS:1000584" cvRef="PSI-MS" name="mzML format"/>
+			</FileFormat>
+			<SpectrumIDFormat>
+ 				<cvParam accession="MS:1000774" cvRef="PSI-MS" name="multiple peak list nativeID format"/>
+			</SpectrumIDFormat>
+		</SpectraData>
+	</Inputs>
+	<AnalysisData>
+		<SpectrumIdentificationList id="SIL_1">
+			<SpectrumIdentificationResult spectraData_ref="SDAT_1" spectrumID="index=1" id="SIR_1">
+				<SpectrumIdentificationItem passThreshold="1" rank="1" peptide_ref="PEP_empty" calculatedMassToCharge="500.0" experimentalMassToCharge="500.0" chargeState="2" id="SII_1">
+					<PeptideEvidenceRef peptideEvidence_ref="PEV_empty"/>
+					<cvParam accession="MS:1002354" cvRef="PSI-MS" name="PSM-level q-value" value="0.01"/>
+				</SpectrumIdentificationItem>
+				<cvParam accession="MS:1000894" cvRef="PSI-MS" name="retention time" value="10.0"/>
+			</SpectrumIdentificationResult>
+			<SpectrumIdentificationResult spectraData_ref="SDAT_1" spectrumID="index=2" id="SIR_2">
+				<SpectrumIdentificationItem passThreshold="1" rank="1" peptide_ref="PEP_control" calculatedMassToCharge="500.0" experimentalMassToCharge="500.0" chargeState="2" id="SII_2">
+					<PeptideEvidenceRef peptideEvidence_ref="PEV_control"/>
+					<cvParam accession="MS:1002354" cvRef="PSI-MS" name="PSM-level q-value" value="0.02"/>
+				</SpectrumIdentificationItem>
+				<cvParam accession="MS:1000894" cvRef="PSI-MS" name="retention time" value="20.0"/>
+			</SpectrumIdentificationResult>
+		</SpectrumIdentificationList>
+	</AnalysisData>
+</DataCollection>
+</MzIdentML>
