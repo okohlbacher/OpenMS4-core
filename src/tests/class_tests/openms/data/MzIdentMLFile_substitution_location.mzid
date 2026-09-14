@@ -41,10 +41,22 @@
 		<PeptideSequence>PEPTIDEK</PeptideSequence>
 		<SubstitutionModification location="9" originalResidue="K" replacementResidue="R"/>
 	</Peptide>
+	<!-- Valid SubstitutionModification at the first residue (location 1): P becomes A, giving AEPTIDEK -->
+	<Peptide id="PEP_sub_first">
+		<PeptideSequence>PEPTIDEK</PeptideSequence>
+		<SubstitutionModification location="1" originalResidue="P" replacementResidue="A"/>
+	</Peptide>
+	<!-- Valid SubstitutionModification at the last residue (location 8, the sequence length): K becomes R, giving PEPTIDER -->
+	<Peptide id="PEP_sub_last">
+		<PeptideSequence>PEPTIDEK</PeptideSequence>
+		<SubstitutionModification location="8" originalResidue="K" replacementResidue="R"/>
+	</Peptide>
 	<PeptideEvidence id="PEV_sub_valid" peptide_ref="PEP_sub_valid" dBSequence_ref="DBS_1" post="P" pre="K" isDecoy="0"/>
 	<PeptideEvidence id="PEV_sub_zero" peptide_ref="PEP_sub_zero" dBSequence_ref="DBS_1" post="P" pre="K" isDecoy="0"/>
 	<PeptideEvidence id="PEV_sub_negative" peptide_ref="PEP_sub_negative" dBSequence_ref="DBS_1" post="P" pre="K" isDecoy="0"/>
 	<PeptideEvidence id="PEV_sub_beyond" peptide_ref="PEP_sub_beyond" dBSequence_ref="DBS_1" post="P" pre="K" isDecoy="0"/>
+	<PeptideEvidence id="PEV_sub_first" peptide_ref="PEP_sub_first" dBSequence_ref="DBS_1" post="P" pre="K" isDecoy="0"/>
+	<PeptideEvidence id="PEV_sub_last" peptide_ref="PEP_sub_last" dBSequence_ref="DBS_1" post="P" pre="K" isDecoy="0"/>
 </SequenceCollection>
 <AnalysisCollection>
 	<SpectrumIdentification id="SI_1" spectrumIdentificationProtocol_ref="SIP_1" spectrumIdentificationList_ref="SIL_1" activityDate="2006-01-12T12:13:14">
@@ -120,6 +132,20 @@
 					<cvParam accession="MS:1002354" cvRef="PSI-MS" name="PSM-level q-value" value="0.04"/>
 				</SpectrumIdentificationItem>
 				<cvParam accession="MS:1000894" cvRef="PSI-MS" name="retention time" value="40.0"/>
+			</SpectrumIdentificationResult>
+			<SpectrumIdentificationResult spectraData_ref="SDAT_1" spectrumID="index=5" id="SIR_5">
+				<SpectrumIdentificationItem passThreshold="1" rank="1" peptide_ref="PEP_sub_first" calculatedMassToCharge="500.0" experimentalMassToCharge="500.0" chargeState="2" id="SII_5">
+					<PeptideEvidenceRef peptideEvidence_ref="PEV_sub_first"/>
+					<cvParam accession="MS:1002354" cvRef="PSI-MS" name="PSM-level q-value" value="0.05"/>
+				</SpectrumIdentificationItem>
+				<cvParam accession="MS:1000894" cvRef="PSI-MS" name="retention time" value="50.0"/>
+			</SpectrumIdentificationResult>
+			<SpectrumIdentificationResult spectraData_ref="SDAT_1" spectrumID="index=6" id="SIR_6">
+				<SpectrumIdentificationItem passThreshold="1" rank="1" peptide_ref="PEP_sub_last" calculatedMassToCharge="500.0" experimentalMassToCharge="500.0" chargeState="2" id="SII_6">
+					<PeptideEvidenceRef peptideEvidence_ref="PEV_sub_last"/>
+					<cvParam accession="MS:1002354" cvRef="PSI-MS" name="PSM-level q-value" value="0.06"/>
+				</SpectrumIdentificationItem>
+				<cvParam accession="MS:1000894" cvRef="PSI-MS" name="retention time" value="60.0"/>
 			</SpectrumIdentificationResult>
 		</SpectrumIdentificationList>
 	</AnalysisData>

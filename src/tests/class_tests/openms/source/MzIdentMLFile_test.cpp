@@ -183,12 +183,13 @@ START_SECTION(([EXTRA] read SubstitutionModification locations))
 {
   // 'location' is the 1-based position of the substituted residue. A location of 0, a negative location or one past
   // the end of the sequence used to be written outside of the sequence string. Such a Peptide must now be reported
-  // as unreadable (empty sequence), while a valid substitution is applied at its location.
+  // as unreadable (empty sequence), while a valid substitution is applied at its location, including the first and
+  // the last residue.
   std::vector<ProteinIdentification> protein_ids;
   PeptideIdentificationList peptide_ids;
   MzIdentMLFile().load(OPENMS_GET_TEST_DATA_PATH("MzIdentMLFile_substitution_location.mzid"), protein_ids, peptide_ids);
 
-  ABORT_IF(peptide_ids.size() != 4)
+  ABORT_IF(peptide_ids.size() != 6)
   // ABORT_IF leaves only the innermost loop, so test all identifications first and abort outside of any loop
   const bool one_hit_each = std::all_of(peptide_ids.begin(), peptide_ids.end(),
     [](const PeptideIdentification& id) { return id.getHits().size() == 1; });
@@ -201,6 +202,10 @@ START_SECTION(([EXTRA] read SubstitutionModification locations))
   TEST_TRUE(peptide_ids[2].getHits()[0].getSequence().empty())
   // location 9 on the 8 residues of PEPTIDEK
   TEST_TRUE(peptide_ids[3].getHits()[0].getSequence().empty())
+  // location 1, the first residue
+  TEST_EQUAL(peptide_ids[4].getHits()[0].getSequence().toString(), "AEPTIDEK")
+  // location 8, the last residue of PEPTIDEK
+  TEST_EQUAL(peptide_ids[5].getHits()[0].getSequence().toString(), "PEPTIDER")
 }
 END_SECTION
 
