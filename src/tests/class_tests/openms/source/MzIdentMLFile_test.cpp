@@ -17,6 +17,7 @@
 #include <OpenMS/CHEMISTRY/CrossLinksDB.h>
 #include <OpenMS/CONCEPT/Constants.h>
 
+#include <algorithm>
 
 using namespace OpenMS;
 using namespace std;
@@ -122,10 +123,10 @@ START_SECTION(([EXTRA] read mzIdentML Modification without the optional location
   MzIdentMLFile().load(OPENMS_GET_TEST_DATA_PATH("MzIdentMLFile_missing_mod_location.mzid"), protein_ids, peptide_ids);
 
   ABORT_IF(peptide_ids.size() != 5)
-  for (Size i = 0; i < peptide_ids.size(); ++i)
-  {
-    ABORT_IF(peptide_ids[i].getHits().empty())
-  }
+  // ABORT_IF leaves only the innermost loop, so test all identifications first and abort outside of any loop
+  const bool all_have_hits = std::none_of(peptide_ids.begin(), peptide_ids.end(),
+    [](const PeptideIdentification& id) { return id.getHits().empty(); });
+  ABORT_IF(!all_have_hits)
 
   // 1) N-terminal Acetyl without 'location' -> inferred as N-terminal
   const AASequence& acetyl_seq = peptide_ids[0].getHits()[0].getSequence();
@@ -168,10 +169,10 @@ START_SECTION(([EXTRA] read a Peptide with an empty PeptideSequence element))
   MzIdentMLFile().load(OPENMS_GET_TEST_DATA_PATH("MzIdentMLFile_empty_peptide_sequence.mzid"), protein_ids, peptide_ids);
 
   ABORT_IF(peptide_ids.size() != 2)
-  for (Size i = 0; i < peptide_ids.size(); ++i)
-  {
-    ABORT_IF(peptide_ids[i].getHits().size() != 1)
-  }
+  // ABORT_IF leaves only the innermost loop, so test all identifications first and abort outside of any loop
+  const bool one_hit_each = std::all_of(peptide_ids.begin(), peptide_ids.end(),
+    [](const PeptideIdentification& id) { return id.getHits().size() == 1; });
+  ABORT_IF(!one_hit_each)
   TEST_TRUE(peptide_ids[0].getHits()[0].getSequence().empty())
   // control: a regular PeptideSequence in the same file is still read
   TEST_EQUAL(peptide_ids[1].getHits()[0].getSequence().toString(), "PEPTIDEK")
@@ -188,10 +189,10 @@ START_SECTION(([EXTRA] read SubstitutionModification locations))
   MzIdentMLFile().load(OPENMS_GET_TEST_DATA_PATH("MzIdentMLFile_substitution_location.mzid"), protein_ids, peptide_ids);
 
   ABORT_IF(peptide_ids.size() != 4)
-  for (Size i = 0; i < peptide_ids.size(); ++i)
-  {
-    ABORT_IF(peptide_ids[i].getHits().size() != 1)
-  }
+  // ABORT_IF leaves only the innermost loop, so test all identifications first and abort outside of any loop
+  const bool one_hit_each = std::all_of(peptide_ids.begin(), peptide_ids.end(),
+    [](const PeptideIdentification& id) { return id.getHits().size() == 1; });
+  ABORT_IF(!one_hit_each)
   // location 3 of PEPTIDEK: the second P becomes A, not the first one
   TEST_EQUAL(peptide_ids[0].getHits()[0].getSequence().toString(), "PEATIDEK")
   // location 0
