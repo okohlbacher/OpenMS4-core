@@ -61,9 +61,9 @@ std::string loadWithListCount(const std::string& original, const std::string& li
   {
     MzMLFile().loadBuffer(buffer, loaded);
   }
-  catch (const std::exception& e)
+  catch (...) // OpenMS' OutOfMemory is a std::exception twice over, which 'catch (const std::exception&)' misses
   {
-    return input + ": the load threw '" + e.what() + "'";
+    return input + ": the load threw " + TEST::describeCaughtException();
   }
   return "";
 }
@@ -1744,9 +1744,9 @@ START_SECTION(([EXTRA] numpress data arrays are bounded by their decoded length)
         decoder.domParseChromatogram(xml, record);
       }
     }
-    catch (const std::exception& e)
+    catch (...)
     {
-      return "defaultArrayLength " + length + ": the decoder threw '" + e.what() + "'";
+      return "defaultArrayLength " + length + ": the decoder threw " + TEST::describeCaughtException();
     }
     return std::string();
   };
