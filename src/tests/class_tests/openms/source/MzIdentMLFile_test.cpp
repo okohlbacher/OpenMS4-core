@@ -160,15 +160,17 @@ START_SECTION(([EXTRA] read mzIdentML Modification without the optional location
 }
 END_SECTION
 
-START_SECTION(([EXTRA] read a Peptide with an empty PeptideSequence element))
+START_SECTION(([EXTRA] read empty, CDATA and commented PeptideSequence elements))
 {
   // An empty <PeptideSequence/> has no text child node. The reader used to dereference that missing node and crash.
   // The Peptide must now be reported as unreadable, so its identification gets an empty sequence.
+  // A sequence in a CDATA section or after a comment used to be rejected, and a comment inside the sequence used to
+  // truncate it; comments must now be skipped and CDATA read as text.
   std::vector<ProteinIdentification> protein_ids;
   PeptideIdentificationList peptide_ids;
   MzIdentMLFile().load(OPENMS_GET_TEST_DATA_PATH("MzIdentMLFile_empty_peptide_sequence.mzid"), protein_ids, peptide_ids);
 
-  ABORT_IF(peptide_ids.size() != 2)
+  ABORT_IF(peptide_ids.size() != 5)
   // ABORT_IF leaves only the innermost loop, so test all identifications first and abort outside of any loop
   const bool one_hit_each = std::all_of(peptide_ids.begin(), peptide_ids.end(),
     [](const PeptideIdentification& id) { return id.getHits().size() == 1; });
@@ -176,6 +178,12 @@ START_SECTION(([EXTRA] read a Peptide with an empty PeptideSequence element))
   TEST_TRUE(peptide_ids[0].getHits()[0].getSequence().empty())
   // control: a regular PeptideSequence in the same file is still read
   TEST_EQUAL(peptide_ids[1].getHits()[0].getSequence().toString(), "PEPTIDEK")
+  // <PeptideSequence><![CDATA[PEPTIDEM]]></PeptideSequence>
+  TEST_EQUAL(peptide_ids[2].getHits()[0].getSequence().toString(), "PEPTIDEM")
+  // <PeptideSequence><!-- leading comment -->PEPTIDER</PeptideSequence>
+  TEST_EQUAL(peptide_ids[3].getHits()[0].getSequence().toString(), "PEPTIDER")
+  // <PeptideSequence>PEP<!-- inner comment -->TIDECK</PeptideSequence>
+  TEST_EQUAL(peptide_ids[4].getHits()[0].getSequence().toString(), "PEPTIDECK")
 }
 END_SECTION
 
