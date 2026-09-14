@@ -30,13 +30,13 @@ namespace OpenMS::Internal
     MascotXMLHandler::~MascotXMLHandler()
     = default;
 
-    void MascotXMLHandler::checkQueryNumber_(Int number, const std::string& source) const
+    void MascotXMLHandler::checkQueryNumber_(Int number, const std::string& element, const char* attribute) const
     {
       // query numbers are 1-based indices into the <NumQueries> entries: check before subtracting, so that 0 or a
       // negative number cannot wrap around and a number beyond <NumQueries> is never used as an index
       if (number <= 0)
       {
-        fatalError(LOAD, "Invalid " + source + " '" + std::to_string(number) + "': query numbers start at 1.");
+        fatalError(LOAD, "Invalid <" + element + "> '" + attribute + "' attribute '" + std::to_string(number) + "': query numbers start at 1.");
       }
       if (!num_queries_read_)
       {
@@ -44,30 +44,53 @@ namespace OpenMS::Internal
       }
       if (static_cast<Size>(number) > id_data_.size())
       {
-        fatalError(LOAD, source + " '" + std::to_string(number) + "' exceeds <NumQueries> (" + std::to_string(id_data_.size()) + ").");
+        fatalError(LOAD, "<" + element + "> '" + attribute + "' attribute '" + std::to_string(number) + "' exceeds <NumQueries> (" + std::to_string(id_data_.size()) + ").");
       }
+    }
+
+    MascotXMLHandler::OpenPeptideElement& MascotXMLHandler::openPeptide_()
+    {
+      // onEndElement() ignores pep_* elements outside of peptide elements, and every closing peptide tag has an
+      // opening one, so this is not expected to fail; it is checked anyway, as back() on an empty vector is undefined
+      if (open_peptides_.empty())
+      {
+        fatalError(LOAD, "<" + tag_ + "> element is not inside a <peptide>, <u_peptide> or <q_peptide> element.");
+      }
+      return open_peptides_.back();
     }
 
     PeptideIdentification& MascotXMLHandler::peptideIdentification_()
     {
-      // the index was checked against <NumQueries> when its element opened, and id_data_ is sized only once
-      OPENMS_PRECONDITION(!open_peptide_indices_.empty() && open_peptide_indices_.back() < id_data_.size(), "No <peptide>, <u_peptide> or <q_peptide> element is open.");
-      return id_data_[open_peptide_indices_.back()];
+      const OpenPeptideElement& peptide = openPeptide_();
+      // The query number was checked against <NumQueries> when the element opened, and id_data_ is sized only once.
+      // Check again at every use, so that it can never index past the end of id_data_, even if that changes.
+      if (peptide.query > id_data_.size())
+      {
+        fatalError(LOAD, "The open <" + peptide.element + "> element refers to query " + std::to_string(peptide.query) +
+                         ", but there are only " + std::to_string(id_data_.size()) + " identifications.");
+      }
+      return id_data_[peptide.query - 1];
     }
 
     PeptideIdentification& MascotXMLHandler::queryIdentification_()
     {
-      OPENMS_PRECONDITION(!open_query_numbers_.empty(), "No <query> element is open.");
-      checkQueryNumber_(open_query_numbers_.back(), "<query> 'number' attribute");
+      // onEndElement() ignores <StringTitle> and <RTINSECONDS> outside of <query> elements, so this is not expected to
+      // fail; it is checked anyway, as back() on an empty vector is undefined
+      if (open_query_numbers_.empty())
+      {
+        fatalError(LOAD, "<" + tag_ + "> element is not inside a <query> element.");
+      }
+      // <query number> is not compared with <NumQueries> when the element opens, only here, at every use
+      checkQueryNumber_(open_query_numbers_.back(), "query", "number");
       return id_data_[open_query_numbers_.back() - 1];
     }
 
-    void MascotXMLHandler::warnIgnoredElement_(const std::string& enclosing) const
+    void MascotXMLHandler::warnIgnoredElement_(const std::string& reason) const
     {
       // not XMLHandler::warning(), which only writes to the debug log in release builds: the data of this element is
       // dropped, so tell the user in every build
       OPENMS_LOG_WARN << "While loading '" << file_ << "': Ignoring <" << tag_ << ">" << StringUtils::trimmed(character_buffer_)
-                      << "</" << tag_ << ">, which is not inside " << enclosing << "." << std::endl;
+                      << "</" << tag_ << ">, " << reason << "." << std::endl;
     }
 
     void MascotXMLHandler::onStartElement(const char16_t* qname, const XMLAttributes& attributes)
@@ -105,8 +128,11 @@ namespace OpenMS::Internal
       else if (tag_ == "peptide" || tag_ == "u_peptide" || tag_ == "q_peptide")
       {
         Int attribute_value = attributeAsInt_(attributes, s_peptide_query);
-        checkQueryNumber_(attribute_value, "<" + tag_ + "> 'query' attribute");
-        open_peptide_indices_.push_back(static_cast<Size>(attribute_value) - 1);
+        checkQueryNumber_(attribute_value, tag_, "query");
+        OpenPeptideElement peptide;
+        peptide.element = tag_;
+        peptide.query = static_cast<Size>(attribute_value);
+        open_peptides_.push_back(std::move(peptide)); // starts with an empty hit and evidence
       }
     }
 
@@ -122,22 +148,22 @@ namespace OpenMS::Internal
 
       tags_open_.pop_back();
 
-      // pep_* elements describe the enclosing peptide element, <StringTitle> and <RTINSECONDS> the enclosing <query>.
-      // Outside of these elements there is no identification they could belong to (valid files never do this).
-      if (StringUtils::hasPrefix(tag_, "pep_") && open_peptide_indices_.empty())
+      // pep_* elements describe the innermost open peptide element, <StringTitle> and <RTINSECONDS> the innermost open
+      // <query>. Outside of these elements there is no identification they could belong to (valid files never do this).
+      if (StringUtils::hasPrefix(tag_, "pep_") && open_peptides_.empty())
       {
-        warnIgnoredElement_("a <peptide>, <u_peptide> or <q_peptide> element");
+        warnIgnoredElement_("which is not inside a <peptide>, <u_peptide> or <q_peptide> element");
       }
       else if ((tag_ == "StringTitle" || tag_ == "RTINSECONDS") && open_query_numbers_.empty())
       {
-        warnIgnoredElement_("a <query> element");
+        warnIgnoredElement_("which is not inside a <query> element");
       }
       else if (tag_ == "NumQueries")
       {
         // size id_data_ only once: a repeated <NumQueries> must not shrink it below query numbers already checked against it
         if (num_queries_read_)
         {
-          warning(LOAD, "Ignoring repeated <NumQueries> element.");
+          warnIgnoredElement_("which repeats an earlier <NumQueries> element");
         }
         else
         {
@@ -199,17 +225,18 @@ namespace OpenMS::Internal
       }
       else if (tag_ == "pep_exp_z")
       {
-        actual_peptide_hit_.setCharge(StringUtils::toInt32(StringUtils::trim(character_buffer_)));
+        openPeptide_().hit.setCharge(StringUtils::toInt32(StringUtils::trim(character_buffer_)));
       }
       else if (tag_ == "pep_score")
       {
-        actual_peptide_hit_.setScore(StringUtils::toDouble(StringUtils::trimmed(character_buffer_)));
+        openPeptide_().hit.setScore(StringUtils::toDouble(StringUtils::trimmed(character_buffer_)));
       }
       else if (tag_ == "pep_expect")
       {
         // @todo what E-value flag? (andreas)
-        actual_peptide_hit_.metaRegistry().registerName("EValue", "E-value of e.g. Mascot searches", "");
-        actual_peptide_hit_.setMetaValue("EValue", StringUtils::toDouble(StringUtils::trimmed(character_buffer_)));
+        PeptideHit& hit = openPeptide_().hit;
+        hit.metaRegistry().registerName("EValue", "E-value of e.g. Mascot searches", "");
+        hit.setMetaValue("EValue", StringUtils::toDouble(StringUtils::trimmed(character_buffer_)));
       }
       else if (tag_ == "pep_homol")
       {
@@ -218,6 +245,7 @@ namespace OpenMS::Internal
       else if (tag_ == "pep_ident")
       {
         PeptideIdentification& peptide_id = peptideIdentification_();
+        PeptideHit& hit = openPeptide_().hit;
         double temp_homology = 0;
         double temp_identity = 0;
 
@@ -225,8 +253,8 @@ namespace OpenMS::Internal
         // exists and is smaller than the identity threshold.
         temp_homology = peptide_id.getSignificanceThreshold();
         temp_identity = StringUtils::toDouble(StringUtils::trimmed(character_buffer_));
-        actual_peptide_hit_.setMetaValue("homology_threshold", temp_homology);
-        actual_peptide_hit_.setMetaValue("identity_threshold", temp_identity);
+        hit.setMetaValue("homology_threshold", temp_homology);
+        hit.setMetaValue("identity_threshold", temp_identity);
         if (temp_homology > temp_identity || temp_homology == 0)
         {
           peptide_id.setSignificanceThreshold(temp_identity);
@@ -292,14 +320,14 @@ namespace OpenMS::Internal
             }
           }
         }
-        actual_peptide_hit_.setSequence(temp_aa_sequence);
+        openPeptide_().hit.setSequence(temp_aa_sequence);
       }
       else if (tag_ == "pep_res_before")
       {
         std::string temp_string = StringUtils::trim(character_buffer_);
         if (!temp_string.empty())
         {
-          actual_peptide_evidence_.setAABefore(temp_string[0]);
+          openPeptide_().evidence.setAABefore(temp_string[0]);
         }
       }
       else if (tag_ == "pep_res_after")
@@ -307,12 +335,13 @@ namespace OpenMS::Internal
         std::string temp_string = StringUtils::trim(character_buffer_);
         if (!temp_string.empty())
         {
-          actual_peptide_evidence_.setAAAfter(temp_string[0]);
+          openPeptide_().evidence.setAAAfter(temp_string[0]);
         }
       }
       else if (tag_ == "pep_var_mod_pos")
       {
-        AASequence temp_aa_sequence = actual_peptide_hit_.getSequence();
+        PeptideHit& hit = openPeptide_().hit;
+        AASequence temp_aa_sequence = hit.getSequence();
         std::string temp_string = StringUtils::trim(character_buffer_);
         vector<std::string> parts;
         
@@ -383,7 +412,7 @@ namespace OpenMS::Internal
             }
           }
 
-          actual_peptide_hit_.setSequence(temp_aa_sequence);
+          hit.setSequence(temp_aa_sequence);
         }
       }
       else if (tag_ == "Date")
@@ -609,12 +638,13 @@ namespace OpenMS::Internal
         bool already_stored(false);
 
         PeptideIdentification& peptide_id = peptideIdentification_();
+        OpenPeptideElement& peptide = openPeptide_();
         vector<PeptideHit> temp_peptide_hits = peptide_id.getHits();
 
         vector<PeptideHit>::iterator it = temp_peptide_hits.begin();
         while (it != temp_peptide_hits.end())
         {
-          if (it->getSequence() == actual_peptide_hit_.getSequence())
+          if (it->getSequence() == peptide.hit.getSequence())
           {
             already_stored = true;
             break;
@@ -626,33 +656,35 @@ namespace OpenMS::Internal
         {
           peptide_id.setIdentifier(identifier_);
           peptide_id.setScoreType("Mascot");
-          actual_peptide_evidence_.setProteinAccession(actual_protein_hit_.getAccession());
-          actual_peptide_hit_.addPeptideEvidence(actual_peptide_evidence_);
-          peptide_id.insertHit(actual_peptide_hit_);
+          peptide.evidence.setProteinAccession(actual_protein_hit_.getAccession());
+          peptide.hit.addPeptideEvidence(peptide.evidence);
+          peptide_id.insertHit(peptide.hit);
         }
         else
         {
-          actual_peptide_evidence_.setProteinAccession(actual_protein_hit_.getAccession());
-          it->addPeptideEvidence(actual_peptide_evidence_);
+          peptide.evidence.setProteinAccession(actual_protein_hit_.getAccession());
+          it->addPeptideEvidence(peptide.evidence);
           peptide_id.setHits(temp_peptide_hits);
         }
-        actual_peptide_evidence_ = PeptideEvidence();
-        actual_peptide_hit_ = PeptideHit();
-        open_peptide_indices_.pop_back(); // pep_* elements after this are no longer part of this peptide
+        // pep_* elements after this belong to the enclosing peptide element, if any, or are ignored
+        open_peptides_.pop_back();
       }
       else if (tag_ == "u_peptide" || tag_ == "q_peptide")
       {
         PeptideIdentification& peptide_id = peptideIdentification_();
         peptide_id.setIdentifier(identifier_);
         peptide_id.setScoreType("Mascot");
-        peptide_id.insertHit(actual_peptide_hit_);
-        actual_peptide_evidence_ = PeptideEvidence();
-        actual_peptide_hit_ = PeptideHit();
-        open_peptide_indices_.pop_back();
+        peptide_id.insertHit(openPeptide_().hit);
+        open_peptides_.pop_back(); // as for </peptide>; the evidence of <u_peptide> and <q_peptide> is not stored
       }
       else if (tag_ == "query")
       {
-        open_query_numbers_.pop_back(); // <StringTitle> and <RTINSECONDS> after this are no longer part of this query
+        // <StringTitle> and <RTINSECONDS> after this belong to the enclosing <query>, if any, or are ignored.
+        // Every closing tag has an opening one, which pushed a number, but back()/pop_back() on an empty vector would be undefined.
+        if (!open_query_numbers_.empty())
+        {
+          open_query_numbers_.pop_back();
+        }
       }
       else if (tag_ == "mascot_search_results")
       {

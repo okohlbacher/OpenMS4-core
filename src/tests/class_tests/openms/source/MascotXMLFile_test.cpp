@@ -17,6 +17,7 @@
 
 #include <OpenMS/DATASTRUCTURES/StringUtils.h>
 #include <OpenMS/FORMAT/MascotXMLFile.h>
+#include <OpenMS/FORMAT/HANDLERS/MascotXMLHandler.h>
 #include <OpenMS/FORMAT/IdXMLFile.h>
 #include <OpenMS/METADATA/ContactPerson.h>
 #include <OpenMS/METADATA/ProteinIdentification.h>
@@ -26,7 +27,9 @@
 
 #include <algorithm>
 #include <fstream>
+#include <map>
 #include <sstream>
+#include <string_view>
 #include <vector>
 
 ///////////////////////////
@@ -99,14 +102,51 @@ namespace
     return ignored;
   }
 
-  // the warning line for @p element (with its text), found outside of @p enclosing while loading @p path
-  std::string ignoredWarning(const std::string& path, const std::string& element, const std::string& enclosing)
+  // the warning line for @p element (with its text), ignored for @p reason while loading @p path
+  std::string ignoredWarning(const std::string& path, const std::string& element, const std::string& reason)
   {
-    return "While loading '" + path + "': Ignoring " + element + ", which is not inside " + enclosing + ".\n";
+    return "While loading '" + path + "': Ignoring " + element + ", " + reason + ".\n";
   }
 
-  const std::string outside_peptide = "a <peptide>, <u_peptide> or <q_peptide> element";
-  const std::string outside_query = "a <query> element";
+  const std::string outside_peptide = "which is not inside a <peptide>, <u_peptide> or <q_peptide> element";
+  const std::string outside_query = "which is not inside a <query> element";
+  const std::string repeated_num_queries = "which repeats an earlier <NumQueries> element";
+
+  // a MascotXMLHandler that replaces the identifications it fills by an empty list when a <drop_identifications/>
+  // element closes, to check that the handler never relies on the list still holding the queries it checked before
+  class DroppingMascotXMLHandler : public OpenMS::Internal::MascotXMLHandler
+  {
+  public:
+    DroppingMascotXMLHandler(OpenMS::ProteinIdentification& proteins, OpenMS::PeptideIdentificationList& peptides,
+                             const std::string& filename, std::map<std::string, std::vector<OpenMS::AASequence>>& modified_peptides,
+                             const OpenMS::SpectrumMetaDataLookup& lookup) :
+      MascotXMLHandler(proteins, peptides, filename, modified_peptides, lookup),
+      peptides_(peptides)
+    {
+    }
+
+    void onEndElement(const char16_t* qname) override
+    {
+      MascotXMLHandler::onEndElement(qname);
+      if (std::u16string_view(qname) == u"drop_identifications")
+      {
+        OpenMS::PeptideIdentificationList().swap(peptides_); // also frees the storage, so no element is left past the end
+      }
+    }
+
+  private:
+    OpenMS::PeptideIdentificationList& peptides_;
+  };
+
+  // gives access to XMLFile::parse_(), to parse a file with a handler of the test's choice
+  class ParsingMascotXMLFile : public OpenMS::MascotXMLFile
+  {
+  public:
+    void parse(const std::string& filename, OpenMS::Internal::XMLHandler& handler)
+    {
+      parse_(filename, &handler);
+    }
+  };
 }
 
 START_TEST(MascotXMLFile, "$Id$")
@@ -538,15 +578,19 @@ END_SECTION
 
 START_SECTION(([EXTRA] elements of nested peptide or query elements belong to the innermost open element))
 {
-  // Valid files do not nest these elements. If a file does, closing the inner element must return to the outer one.
+  // Valid files do not nest these elements. If a file does, the elements inside the inner one describe the inner
+  // one's query and hit only, and after the inner one closes they describe the outer one again. The hit of the outer
+  // element used to be shared with the inner one: the inner one overwrote its sequence and score, stored it for its
+  // own query and reset it, so the outer query lost its hit.
   SpectrumMetaDataLookup lookup;
   std::string filename;
   NEW_TMP_FILE_EXT(filename, ".mascotXML")
   writeMascotXML(filename,
     "<header><NumQueries>2</NumQueries></header>\n"
     "<hits><hit number=\"1\"><protein accession=\"P1\"><peptide query=\"1\">"
-    "<u_peptide query=\"2\"><pep_exp_mz>600.0</pep_exp_mz><pep_seq>SAMPLER</pep_seq></u_peptide>"
-    "<pep_exp_mz>500.0</pep_exp_mz><pep_seq>PEPTIDE</pep_seq>"
+    "<pep_exp_mz>500.0</pep_exp_mz><pep_seq>PEPTIDE</pep_seq><pep_score>10</pep_score><pep_res_before>K</pep_res_before>"
+    "<u_peptide query=\"2\"><pep_exp_mz>600.0</pep_exp_mz><pep_seq>SAMPLER</pep_seq><pep_score>20</pep_score></u_peptide>"
+    "<pep_exp_z>2</pep_exp_z>"
     "</peptide></protein></hit></hits>\n"
     "<queries><query number=\"1\"><query number=\"2\"><RTINSECONDS>20</RTINSECONDS></query>"
     "<RTINSECONDS>10</RTINSECONDS></query></queries>\n");
@@ -560,10 +604,20 @@ START_SECTION(([EXTRA] elements of nested peptide or query elements belong to th
   ABORT_IF(!one_hit_each)
   TEST_REAL_SIMILAR(peptide_identifications[0].getMZ(), 500.0)
   TEST_REAL_SIMILAR(peptide_identifications[0].getRT(), 10.0)
-  TEST_EQUAL(peptide_identifications[0].getHits()[0].getSequence(), AASequence::fromString("PEPTIDE"))
+  const PeptideHit& outer_hit = peptide_identifications[0].getHits()[0];
+  TEST_EQUAL(outer_hit.getSequence(), AASequence::fromString("PEPTIDE"))
+  TEST_REAL_SIMILAR(outer_hit.getScore(), 10.0)
+  TEST_EQUAL(outer_hit.getCharge(), 2)
+  TEST_EQUAL(outer_hit.getPeptideEvidences().size(), 1)
+  ABORT_IF(outer_hit.getPeptideEvidences().size() != 1)
+  TEST_EQUAL(outer_hit.getPeptideEvidences()[0].getAABefore(), 'K')
+  TEST_EQUAL(outer_hit.getPeptideEvidences()[0].getProteinAccession(), "P1")
   TEST_REAL_SIMILAR(peptide_identifications[1].getMZ(), 600.0)
   TEST_REAL_SIMILAR(peptide_identifications[1].getRT(), 20.0)
-  TEST_EQUAL(peptide_identifications[1].getHits()[0].getSequence(), AASequence::fromString("SAMPLER"))
+  const PeptideHit& inner_hit = peptide_identifications[1].getHits()[0];
+  TEST_EQUAL(inner_hit.getSequence(), AASequence::fromString("SAMPLER"))
+  TEST_REAL_SIMILAR(inner_hit.getScore(), 20.0)
+  TEST_EQUAL(inner_hit.getCharge(), 0)
 }
 END_SECTION
 
@@ -579,7 +633,8 @@ START_SECTION(([EXTRA] a repeated <NumQueries> does not shrink the identificatio
     "<hits><hit number=\"1\"><protein accession=\"P1\"><peptide query=\"2\">"
     "<NumQueries>1</NumQueries><pep_exp_mz>500.0</pep_exp_mz><pep_seq>PEPTIDE</pep_seq>"
     "</peptide></protein></hit></hits>\n");
-  xml_file.load(filename, protein_identification, peptide_identifications, lookup);
+  const std::string ignored = loadCollectingIgnoredWarnings(filename, protein_identification, peptide_identifications, lookup);
+  TEST_EQUAL(ignored, ignoredWarning(filename, "<NumQueries>1</NumQueries>", repeated_num_queries))
   TEST_EQUAL(peptide_identifications.size(), 1)
   ABORT_IF(peptide_identifications.size() != 1)
   TEST_REAL_SIMILAR(peptide_identifications[0].getMZ(), 500.0)
@@ -612,6 +667,84 @@ START_SECTION(([EXTRA] an ignored element that repeats is warned about once in e
   const std::string expected_repeated = ignoredWarning(filename, "<pep_homol>3.0</pep_homol>", outside_peptide);
   TEST_EQUAL(loadCollectingIgnoredWarnings(filename, protein_identification, peptide_identifications, lookup), expected_repeated)
   TEST_EQUAL(loadCollectingIgnoredWarnings(filename, protein_identification, peptide_identifications, lookup), expected_repeated)
+}
+END_SECTION
+
+START_SECTION(([EXTRA] the query of a peptide element is compared with the identifications again at every use))
+{
+  // The 'query' attribute of a peptide element is checked against <NumQueries> when the element opens. Its later uses
+  // must not rely on that check alone: here the identifications are replaced by an empty list after it, which made
+  // pep_* elements and the closing tag read and write past the end of the list.
+  SpectrumMetaDataLookup lookup;
+  std::map<std::string, std::vector<AASequence>> modified;
+  ParsingMascotXMLFile parsing_file;
+  const std::string header = "<header><NumQueries>2</NumQueries></header>\n";
+  std::string filename;
+
+  // control: without <drop_identifications/>, the handler fills query 2
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename, header + peptideHit("2"));
+  {
+    ProteinIdentification proteins;
+    PeptideIdentificationList ids;
+    DroppingMascotXMLHandler handler(proteins, ids, filename, modified, lookup);
+    parsing_file.parse(filename, handler);
+    TEST_EQUAL(ids.size(), 2)
+    ABORT_IF(ids.size() != 2)
+    TEST_REAL_SIMILAR(ids[1].getMZ(), 500.0)
+    TEST_EQUAL(ids[1].getHits().size(), 1)
+  }
+
+  // <pep_exp_mz> in a <peptide>
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename, header +
+    "<hits><hit number=\"1\"><protein accession=\"P1\"><peptide query=\"2\"><drop_identifications/>"
+    "<pep_exp_mz>500.0</pep_exp_mz><pep_seq>PEPTIDE</pep_seq></peptide></protein></hit></hits>\n");
+  {
+    ProteinIdentification proteins;
+    PeptideIdentificationList ids;
+    DroppingMascotXMLHandler handler(proteins, ids, filename, modified, lookup);
+    TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, parsing_file.parse(filename, handler),
+      loadError(filename, "The open <peptide> element refers to query 2, but there are only 0 identifications."))
+  }
+
+  // <pep_ident> in a <q_peptide>
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename, header +
+    "<queries><query number=\"1\"><q_peptide query=\"2\"><drop_identifications/>"
+    "<pep_ident>30.0</pep_ident></q_peptide></query></queries>\n");
+  {
+    ProteinIdentification proteins;
+    PeptideIdentificationList ids;
+    DroppingMascotXMLHandler handler(proteins, ids, filename, modified, lookup);
+    TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, parsing_file.parse(filename, handler),
+      loadError(filename, "The open <q_peptide> element refers to query 2, but there are only 0 identifications."))
+  }
+
+  // </peptide>
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename, header +
+    "<hits><hit number=\"1\"><protein accession=\"P1\"><peptide query=\"1\"><pep_seq>PEPTIDE</pep_seq>"
+    "<drop_identifications/></peptide></protein></hit></hits>\n");
+  {
+    ProteinIdentification proteins;
+    PeptideIdentificationList ids;
+    DroppingMascotXMLHandler handler(proteins, ids, filename, modified, lookup);
+    TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, parsing_file.parse(filename, handler),
+      loadError(filename, "The open <peptide> element refers to query 1, but there are only 0 identifications."))
+  }
+
+  // </u_peptide>
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename, header +
+    "<unassigned><u_peptide query=\"1\"><pep_seq>PEPTIDE</pep_seq><drop_identifications/></u_peptide></unassigned>\n");
+  {
+    ProteinIdentification proteins;
+    PeptideIdentificationList ids;
+    DroppingMascotXMLHandler handler(proteins, ids, filename, modified, lookup);
+    TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, parsing_file.parse(filename, handler),
+      loadError(filename, "The open <u_peptide> element refers to query 1, but there are only 0 identifications."))
+  }
 }
 END_SECTION
 
