@@ -669,10 +669,11 @@ END_SECTION
 
 START_SECTION([EXTRA] reading rejects data arrays of different length and duplicated array roles)
 {
-  // Each record was sized by its first data array and every further array was copied by that
-  // length without a check (a shorter one was read past its end, a longer one truncated), and
-  // the rows were only counted, so two m/z arrays passed as an m/z and an intensity array. The
-  // malformed files are written with the API and their DATA table altered afterwards.
+  // Each record was sized by its first data array (or by the next one, after an empty first array)
+  // and every further array was copied by that length without a check (a shorter one was read past
+  // its end, a longer one truncated), and the rows were only counted, so two m/z arrays passed as an
+  // m/z and an intensity array. The malformed files are written with the API and their DATA table
+  // altered afterwards.
   std::vector<MSSpectrum> spectra(3);
   for (Size i = 0; i < spectra.size(); ++i)
   {
@@ -722,6 +723,7 @@ START_SECTION([EXTRA] reading rejects data arrays of different length and duplic
 
     // unaltered: every record loads, including the ones without peaks
     {
+      STATUS((lossy ? "lossy" : "lossless") << ": unaltered")
       std::string filename;
       NEW_TMP_FILE_EXT(filename, extension);
       writeAltered(filename, "");
@@ -748,37 +750,101 @@ START_SECTION([EXTRA] reading rejects data arrays of different length and duplic
       TEST_EQUAL(exp.getNrChromatograms(), 3)
     }
 
-    // the intensity arrays of the first two records swapped: record 0 has 3 m/z (RT) values and 2
-    // intensities, record 1 has 2 m/z (RT) values and 3 intensities
+    // The rows of one record are read in the order SQLite returns them, which the query does not fix
+    // (it orders by record only). Each length edit below is therefore written twice, once with the
+    // intensity row and once with the m/z (RT) row re-inserted at the end of the table, so that each
+    // of the two arrays is the one read second in one of the files.
+    // 'replaceIntensities' gives record 1 (2 peaks) the intensity array of record 'donor' and moves
+    // its row of 'last_type' to the end; 'id' is SPECTRUM_ID or CHROMATOGRAM_ID.
+    auto replaceIntensities = [](const std::string& id, int donor, int last_type)
     {
+      const std::string donor_row = " FROM DATA WHERE " + id + " = " + std::to_string(donor) + " AND DATA_TYPE = 1)";
+      const std::string last_row = " FROM DATA WHERE " + id + " = 1 AND DATA_TYPE = " + std::to_string(last_type);
+      return "UPDATE DATA SET COMPRESSION = (SELECT COMPRESSION" + donor_row + ", DATA = (SELECT DATA" + donor_row +
+             " WHERE " + id + " = 1 AND DATA_TYPE = 1;"
+             "INSERT INTO DATA (SPECTRUM_ID, CHROMATOGRAM_ID, COMPRESSION, DATA_TYPE, DATA)"
+             " SELECT SPECTRUM_ID, CHROMATOGRAM_ID, COMPRESSION, DATA_TYPE, DATA" + last_row + ";"
+             "DELETE FROM DATA WHERE rowid = (SELECT MIN(rowid)" + last_row + ");";
+    };
+    // record 1 with 3 intensities (record 0's, longer than its 2 m/z or RT values) or none (record 2's)
+    for (int donor : {0, 2})
+    {
+      for (bool intensities_last : {true, false})
+      {
+        STATUS((lossy ? "lossy" : "lossless") << ": record 1 with the intensity array of record " << donor << ", "
+               << (intensities_last ? "intensity" : "m/z (RT)") << " row last")
+        // a file name per variant: a rejected read leaves its connection open (the file is locked on Windows)
+        std::string filename;
+        NEW_TMP_FILE_EXT(filename, ".donor" + std::to_string(donor) + (intensities_last ? ".intensity_last" : ".coordinate_last") + extension);
+        writeAltered(filename, replaceIntensities("SPECTRUM_ID", donor, intensities_last ? 1 : 0) +
+                               replaceIntensities("CHROMATOGRAM_ID", donor, intensities_last ? 1 : 2));
+        MzMLSqliteHandler handler(filename, 0);
+        std::vector<MSSpectrum> read_spectra;
+        TEST_EXCEPTION(Exception::IllegalArgument, handler.readSpectra(read_spectra, {1}))
+        read_spectra.clear();
+        handler.readSpectra(read_spectra, {0, 2}); // not altered
+        ABORT_IF(read_spectra.size() != 2)
+        TEST_EQUAL(read_spectra[0].size(), 3)
+        TEST_EQUAL(read_spectra[1].size(), 0)
+
+        std::vector<MSChromatogram> read_chroms;
+        TEST_EXCEPTION(Exception::IllegalArgument, handler.readChromatograms(read_chroms, {1}))
+        read_chroms.clear();
+        handler.readChromatograms(read_chroms, {0, 2}); // not altered
+        ABORT_IF(read_chroms.size() != 2)
+        TEST_EQUAL(read_chroms[0].size(), 3)
+        TEST_EQUAL(read_chroms[1].size(), 0)
+
+        MSExperiment exp;
+        TEST_EXCEPTION(Exception::IllegalArgument, handler.readExperiment(exp))
+      }
+    }
+
+    // record 0 with both arrays and a copy of one of them: the copy has the length of the others and
+    // both roles are present, so only the check for a repeated role rejects it
+    for (bool copy_intensities : {false, true})
+    {
+      STATUS((lossy ? "lossy" : "lossless") << ": record 0 with a second " << (copy_intensities ? "intensity" : "m/z (RT)") << " array")
+      const std::string copy_row = "INSERT INTO DATA (SPECTRUM_ID, CHROMATOGRAM_ID, COMPRESSION, DATA_TYPE, DATA)"
+                                   " SELECT SPECTRUM_ID, CHROMATOGRAM_ID, COMPRESSION, DATA_TYPE, DATA FROM DATA WHERE ";
       std::string filename;
-      NEW_TMP_FILE_EXT(filename, extension);
-      writeAltered(filename,
-          "UPDATE DATA SET SPECTRUM_ID = 1 - SPECTRUM_ID WHERE SPECTRUM_ID IN (0, 1) AND DATA_TYPE = 1;"
-          "UPDATE DATA SET CHROMATOGRAM_ID = 1 - CHROMATOGRAM_ID WHERE CHROMATOGRAM_ID IN (0, 1) AND DATA_TYPE = 1;");
+      NEW_TMP_FILE_EXT(filename, (copy_intensities ? ".intensity_copy" : ".coordinate_copy") + extension);
+      writeAltered(filename, copy_row + "SPECTRUM_ID = 0 AND DATA_TYPE = " + (copy_intensities ? "1" : "0") + ";" +
+                             copy_row + "CHROMATOGRAM_ID = 0 AND DATA_TYPE = " + (copy_intensities ? "1" : "2") + ";");
       MzMLSqliteHandler handler(filename, 0);
       std::vector<MSSpectrum> read_spectra;
       TEST_EXCEPTION(Exception::IllegalArgument, handler.readSpectra(read_spectra, {0}))
       read_spectra.clear();
-      TEST_EXCEPTION(Exception::IllegalArgument, handler.readSpectra(read_spectra, {1}))
-      read_spectra.clear();
-      handler.readSpectra(read_spectra, {2}); // not altered
-      TEST_EQUAL(read_spectra.size(), 1)
+      handler.readSpectra(read_spectra, {1}); // not altered
+      ABORT_IF(read_spectra.size() != 1)
+      TEST_EQUAL(read_spectra[0].size(), 2)
 
       std::vector<MSChromatogram> read_chroms;
       TEST_EXCEPTION(Exception::IllegalArgument, handler.readChromatograms(read_chroms, {0}))
       read_chroms.clear();
-      TEST_EXCEPTION(Exception::IllegalArgument, handler.readChromatograms(read_chroms, {1}))
-      read_chroms.clear();
-      handler.readChromatograms(read_chroms, {2}); // not altered
-      TEST_EQUAL(read_chroms.size(), 1)
+      handler.readChromatograms(read_chroms, {1}); // not altered
+      ABORT_IF(read_chroms.size() != 1)
+      TEST_EQUAL(read_chroms[0].size(), 2)
+    }
 
-      MSExperiment exp;
-      TEST_EXCEPTION(Exception::IllegalArgument, handler.readExperiment(exp))
+    // record 0 without an intensity array: only the check that every record has both roles rejects it
+    {
+      STATUS((lossy ? "lossy" : "lossless") << ": record 0 without an intensity array")
+      std::string filename;
+      NEW_TMP_FILE_EXT(filename, extension);
+      writeAltered(filename,
+          "DELETE FROM DATA WHERE SPECTRUM_ID = 0 AND DATA_TYPE = 1;"
+          "DELETE FROM DATA WHERE CHROMATOGRAM_ID = 0 AND DATA_TYPE = 1;");
+      MzMLSqliteHandler handler(filename, 0);
+      std::vector<MSSpectrum> read_spectra;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readSpectra(read_spectra, {0}))
+      std::vector<MSChromatogram> read_chroms;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readChromatograms(read_chroms, {0}))
     }
 
     // record 0 with two m/z (RT) arrays and no intensity array
     {
+      STATUS((lossy ? "lossy" : "lossless") << ": record 0 with two m/z (RT) arrays and no intensity array")
       std::string filename;
       NEW_TMP_FILE_EXT(filename, extension);
       writeAltered(filename,
@@ -793,6 +859,7 @@ START_SECTION([EXTRA] reading rejects data arrays of different length and duplic
 
     // record 1 with two intensity arrays and no m/z (RT) array
     {
+      STATUS((lossy ? "lossy" : "lossless") << ": record 1 with two intensity arrays and no m/z (RT) array")
       std::string filename;
       NEW_TMP_FILE_EXT(filename, extension);
       writeAltered(filename,
