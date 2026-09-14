@@ -63,6 +63,10 @@ namespace
   std::string loadCollectingIgnoredWarnings(const std::string& path, OpenMS::ProteinIdentification& proteins,
                                             OpenMS::PeptideIdentificationList& peptides, const OpenMS::SpectrumMetaDataLookup& lookup)
   {
+    // LogStream writes a line only once while it is among the last few distinct lines, and reports the repetitions later
+    // in a line '<...> occurred N times'. Flush that cache before and after the load, so that no line of an earlier load
+    // suppresses or is reported with a line of this one.
+    OPENMS_LOG_WARN->clearCache();
     std::ostringstream captured;
     OPENMS_LOG_WARN.insert(captured);
     try
@@ -72,16 +76,21 @@ namespace
     catch (...)
     {
       OPENMS_LOG_WARN.remove(captured);
+      OPENMS_LOG_WARN->clearCache();
       throw;
     }
     OPENMS_LOG_WARN.remove(captured);
+    OPENMS_LOG_WARN->clearCache();
 
     std::string ignored;
     std::istringstream lines(captured.str());
     for (std::string line; std::getline(lines, line); )
     {
       const std::string::size_type start = line.find("While loading '");
-      if (start != std::string::npos && line.find("Ignoring <", start) != std::string::npos)
+      // skip the '<While loading ...> occurred N times' summaries of repeated lines (the first occurrence was collected)
+      const bool repetition_summary = start != std::string::npos && start > 0 && line[start - 1] == '<' &&
+                                      line.find("> occurred ", start) != std::string::npos;
+      if (start != std::string::npos && !repetition_summary && line.find("Ignoring <", start) != std::string::npos)
       {
         const std::string::size_type end = line.find('\x1b', start); // the warning colour ends with an escape sequence
         ignored += line.substr(start, end == std::string::npos ? std::string::npos : end - start) + "\n";
@@ -576,6 +585,33 @@ START_SECTION(([EXTRA] a repeated <NumQueries> does not shrink the identificatio
   TEST_REAL_SIMILAR(peptide_identifications[0].getMZ(), 500.0)
   TEST_EQUAL(peptide_identifications[0].getHits().size(), 1)
   TEST_EQUAL(peptide_identifications[0].getHits()[0].getSequence(), AASequence::fromString("PEPTIDE"))
+}
+END_SECTION
+
+START_SECTION(([EXTRA] an ignored element that repeats is warned about once in every load))
+{
+  // LogStream writes a repeated line once and reports the repetitions later ('<...> occurred N times'). The warnings of
+  // each load are checked on their own, whatever an earlier load logged.
+  SpectrumMetaDataLookup lookup;
+  std::string filename;
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename,
+    "<hits><pep_homol>1.0</pep_homol><pep_homol>1.0</pep_homol><pep_homol>1.0</pep_homol>"
+    "<pep_exp_mz>2.0</pep_exp_mz><pep_seq>PEPTIDE</pep_seq></hits>\n");
+  // the third distinct warning makes LogStream report the repetitions of the first one
+  const std::string expected =
+    ignoredWarning(filename, "<pep_homol>1.0</pep_homol>", outside_peptide) +
+    ignoredWarning(filename, "<pep_exp_mz>2.0</pep_exp_mz>", outside_peptide) +
+    ignoredWarning(filename, "<pep_seq>PEPTIDE</pep_seq>", outside_peptide);
+  TEST_EQUAL(loadCollectingIgnoredWarnings(filename, protein_identification, peptide_identifications, lookup), expected)
+  TEST_EQUAL(loadCollectingIgnoredWarnings(filename, protein_identification, peptide_identifications, lookup), expected)
+
+  // one warning repeated only: loading the file again logs it again
+  NEW_TMP_FILE_EXT(filename, ".mascotXML")
+  writeMascotXML(filename, "<hits><pep_homol>3.0</pep_homol><pep_homol>3.0</pep_homol></hits>\n");
+  const std::string expected_repeated = ignoredWarning(filename, "<pep_homol>3.0</pep_homol>", outside_peptide);
+  TEST_EQUAL(loadCollectingIgnoredWarnings(filename, protein_identification, peptide_identifications, lookup), expected_repeated)
+  TEST_EQUAL(loadCollectingIgnoredWarnings(filename, protein_identification, peptide_identifications, lookup), expected_repeated)
 }
 END_SECTION
 
