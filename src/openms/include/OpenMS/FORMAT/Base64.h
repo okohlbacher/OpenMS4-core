@@ -145,16 +145,24 @@ private:
     static const char decoder_[];
 
     /**
-        @brief Rejects malformed Base64 before it is decoded into numbers
+        @brief Rejects malformed Base64 before it is decoded into numbers, and skips whitespace
 
         The decoders map every input byte to some 6-bit value, so a byte outside the alphabet or padding
         inside the data would otherwise come back as plausible numeric values instead of an error.
 
-        @return false if @p in carries nothing to decode (shorter than one group, or padding only)
-        @throws Exception::ConversionError if the length is not a multiple of 4, a byte is outside the
-                Base64 alphabet, or padding is anything but a trailing run of at most two '='
+        ASCII whitespace (space, tab, CR, LF) may appear anywhere, as in line-wrapped xs:base64Binary.
+        It does not count towards the length, and the decoders read the input without it, so wrapped
+        input decodes to the same values as unwrapped input.
+
+        @param[in] in The Base64 text
+        @param[out] stripped Receives @p in without whitespace; only written if @p in contains whitespace
+        @return The text to decode: @p in itself, or @p stripped if @p in contains whitespace.
+                nullptr if @p in carries nothing to decode (shorter than one group, or padding only).
+        @throws Exception::ConversionError if the length without whitespace is not a multiple of 4, a byte
+                is neither in the Base64 alphabet nor whitespace, or padding is anything but a trailing
+                run of at most two '='
     */
-    static bool checkNumericInput_(const std::string& in);
+    static const std::string* checkNumericInput_(const std::string& in, std::string& stripped);
 
     /// Decodes a Base64 string to a vector of floating point numbers
     template <typename ToType>
@@ -289,13 +297,15 @@ private:
   void Base64::decodeCompressed_(const std::string& in, ByteOrder from_byte_order, std::vector<ToType>& out)
   {
     out.clear();
-    if (!checkNumericInput_(in))
+    std::string stripped;
+    const std::string* checked = checkNumericInput_(in, stripped);
+    if (checked == nullptr)
     {
       return;
     }
 
     std::string decompressed;
-    Base64::decodeSingleString(in, decompressed, true);
+    Base64::decodeSingleString(*checked, decompressed, true);
 
     void* byte_buffer = reinterpret_cast<void*>(&decompressed[0]);
     Size buffer_size = decompressed.size();
@@ -326,22 +336,16 @@ private:
 
     // The length of a base64 string is always a multiple of 4 (always 3
     // bytes are encoded as 4 characters)
-    if (!checkNumericInput_(in))
+    std::string stripped;
+    const std::string* checked = checkNumericInput_(in, stripped);
+    if (checked == nullptr)
     {
       return;
     }
 
-    Size src_size = in.size();
-    // last one or two '=' are skipped if contained
-    int padding = 0;
-    if (in[src_size - 1] == '=') padding++;
-    if (in[src_size - 2] == '=') padding++;
-
-    src_size -= padding;
-
     constexpr Size element_size = sizeof(ToType);
     std::string s;
-    stringSimdDecoder_(in,s);
+    stringSimdDecoder_(*checked, s);
 
     // change endianness if necessary (mzML is always LITTLE_ENDIAN; x64 is LITTLE_ENDIAN)
     if ((OPENMS_IS_BIG_ENDIAN && from_byte_order == Base64::BYTEORDER_LITTLEENDIAN) || (!OPENMS_IS_BIG_ENDIAN && from_byte_order == Base64::BYTEORDER_BIGENDIAN))
@@ -425,9 +429,10 @@ private:
     constexpr Size element_size = sizeof(ToType);
 
     std::string decompressed;
-    if (checkNumericInput_(in))
+    std::string stripped;
+    if (const std::string* checked = checkNumericInput_(in, stripped))
     {
-      Base64::decodeSingleString(in, decompressed, true);
+      Base64::decodeSingleString(*checked, decompressed, true);
     }
     if (decompressed.empty())
     {
@@ -523,16 +528,19 @@ private:
     // The length of a base64 string is a always a multiple of 4 (always 3
     // bytes are encoded as 4 characters). The check also keeps every byte
     // inside the range that decoder_ below is indexed with.
-    if (!checkNumericInput_(in))
+    std::string stripped;
+    const std::string* checked = checkNumericInput_(in, stripped);
+    if (checked == nullptr)
     {
       return;
     }
+    const std::string& src = *checked; // in without whitespace
 
-    Size src_size = in.size();
+    Size src_size = src.size();
     // last one or two '=' are skipped if contained
     int padding = 0;
-    if (in[src_size - 1] == '=') padding++;
-    if (in[src_size - 2] == '=') padding++;
+    if (src[src_size - 1] == '=') padding++;
+    if (src[src_size - 2] == '=') padding++;
 
     src_size -= padding;
 
@@ -571,8 +579,8 @@ private:
       // -------------------------------
 
       // decode the first two chars
-      a = decoder_[(int)in[i] - 43] - 62;
-      b = decoder_[(int)in[i + 1] - 43] - 62;
+      a = decoder_[(int)src[i] - 43] - 62;
+      b = decoder_[(int)src[i + 1] - 43] - 62;
       if (i + 1 >= src_size)
       {
         b = 0;
@@ -600,7 +608,7 @@ private:
       }
 
       // decode the third char
-      a = decoder_[(int)in[i + 2] - 43] - 62;
+      a = decoder_[(int)src[i + 2] - 43] - 62;
       if (i + 2 >= src_size)
       {
         a = 0;
@@ -628,7 +636,7 @@ private:
       }
 
       // decode the fourth char
-      b = decoder_[(int)in[i + 3] - 43] - 62;
+      b = decoder_[(int)src[i + 3] - 43] - 62;
       if (i + 3 >= src_size)
       {
         b = 0;

@@ -210,19 +210,74 @@ namespace OpenMS
   const char Base64::encoder_[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   const char Base64::decoder_[] = "|$$$}rstuvwxyz{$$$$$$$>?@ABCDEFGHIJKLMNOPQRSTUVW$$$$$$XYZ[\\]^_`abcdefghijklmnopq";
 
-  bool Base64::checkNumericInput_(const std::string& in)
+  namespace
   {
-    // shorter input has always decoded to nothing
-    if (in.size() < 4)
+    /// The whitespace that xs:base64Binary allows, as removed by StringUtils::removeWhitespaces()
+    const char* const base64_whitespace = " \t\n\r";
+
+    /// Whether @p s is complete groups of Base64 characters with at most two '=' at the end. The loop has no
+    /// branches, so the compiler vectorizes it and the check stays cheap next to the SIMD decoding.
+    bool isPlainBase64(const std::string& s)
     {
-      return false;
+      if (s.size() < 4 || s.size() % 4 != 0)
+      {
+        return false;
+      }
+      Size data_end = s.size();
+      if (s[data_end - 1] == '=')
+      {
+        --data_end;
+        if (s[data_end - 1] == '=')
+        {
+          --data_end;
+        }
+      }
+      unsigned char invalid = 0;
+      const char* const data = s.data();
+      for (Size i = 0; i < data_end; ++i)
+      {
+        const unsigned char c = static_cast<unsigned char>(data[i]);
+        const bool upper = static_cast<unsigned char>(c - 'A') < 26;
+        const bool lower = static_cast<unsigned char>(c - 'a') < 26;
+        const bool digit = static_cast<unsigned char>(c - '0') < 10;
+        invalid |= static_cast<unsigned char>(!(upper | lower | digit | (c == '+') | (c == '/')));
+      }
+      return invalid == 0;
     }
-    if (in.size() % 4 != 0)
+  }
+
+  const std::string* Base64::checkNumericInput_(const std::string& in, std::string& stripped)
+  {
+    if (isPlainBase64(in))
+    {
+      return &in;
+    }
+
+    // line-wrapped input: decode a copy without the whitespace
+    const std::string* text = &in;
+    if (in.find_first_of(base64_whitespace) != std::string::npos)
+    {
+      stripped = in;
+      StringUtils::removeWhitespaces(stripped);
+      if (isPlainBase64(stripped))
+      {
+        return &stripped;
+      }
+      text = &stripped;
+    }
+
+    // The text is short, padding only or malformed: find out which, byte by byte.
+    // shorter input has always decoded to nothing
+    if (text->size() < 4)
+    {
+      return nullptr;
+    }
+    if (text->size() % 4 != 0)
     {
       throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Malformed base64 input, length is not a multiple of 4.");
     }
     Size padding = 0;
-    for (const char c : in)
+    for (const char c : *text)
     {
       if (c == '=')
       {
@@ -235,15 +290,15 @@ namespace OpenMS
           padding != 0 ? "Malformed base64 input, data after padding." : "Malformed base64 input, invalid character.");
       }
     }
-    if (padding == in.size())
+    if (padding == text->size())
     {
-      return false; // e.g. "====": nothing to decode
+      return nullptr; // e.g. "====": nothing to decode
     }
     if (padding > 2)
     {
       throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Malformed base64 input, more than two padding characters.");
     }
-    return true;
+    return text; // not reached: such text passes isPlainBase64()
   }
 
   void Base64::encodeStrings(const std::vector<std::string>& in, std::string& out, bool zlib_compression, bool append_null_byte)
