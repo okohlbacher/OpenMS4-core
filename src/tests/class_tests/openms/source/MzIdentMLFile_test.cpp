@@ -178,6 +178,31 @@ START_SECTION(([EXTRA] read a Peptide with an empty PeptideSequence element))
 }
 END_SECTION
 
+START_SECTION(([EXTRA] read SubstitutionModification locations))
+{
+  // 'location' is the 1-based position of the substituted residue. A location of 0, a negative location or one past
+  // the end of the sequence used to be written outside of the sequence string. Such a Peptide must now be reported
+  // as unreadable (empty sequence), while a valid substitution is applied at its location.
+  std::vector<ProteinIdentification> protein_ids;
+  PeptideIdentificationList peptide_ids;
+  MzIdentMLFile().load(OPENMS_GET_TEST_DATA_PATH("MzIdentMLFile_substitution_location.mzid"), protein_ids, peptide_ids);
+
+  ABORT_IF(peptide_ids.size() != 4)
+  for (Size i = 0; i < peptide_ids.size(); ++i)
+  {
+    ABORT_IF(peptide_ids[i].getHits().size() != 1)
+  }
+  // location 3 of PEPTIDEK: the second P becomes A, not the first one
+  TEST_EQUAL(peptide_ids[0].getHits()[0].getSequence().toString(), "PEATIDEK")
+  // location 0
+  TEST_TRUE(peptide_ids[1].getHits()[0].getSequence().empty())
+  // location -5
+  TEST_TRUE(peptide_ids[2].getHits()[0].getSequence().empty())
+  // location 9 on the 8 residues of PEPTIDEK
+  TEST_TRUE(peptide_ids[3].getHits()[0].getSequence().empty())
+}
+END_SECTION
+
 START_SECTION(void store(std::string filename, const std::vector<ProteinIdentification>& protein_ids, const PeptideIdentificationList& peptide_ids) )
 {
   //store and load data from various sources, starting with idxml, contents already checked above, so checking integrity of the data over repeated r/w
