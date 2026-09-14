@@ -295,8 +295,9 @@ START_SECTION(([EXTRA] a metadata key that is empty, or that belongs to an mzTab
     NEW_TMP_FILE(filename)
     storeSILACWithMetaData(filename, {"MTD\t" + malformed.first + "\tx"});
     MzTab mz_tab;
+    // the message names the key without the whitespace around it, which the reader removes
     TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, MzTabFile().load(filename, mz_tab),
-      "Error parsing MzTab metadata key '" + malformed.first + "': " + malformed.second + " in: " + filename)
+      "Error parsing MzTab metadata key '" + StringUtils::trimmed(malformed.first) + "': " + malformed.second + " in: " + filename)
   }
 
   // the unmodified file still loads completely
@@ -353,10 +354,17 @@ START_SECTION(([EXTRA] a metadata key that is not an mzTab 1.0 key is ignored))
 }
 END_SECTION
 
-START_SECTION(([EXTRA] a metadata key with whitespace inside or after an index, or at its end, is read))
+START_SECTION(([EXTRA] a metadata key with whitespace inside or after an index, or around the key, is read))
 {
   const std::map<std::string, std::string> replaced_keys =
   {
+    // whitespace around the key, also for keys whose fields are compared exactly
+    {"title", "title "},
+    {"protein-quantification_unit", " protein-quantification_unit "},
+    {"contact[2]-email", "contact[2]-email  "},
+    {"sample[1]-description", " sample[1]-description"},
+    {"study_variable[2]-assay_refs", "study_variable[2]-assay_refs "},
+    // whitespace inside or after an index
     {"mzTab-ID", "mzTab-ID "},
     {"sample_processing[2]", "sample_processing[2] "},
     {"psm_search_engine_score[1]", "psm_search_engine_score[ 1 ]"},
@@ -385,6 +393,17 @@ START_SECTION(([EXTRA] a metadata key with whitespace inside or after an index, 
   const std::string metadata_unmodified = storedMetaData(loaded_unmodified);
   TEST_NOT_EQUAL(metadata_unmodified, "")
   TEST_EQUAL(storedMetaData(loaded), metadata_unmodified)
+
+  // a column-unit key with whitespace around it is read into its section as well
+  const std::string psm_unit = "retention_time=[UO, UO:0000010, second, ]";
+  std::string colunit_with_whitespace;
+  NEW_TMP_FILE(colunit_with_whitespace)
+  storeSILACWithMetaData(colunit_with_whitespace, {"MTD\t colunit-PSM \t" + psm_unit});
+  MzTab loaded_colunit;
+  MzTabFile().load(colunit_with_whitespace, loaded_colunit);
+  TEST_EQUAL(loaded_colunit.getMetaData().colunit_psm.size(), 1)
+  ABORT_IF(loaded_colunit.getMetaData().colunit_psm.size() != 1)
+  TEST_EQUAL(loaded_colunit.getMetaData().colunit_psm[0], psm_unit)
 }
 END_SECTION
 
@@ -473,14 +492,16 @@ END_SECTION
 START_SECTION(([EXTRA] column unit metadata is loaded and stored))
 {
   const std::string protein_unit = "best_search_engine_score[1]=[UO, UO:0000186, dimensionless unit, ]";
-  const std::string peptide_unit = "retention_time=[UO, UO:0000031, minute, ]";
+  const std::string peptide_unit = "retention_time_window=[UO, UO:0000031, minute, ]";
   const std::string psm_unit = "retention_time=[UO, UO:0000010, second, ]";
+  const std::string small_molecule_unit = "retention_time=[UO, UO:0000031, minute, ]";
 
   std::string filename;
   NEW_TMP_FILE(filename)
   storeSILACWithMetaData(filename, {"MTD\tcolunit-protein\t" + protein_unit,
                                     "MTD\tcolunit-peptide\t" + peptide_unit,
-                                    "MTD\tcolunit-psm\t" + psm_unit});
+                                    "MTD\tcolunit-psm\t" + psm_unit,
+                                    "MTD\tcolunit-small_molecule\t" + small_molecule_unit});
   MzTab loaded;
   MzTabFile().load(filename, loaded);
   {
@@ -488,11 +509,12 @@ START_SECTION(([EXTRA] column unit metadata is loaded and stored))
     TEST_EQUAL(md.colunit_protein.size(), 1)
     TEST_EQUAL(md.colunit_peptide.size(), 1)
     TEST_EQUAL(md.colunit_psm.size(), 1)
-    TEST_EQUAL(md.colunit_small_molecule.size(), 0)
-    ABORT_IF(md.colunit_protein.size() != 1 || md.colunit_peptide.size() != 1 || md.colunit_psm.size() != 1)
+    TEST_EQUAL(md.colunit_small_molecule.size(), 1)
+    ABORT_IF(md.colunit_protein.size() != 1 || md.colunit_peptide.size() != 1 || md.colunit_psm.size() != 1 || md.colunit_small_molecule.size() != 1)
     TEST_EQUAL(md.colunit_protein[0], protein_unit)
     TEST_EQUAL(md.colunit_peptide[0], peptide_unit)
     TEST_EQUAL(md.colunit_psm[0], psm_unit)
+    TEST_EQUAL(md.colunit_small_molecule[0], small_molecule_unit)
   }
 
   // store: key and value are separate cells. The key is compared case-insensitively, as the reader
@@ -513,6 +535,7 @@ START_SECTION(([EXTRA] column unit metadata is loaded and stored))
   TEST_EQUAL(countMetaData("colunit-protein", protein_unit), 1)
   TEST_EQUAL(countMetaData("colunit-peptide", peptide_unit), 1)
   TEST_EQUAL(countMetaData("colunit-psm", psm_unit), 1)
+  TEST_EQUAL(countMetaData("colunit-small_molecule", small_molecule_unit), 1)
 
   // and the stored file loads back to the same units
   MzTab reloaded;
@@ -522,11 +545,12 @@ START_SECTION(([EXTRA] column unit metadata is loaded and stored))
     TEST_EQUAL(md.colunit_protein.size(), 1)
     TEST_EQUAL(md.colunit_peptide.size(), 1)
     TEST_EQUAL(md.colunit_psm.size(), 1)
-    TEST_EQUAL(md.colunit_small_molecule.size(), 0)
-    ABORT_IF(md.colunit_protein.size() != 1 || md.colunit_peptide.size() != 1 || md.colunit_psm.size() != 1)
+    TEST_EQUAL(md.colunit_small_molecule.size(), 1)
+    ABORT_IF(md.colunit_protein.size() != 1 || md.colunit_peptide.size() != 1 || md.colunit_psm.size() != 1 || md.colunit_small_molecule.size() != 1)
     TEST_EQUAL(md.colunit_protein[0], protein_unit)
     TEST_EQUAL(md.colunit_peptide[0], peptide_unit)
     TEST_EQUAL(md.colunit_psm[0], psm_unit)
+    TEST_EQUAL(md.colunit_small_molecule[0], small_molecule_unit)
   }
 }
 END_SECTION
