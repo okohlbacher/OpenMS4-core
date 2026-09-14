@@ -667,6 +667,147 @@ START_SECTION(void writeChromatograms(const std::vector<MSChromatogram>& chroms)
 }
 END_SECTION
 
+START_SECTION([EXTRA] reading rejects data arrays of different length and duplicated array roles)
+{
+  // Each record was sized by its first data array and every further array was copied by that
+  // length without a check (a shorter one was read past its end, a longer one truncated), and
+  // the rows were only counted, so two m/z arrays passed as an m/z and an intensity array. The
+  // malformed files are written with the API and their DATA table altered afterwards.
+  std::vector<MSSpectrum> spectra(3);
+  for (Size i = 0; i < spectra.size(); ++i)
+  {
+    spectra[i].setNativeID("spectrum=" + std::to_string(i));
+    spectra[i].setRT(10.0 * (i + 1));
+  }
+  spectra[0].push_back(Peak1D(100.0, 1000.0));
+  spectra[0].push_back(Peak1D(200.0, 2000.0));
+  spectra[0].push_back(Peak1D(300.0, 3000.0));
+  spectra[1].push_back(Peak1D(400.0, 4000.0));
+  spectra[1].push_back(Peak1D(500.0, 5000.0));
+  // spectra[2] has no peaks
+
+  std::vector<MSChromatogram> chroms(3);
+  for (Size i = 0; i < chroms.size(); ++i)
+  {
+    chroms[i].setNativeID("chromatogram=" + std::to_string(i));
+  }
+  chroms[0].push_back(ChromatogramPeak(1.0, 10.0));
+  chroms[0].push_back(ChromatogramPeak(2.0, 20.0));
+  chroms[0].push_back(ChromatogramPeak(3.0, 30.0));
+  chroms[1].push_back(ChromatogramPeak(4.0, 40.0));
+  chroms[1].push_back(ChromatogramPeak(5.0, 50.0));
+  // chroms[2] has no peaks
+
+  for (bool lossy : {false, true})
+  {
+    const std::string extension = lossy ? ".lossy" : ".lossless";
+    // writes the records above to 'filename', then applies 'alter_sql' to the file
+    auto writeAltered = [&](const std::string& filename, const std::string& alter_sql)
+    {
+      std::filesystem::remove(filename);
+      {
+        MzMLSqliteHandler handler(filename, 0);
+        handler.setConfig(false, lossy, 0.0001);
+        handler.createTables();
+        handler.writeSpectra(spectra);
+        handler.writeChromatograms(chroms);
+        handler.writeRunLevelInformation(MSExperiment(), false);
+      }
+      if (!alter_sql.empty())
+      {
+        SqliteConnector conn(filename);
+        conn.executeStatement(alter_sql);
+      }
+    };
+
+    // unaltered: every record loads, including the ones without peaks
+    {
+      std::string filename;
+      NEW_TMP_FILE_EXT(filename, extension);
+      writeAltered(filename, "");
+      MzMLSqliteHandler handler(filename, 0);
+      std::vector<MSSpectrum> read_spectra;
+      handler.readSpectra(read_spectra, {0, 1, 2});
+      ABORT_IF(read_spectra.size() != 3)
+      TEST_EQUAL(read_spectra[0].size(), 3)
+      TEST_EQUAL(read_spectra[1].size(), 2)
+      TEST_EQUAL(read_spectra[2].size(), 0)
+      TEST_REAL_SIMILAR(read_spectra[0][2].getMZ(), 300.0)
+      TEST_REAL_SIMILAR(read_spectra[0][2].getIntensity(), 3000.0)
+
+      std::vector<MSChromatogram> read_chroms;
+      handler.readChromatograms(read_chroms, {0, 1, 2});
+      ABORT_IF(read_chroms.size() != 3)
+      TEST_EQUAL(read_chroms[0].size(), 3)
+      TEST_EQUAL(read_chroms[1].size(), 2)
+      TEST_EQUAL(read_chroms[2].size(), 0)
+
+      MSExperiment exp;
+      handler.readExperiment(exp);
+      TEST_EQUAL(exp.getNrSpectra(), 3)
+      TEST_EQUAL(exp.getNrChromatograms(), 3)
+    }
+
+    // the intensity arrays of the first two records swapped: record 0 has 3 m/z (RT) values and 2
+    // intensities, record 1 has 2 m/z (RT) values and 3 intensities
+    {
+      std::string filename;
+      NEW_TMP_FILE_EXT(filename, extension);
+      writeAltered(filename,
+          "UPDATE DATA SET SPECTRUM_ID = 1 - SPECTRUM_ID WHERE SPECTRUM_ID IN (0, 1) AND DATA_TYPE = 1;"
+          "UPDATE DATA SET CHROMATOGRAM_ID = 1 - CHROMATOGRAM_ID WHERE CHROMATOGRAM_ID IN (0, 1) AND DATA_TYPE = 1;");
+      MzMLSqliteHandler handler(filename, 0);
+      std::vector<MSSpectrum> read_spectra;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readSpectra(read_spectra, {0}))
+      read_spectra.clear();
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readSpectra(read_spectra, {1}))
+      read_spectra.clear();
+      handler.readSpectra(read_spectra, {2}); // not altered
+      TEST_EQUAL(read_spectra.size(), 1)
+
+      std::vector<MSChromatogram> read_chroms;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readChromatograms(read_chroms, {0}))
+      read_chroms.clear();
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readChromatograms(read_chroms, {1}))
+      read_chroms.clear();
+      handler.readChromatograms(read_chroms, {2}); // not altered
+      TEST_EQUAL(read_chroms.size(), 1)
+
+      MSExperiment exp;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readExperiment(exp))
+    }
+
+    // record 0 with two m/z (RT) arrays and no intensity array
+    {
+      std::string filename;
+      NEW_TMP_FILE_EXT(filename, extension);
+      writeAltered(filename,
+          "UPDATE DATA SET DATA_TYPE = 0 WHERE SPECTRUM_ID = 0 AND DATA_TYPE = 1;"
+          "UPDATE DATA SET DATA_TYPE = 2 WHERE CHROMATOGRAM_ID = 0 AND DATA_TYPE = 1;");
+      MzMLSqliteHandler handler(filename, 0);
+      std::vector<MSSpectrum> read_spectra;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readSpectra(read_spectra, {0}))
+      std::vector<MSChromatogram> read_chroms;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readChromatograms(read_chroms, {0}))
+    }
+
+    // record 1 with two intensity arrays and no m/z (RT) array
+    {
+      std::string filename;
+      NEW_TMP_FILE_EXT(filename, extension);
+      writeAltered(filename,
+          "UPDATE DATA SET DATA_TYPE = 1 WHERE SPECTRUM_ID = 1 AND DATA_TYPE = 0;"
+          "UPDATE DATA SET DATA_TYPE = 1 WHERE CHROMATOGRAM_ID = 1 AND DATA_TYPE = 2;");
+      MzMLSqliteHandler handler(filename, 0);
+      std::vector<MSSpectrum> read_spectra;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readSpectra(read_spectra, {1}))
+      std::vector<MSChromatogram> read_chroms;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readChromatograms(read_chroms, {1}))
+    }
+  }
+}
+END_SECTION
+
 // reset error tolerances to default values
 TOLERANCE_ABSOLUTE(1e-5)
 TOLERANCE_RELATIVE(1+1e-5)
