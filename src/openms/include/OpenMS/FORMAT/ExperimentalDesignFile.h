@@ -79,6 +79,10 @@ namespace OpenMS
     /// relative @c Spectra_Filepath entries are resolved, so pass the real design-file path
     /// whenever the spectra are relative to it; a placeholder that is not a real path makes
     /// them resolve against the current working directory.
+    ///
+    /// Do not trim the lines of @p text_file (e.g. with the @c trim_lines argument of TextFile):
+    /// a sample row needs its leading and trailing tabs, or a blank first cell is lost and every
+    /// later value of that row moves one column to the left.
     /// @see load(const std::string&, bool) for the exceptions thrown
     static ExperimentalDesign load(const TextFile& text_file, const bool require_spectra_file, std::string filename);
 
