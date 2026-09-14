@@ -164,6 +164,17 @@ private:
     */
     static const std::string* checkNumericInput_(const std::string& in, std::string& stripped);
 
+    /**
+        @brief The check without whitespace skipping, as in core-v4.0.0-ci.5
+
+        Only kept so that binaries whose decoders were instantiated from the ci.5 headers still load and behave as
+        before; the decoders in this header use the overload above.
+
+        @return false if @p in carries nothing to decode
+        @throws Exception::ConversionError as the overload above, and also for whitespace in @p in
+    */
+    static bool checkNumericInput_(const std::string& in);
+
     /// Decodes a Base64 string to a vector of floating point numbers
     template <typename ToType>
     static void decodeUncompressed_(const std::string & in, ByteOrder from_byte_order, std::vector<ToType> & out);
@@ -423,7 +434,8 @@ private:
   void Base64::decodeIntegersCompressed_(const std::string & in, ByteOrder from_byte_order, std::vector<ToType> & out)
   {
     out.clear();
-    if (in.empty())
+    // nothing to decode (checkNumericInput_() skips whitespace, so whitespace only is like empty input)
+    if (in.find_first_not_of(" \t\n\r") == std::string::npos)
       return;
 
     constexpr Size element_size = sizeof(ToType);

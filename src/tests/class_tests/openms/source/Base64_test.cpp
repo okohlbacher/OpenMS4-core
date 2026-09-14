@@ -151,7 +151,7 @@ START_SECTION((template < typename ToType > void decode(const std::string &in, B
   src = "whoPutMeHere:somecrazyperson,obviously!WhatifIcontaininvalidcharacterslikethese";
   TEST_EXCEPTION(Exception::ConversionError, b64.decode(src, Base64::BYTEORDER_BIGENDIAN, res) );
 
-  src = "Q A..A=="; // the space is skipped, but dots are not allowed
+  src = "Q AA..A=="; // the space is skipped, but dots are not allowed (the length without the space is valid)
   TEST_EXCEPTION(Exception::ConversionError, b64.decode(src, Base64::BYTEORDER_BIGENDIAN, res) );
 }
 END_SECTION
@@ -399,7 +399,7 @@ START_SECTION((template < typename ToType > void decodeIntegers(const std::strin
   b64.decodeIntegers(src, Base64::BYTEORDER_BIGENDIAN,res,false);
   TEST_EQUAL(res.size(), 0)
 
-  src = "Q A..A=="; // the space is skipped, but dots are not allowed
+  src = "Q AA..A=="; // the space is skipped, but dots are not allowed (the length without the space is valid)
   TEST_EXCEPTION(Exception::ConversionError, b64.decodeIntegers(src, Base64::BYTEORDER_BIGENDIAN, res, false))
 }
 END_SECTION
@@ -445,6 +445,35 @@ START_SECTION([EXTRA] numeric decoders reject bytes outside the Base64 alphabet)
   Base64::encodeIntegers(ints, Base64::BYTEORDER_LITTLEENDIAN, compressed, true);
   compressed[compressed.size() / 2] = '!';
   TEST_EXCEPTION(Exception::ConversionError, Base64::decodeIntegers(compressed, Base64::BYTEORDER_LITTLEENDIAN, i64, true))
+
+  // Every byte value, both in a 16-byte block and in the remainder the check reads one by one: 11 doubles give
+  // 118 Base64 characters and two '=', i.e. seven blocks and six more characters.
+  std::vector<double> eleven(11, 1234.5678);
+  std::string encoded;
+  Base64::encode(eleven, Base64::BYTEORDER_LITTLEENDIAN, encoded, false);
+  TEST_EQUAL(encoded.size(), 120)
+  TEST_EQUAL(encoded.substr(118), "==")
+  const std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string accepted_wrongly, rejected_wrongly;
+  for (int byte = 0; byte < 256; ++byte)
+  {
+    const char c = static_cast<char>(byte);
+    const bool valid = alphabet.find(c) != std::string::npos;
+    for (const Size pos : {Size(21), Size(114)})
+    {
+      std::string src = encoded;
+      src[pos] = c;
+      bool f64_threw = false;
+      bool i64_threw = false;
+      try { Base64::decode(src, Base64::BYTEORDER_LITTLEENDIAN, f64, false); } catch (const Exception::ConversionError&) { f64_threw = true; }
+      try { Base64::decodeIntegers(src, Base64::BYTEORDER_LITTLEENDIAN, i64, false); } catch (const Exception::ConversionError&) { i64_threw = true; }
+      const std::string where = " " + StringUtils::toStr(byte) + "@" + StringUtils::toStr(pos);
+      if (!valid && !(f64_threw && i64_threw)) accepted_wrongly += where;
+      if (valid && (f64_threw || i64_threw)) rejected_wrongly += where;
+    }
+  }
+  TEST_EQUAL(accepted_wrongly, "")
+  TEST_EQUAL(rejected_wrongly, "")
 }
 END_SECTION
 
@@ -538,6 +567,24 @@ START_SECTION([EXTRA] numeric decoders skip whitespace in line-wrapped Base64)
   TEST_EXCEPTION(Exception::ConversionError, Base64::decodeIntegers("AAAA\r\nA", Base64::BYTEORDER_LITTLEENDIAN, out, false))
   TEST_EXCEPTION(Exception::ConversionError, Base64::decodeIntegers("AAAA\r\n!AAA", Base64::BYTEORDER_LITTLEENDIAN, out, false))
   TEST_EXCEPTION(Exception::ConversionError, Base64::decodeIntegers("AAAA==\r\nAA", Base64::BYTEORDER_LITTLEENDIAN, out, false))
+
+  // an invalid byte is the only fault: without the whitespace, each length is a multiple of 4
+  std::vector<float> f32_out;
+  std::vector<double> f64_out;
+  std::vector<Int64> i64_out;
+  for (const std::string src : {"AAAA\r\nAA.A", "AAAAAAAAAAAAAAAAAAAA\r\nAAAAAAAAAAAAAAAAAAA-\r\nAAAAAAAAAAAAAAAAAAAAAAAA", "AAAAAAAA AAAAAAAAAAAA\tAAAAAAAAAAAAAAAAAAAA\nAAA\x80"})
+  {
+    std::string without_whitespace = src;
+    StringUtils::removeWhitespaces(without_whitespace);
+    TEST_EQUAL(without_whitespace.size() % 4, 0)
+    for (const bool zlib : {false, true})
+    {
+      TEST_EXCEPTION(Exception::ConversionError, Base64::decode(src, Base64::BYTEORDER_LITTLEENDIAN, f32_out, zlib))
+      TEST_EXCEPTION(Exception::ConversionError, Base64::decode(src, Base64::BYTEORDER_LITTLEENDIAN, f64_out, zlib))
+      TEST_EXCEPTION(Exception::ConversionError, Base64::decodeIntegers(src, Base64::BYTEORDER_LITTLEENDIAN, out, zlib))
+      TEST_EXCEPTION(Exception::ConversionError, Base64::decodeIntegers(src, Base64::BYTEORDER_LITTLEENDIAN, i64_out, zlib))
+    }
+  }
 }
 END_SECTION
 
@@ -569,11 +616,25 @@ START_SECTION([EXTRA] numeric decoders return nothing for empty and padding-only
   TEST_EXCEPTION(Exception::ConversionError, Base64::decodeIntegers("====", Base64::BYTEORDER_LITTLEENDIAN, i32, true))
   TEST_EXCEPTION(Exception::ConversionError, Base64::decodeIntegers("Q==", Base64::BYTEORDER_LITTLEENDIAN, i64, true))
 
-  // whitespace only is like empty input
-  Base64::decode(" \r\n\t ", Base64::BYTEORDER_LITTLEENDIAN, f64, false);
-  TEST_EQUAL(f64.size(), 0)
-  Base64::decodeIntegers(" \r\n\t ", Base64::BYTEORDER_LITTLEENDIAN, i32, false);
-  TEST_EQUAL(i32.size(), 0)
+  // whitespace only is like empty input, for every decoder and with or without zlib
+  for (const std::string src : {" ", " \r\n\t ", "\r\n\r\n"})
+  {
+    for (const bool zlib : {false, true})
+    {
+      f32 = {1.0f};
+      Base64::decode(src, Base64::BYTEORDER_LITTLEENDIAN, f32, zlib);
+      TEST_EQUAL(f32.size(), 0)
+      f64 = {1.0};
+      Base64::decode(src, Base64::BYTEORDER_LITTLEENDIAN, f64, zlib);
+      TEST_EQUAL(f64.size(), 0)
+      i32 = {1};
+      Base64::decodeIntegers(src, Base64::BYTEORDER_LITTLEENDIAN, i32, zlib);
+      TEST_EQUAL(i32.size(), 0)
+      i64 = {1};
+      Base64::decodeIntegers(src, Base64::BYTEORDER_LITTLEENDIAN, i64, zlib);
+      TEST_EQUAL(i64.size(), 0)
+    }
+  }
 }
 END_SECTION
 
