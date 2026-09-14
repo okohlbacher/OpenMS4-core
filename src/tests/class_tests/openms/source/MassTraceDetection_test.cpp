@@ -191,13 +191,18 @@ START_SECTION(([EXTRA] void run(const PeakMap &, std::vector< MassTrace > &) reu
   const PeakMap input_im = withArrays({Constants::UserParam::ION_MOBILITY, Constants::UserParam::FWHM_MZ_ppm, Constants::UserParam::FWHM_IM});
   const PeakMap input_reordered = withArrays({Constants::UserParam::FWHM_IM, Constants::UserParam::ION_MOBILITY, Constants::UserParam::FWHM_MZ_ppm});
   const PeakMap input_reordered_no_im = withArrays({Constants::UserParam::FWHM_MZ_ppm, Constants::UserParam::FWHM_IM});
+  const PeakMap input_no_fwhm_mz = withArrays({Constants::UserParam::ION_MOBILITY, Constants::UserParam::FWHM_IM});
+  const PeakMap input_no_fwhm_im = withArrays({Constants::UserParam::FWHM_MZ_ppm, Constants::UserParam::ION_MOBILITY});
   const PeakMap& input_no_arrays = input;
 
   MassTraceDetection reused;
   reused.setParameters(p_mtd);
 
-  auto runAndCompareWithFresh = [&reused, &p_mtd](const PeakMap& exp, bool expect_im, bool expect_fwhm_mz, bool expect_fwhm_im)
+  auto runAndCompareWithFresh = [&reused, &p_mtd](const std::string& label, const PeakMap& exp, bool expect_im, bool expect_fwhm_mz, bool expect_fwhm_im)
   {
+    // all checks share the lines below, so name the input; flush so the name survives a crash
+    STATUS("reused detector, input: " << label)
+    std::cout.flush();
     MassTraceDetection fresh;
     fresh.setParameters(p_mtd);
     std::vector<MassTrace> expected, observed;
@@ -226,16 +231,23 @@ START_SECTION(([EXTRA] void run(const PeakMap &, std::vector< MassTrace > &) reu
     }
   };
 
-  // ion mobility, m/z FWHM and ion mobility FWHM arrays
-  runAndCompareWithFresh(input_im, true, true, true);
-  // the same arrays in a different order
-  runAndCompareWithFresh(input_reordered, true, true, true);
-  // different order without the ion mobility array: its previous index now points at another array
-  runAndCompareWithFresh(input_reordered_no_im, false, true, true);
-  // no float data arrays at all
-  runAndCompareWithFresh(input_no_arrays, false, false, false);
-  // and back to the ion mobility input
-  runAndCompareWithFresh(input_im, true, true, true);
+  // The comments give the array indices a detector that keeps the previous run's indices would use
+  // (IM = ion mobility, FWHM_mz = m/z FWHM, FWHM_IM = ion mobility FWHM).
+  // IM 0, FWHM_mz 1, FWHM_IM 2
+  runAndCompareWithFresh("IM, FWHM_mz, FWHM_IM", input_im, true, true, true);
+  // IM 1, FWHM_mz 2, FWHM_IM 0: every index is found again, so this run is a control that
+  // passes without the reset too; it moves the indices for the next run
+  runAndCompareWithFresh("FWHM_IM, IM, FWHM_mz (reordered)", input_reordered, true, true, true);
+  // FWHM_mz 0, FWHM_IM 1; the ion mobility index stays 1 and would read FWHM_IM as ion mobility
+  runAndCompareWithFresh("FWHM_mz, FWHM_IM (reordered, no IM)", input_reordered_no_im, false, true, true);
+  // IM 0, FWHM_IM 1; the m/z FWHM index stays 0 and would read the IM array as m/z FWHM
+  runAndCompareWithFresh("IM, FWHM_IM (reordered, no FWHM_mz)", input_no_fwhm_mz, true, false, true);
+  // FWHM_mz 0, IM 1; the ion mobility FWHM index stays 1 and would read the IM array as ion mobility FWHM
+  runAndCompareWithFresh("FWHM_mz, IM (reordered, no FWHM_IM)", input_no_fwhm_im, true, true, false);
+  // every previous index would point past the end of the (empty) float data arrays
+  runAndCompareWithFresh("no float data arrays", input_no_arrays, false, false, false);
+  // and back to the first input
+  runAndCompareWithFresh("IM, FWHM_mz, FWHM_IM (again)", input_im, true, true, true);
 }
 END_SECTION
 
