@@ -9,6 +9,7 @@
 #include <OpenMS/CONCEPT/ClassTest.h>
 #include <OpenMS/test_config.h>
 #include <OpenMS/FORMAT/MzMLFile.h>
+#include <OpenMS/CONCEPT/Constants.h>
 
 ///////////////////////////
 #include <OpenMS/FEATUREFINDER/MassTraceDetection.h>
@@ -154,6 +155,87 @@ START_SECTION((void run(const PeakMap &, std::vector< MassTrace > &)))
       }
 
     }
+}
+END_SECTION
+
+START_SECTION(([EXTRA] void run(const PeakMap &, std::vector< MassTrace > &) reusing one detector for inputs with different float data arrays))
+{
+  // Regression test: the float data array flags and indices found by one run must not leak into
+  // the next run of the same detector. Every run has to give the result of a fresh detector.
+
+  // copy of the input with float data arrays added in the given order; the values of all arrays
+  // except the (constant) ion mobility change from spectrum to spectrum by far more than
+  // ion_mobility_tolerance, so reading any of them as ion mobility breaks every mass trace
+  auto withArrays = [&input](const std::vector<std::string>& names)
+  {
+    PeakMap result = input;
+    for (Size s = 0; s < result.size(); ++s)
+    {
+      MSSpectrum& spec = result[s];
+      MSSpectrum::FloatDataArrays fdas;
+      for (const std::string& name : names)
+      {
+        MSSpectrum::FloatDataArray fda;
+        fda.setName(name);
+        float value = 0.9f;
+        if (name == Constants::UserParam::FWHM_MZ_ppm) value = 4.0f + 2.0f * (s % 2);
+        if (name == Constants::UserParam::FWHM_IM) value = 0.05f + 1.0f * (s % 2);
+        fda.assign(spec.size(), value);
+        fdas.push_back(fda);
+      }
+      spec.setFloatDataArrays(fdas);
+    }
+    return result;
+  };
+
+  const PeakMap input_im = withArrays({Constants::UserParam::ION_MOBILITY, Constants::UserParam::FWHM_MZ_ppm, Constants::UserParam::FWHM_IM});
+  const PeakMap input_reordered = withArrays({Constants::UserParam::FWHM_IM, Constants::UserParam::ION_MOBILITY, Constants::UserParam::FWHM_MZ_ppm});
+  const PeakMap input_reordered_no_im = withArrays({Constants::UserParam::FWHM_MZ_ppm, Constants::UserParam::FWHM_IM});
+  const PeakMap& input_no_arrays = input;
+
+  MassTraceDetection reused;
+  reused.setParameters(p_mtd);
+
+  auto runAndCompareWithFresh = [&reused, &p_mtd](const PeakMap& exp, bool expect_im, bool expect_fwhm_mz, bool expect_fwhm_im)
+  {
+    MassTraceDetection fresh;
+    fresh.setParameters(p_mtd);
+    std::vector<MassTrace> expected, observed;
+    fresh.run(exp, expected);
+    reused.run(exp, observed);
+
+    TEST_EQUAL(fresh.hasCentroidIm(), expect_im)
+    TEST_EQUAL(fresh.hasFwhmMz(), expect_fwhm_mz)
+    TEST_EQUAL(fresh.hasFwhmIm(), expect_fwhm_im)
+    TEST_EQUAL(reused.hasCentroidIm(), fresh.hasCentroidIm())
+    TEST_EQUAL(reused.hasFwhmMz(), fresh.hasFwhmMz())
+    TEST_EQUAL(reused.hasFwhmIm(), fresh.hasFwhmIm())
+
+    TEST_EQUAL(expected.size(), 3)
+    TEST_EQUAL(observed.size(), expected.size())
+    for (Size i = 0; i < std::min(observed.size(), expected.size()); ++i)
+    {
+      TEST_EQUAL(observed[i].getSize(), expected[i].getSize())
+      TEST_REAL_SIMILAR(observed[i].getCentroidRT(), expected[i].getCentroidRT())
+      TEST_REAL_SIMILAR(observed[i].getCentroidMZ(), expected[i].getCentroidMZ())
+      TEST_REAL_SIMILAR(observed[i].computePeakArea(), expected[i].computePeakArea())
+      TEST_EQUAL(observed[i].containsIMData(), expected[i].containsIMData())
+      TEST_REAL_SIMILAR(observed[i].getCentroidIM(), expected[i].getCentroidIM())
+      TEST_REAL_SIMILAR(observed[i].fwhm_mz_avg, expected[i].fwhm_mz_avg)
+      TEST_REAL_SIMILAR(observed[i].fwhm_im_avg, expected[i].fwhm_im_avg)
+    }
+  };
+
+  // ion mobility, m/z FWHM and ion mobility FWHM arrays
+  runAndCompareWithFresh(input_im, true, true, true);
+  // the same arrays in a different order
+  runAndCompareWithFresh(input_reordered, true, true, true);
+  // different order without the ion mobility array: its previous index now points at another array
+  runAndCompareWithFresh(input_reordered_no_im, false, true, true);
+  // no float data arrays at all
+  runAndCompareWithFresh(input_no_arrays, false, false, false);
+  // and back to the ion mobility input
+  runAndCompareWithFresh(input_im, true, true, true);
 }
 END_SECTION
 
