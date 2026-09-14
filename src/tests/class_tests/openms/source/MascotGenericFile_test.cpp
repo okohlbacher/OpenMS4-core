@@ -445,4 +445,42 @@ START_SECTION(([EXTRA] empty MGF blocks do not consume the following spectrum))
   TEST_FALSE(spectra[1].metaValueExists("SEQ"))
 END_SECTION
 
+START_SECTION(([EXTRA] a block that omits CHARGE and RTINSECONDS does not inherit them from the preceding block))
+  std::string filename;
+  NEW_TMP_FILE(filename)
+  {
+    std::ofstream output(filename);
+    output << "BEGIN IONS\nTITLE=s1\nPEPMASS=500.25 12000\nCHARGE=2+\nRTINSECONDS=1200\n100 10\n110 11\nEND IONS\n"
+              "BEGIN IONS\nTITLE=s2\nPEPMASS=612.8\n150 20\nEND IONS\n";
+  }
+  PeakMap spectra;
+  MascotGenericFile().load(filename, spectra);
+  TEST_EQUAL(spectra.size(), 2)
+  ABORT_IF(spectra.size() != 2)
+
+  // the first block keeps everything it lists
+  TEST_EQUAL(StringUtils::toStr(spectra[0].getMetaValue("TITLE")), "s1_index=0") // the loader appends the spectrum index to the title
+  TEST_EQUAL(spectra[0].size(), 2)
+  ABORT_IF(spectra[0].size() != 2)
+  TEST_REAL_SIMILAR(spectra[0][0].getMZ(), 100)
+  TEST_REAL_SIMILAR(spectra[0][0].getIntensity(), 10)
+  TEST_REAL_SIMILAR(spectra[0][1].getMZ(), 110)
+  TEST_REAL_SIMILAR(spectra[0][1].getIntensity(), 11)
+  TEST_REAL_SIMILAR(spectra[0].getPrecursors()[0].getMZ(), 500.25)
+  TEST_REAL_SIMILAR(spectra[0].getPrecursors()[0].getIntensity(), 12000)
+  TEST_EQUAL(spectra[0].getPrecursors()[0].getCharge(), 2)
+  TEST_REAL_SIMILAR(spectra[0].getRT(), 1200)
+
+  // the second block omits CHARGE, RTINSECONDS and the PEPMASS intensity: defaults, not the first block's values
+  TEST_EQUAL(StringUtils::toStr(spectra[1].getMetaValue("TITLE")), "s2_index=1")
+  TEST_EQUAL(spectra[1].size(), 1)
+  ABORT_IF(spectra[1].size() != 1)
+  TEST_REAL_SIMILAR(spectra[1][0].getMZ(), 150)
+  TEST_REAL_SIMILAR(spectra[1][0].getIntensity(), 20)
+  TEST_REAL_SIMILAR(spectra[1].getPrecursors()[0].getMZ(), 612.8)
+  TEST_EQUAL(spectra[1].getPrecursors()[0].getIntensity(), 0)
+  TEST_EQUAL(spectra[1].getPrecursors()[0].getCharge(), 0)
+  TEST_EQUAL(spectra[1].getRT(), -1)
+END_SECTION
+
 END_TEST
