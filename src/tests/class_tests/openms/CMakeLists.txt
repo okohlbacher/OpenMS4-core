@@ -88,6 +88,20 @@ else()
   message(STATUS "Percolator_subprocess_parity_test: PIN-stamp checks enabled; subprocess sections SKIPPED (set PERCOLATOR_BINARY_FOR_TEST or put percolator on PATH)")
 endif()
 
+# CoarseIsotopeDistribution_test covers an out-of-bounds heap write (CPP-005) that changes no
+# returned value, so only a heap checker can see it if it comes back. On Linux with glibc >= 2.34,
+# run the test with glibc malloc checking. Not under AddressSanitizer, which sees the write itself
+# and must be the first library loaded.
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ADDRESS_SANITIZER)
+  foreach(_malloc_debug_dir /lib/${CMAKE_SYSTEM_PROCESSOR}-linux-gnu /usr/lib/${CMAKE_SYSTEM_PROCESSOR}-linux-gnu /lib64 /usr/lib64)
+    if (EXISTS "${_malloc_debug_dir}/libc_malloc_debug.so.0")
+      set_tests_properties(CoarseIsotopeDistribution_test PROPERTIES
+        ENVIRONMENT "LD_PRELOAD=${_malloc_debug_dir}/libc_malloc_debug.so.0;GLIBC_TUNABLES=glibc.malloc.check=3")
+      break()
+    endif()
+  endforeach()
+endif()
+
 #------------------------------------------------------------------------------
 # Extra dependencies needed directly by individual tests. Boost regex is public
 # on OpenMS and already propagates to every class test.

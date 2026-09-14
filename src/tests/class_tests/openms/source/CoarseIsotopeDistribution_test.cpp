@@ -721,7 +721,16 @@ START_SECTION(([EXTRA] fragment isotope distributions truncated by a nonzero max
   // Regression test: a nonzero max_isotope shorter than the fragment distribution truncates the
   // result; the accumulation over the fragment distribution must stop at the truncated length
   // instead of writing past the end of the result.
+  //
+  // The old out-of-bounds write changes none of the returned values, so no assertion here can see
+  // it. In a Release build it shows up only through a heap checker: AddressSanitizer, or glibc
+  // malloc checking (LD_PRELOAD=libc_malloc_debug.so.0 GLIBC_TUNABLES=glibc.malloc.check=3, which
+  // CMakeLists.txt sets for this test on Linux). Without a checker, part (a) aborts only because
+  // on plain glibc the write happens to corrupt the next chunk header, and part (b) passes; other
+  // allocators (e.g. macOS) may not notice either part.
   std::set<UInt> precursor_isotopes = {0, 1, 2};
+
+  // (a) estimateForFragmentFromPeptideWeight
 
   // estimateForFragmentFromPeptideWeight computes the fragment and complementary fragment
   // distributions with max(precursor_isotopes) + 1 = 3 peaks, independent of this generator's max_isotope
@@ -740,7 +749,7 @@ START_SECTION(([EXTRA] fragment isotope distributions truncated by a nonzero max
   TEST_EQUAL(truncated.getContainer()[0].getIntensity() > 0.0, true)
   TEST_EQUAL(truncated.getContainer()[1].getIntensity() > 0.0, true)
 
-  // calcFragmentIsotopeDist on inputs much longer than a nonzero max_isotope
+  // (b) calcFragmentIsotopeDist on inputs much longer than a nonzero max_isotope
   EmpiricalFormula ef_fragment("C100");
   EmpiricalFormula ef_complementary_fragment("C200");
   IsotopeDistribution fragment(ef_fragment.getIsotopeDistribution(CoarseIsotopePatternGenerator(11, true)));
