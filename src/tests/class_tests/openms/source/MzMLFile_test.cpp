@@ -17,9 +17,12 @@
 
 #include <OpenMS/FORMAT/FileTypes.h>
 #include <OpenMS/FORMAT/HANDLERS/MzMLHandler.h>
+#include <OpenMS/FORMAT/HANDLERS/MzMLSpectrumDecoder.h>
 #include <OpenMS/KERNEL/MSExperiment.h>
 
 #include <fstream>
+#include <regex>
+#include <type_traits>
 
 using namespace OpenMS;
 using namespace std;
@@ -30,6 +33,39 @@ DRange<1> makeRange(double a, double b)
 {
   DPosition<1> pa(a), pb(b);
   return DRange<1>(pa, pb);
+}
+
+/// MzMLFile_1.mzML (4 spectra and 2 chromatograms) stored to an mzML buffer without index
+std::string mzMLFile1WithoutIndex()
+{
+  PeakMap exp;
+  MzMLFile file;
+  file.load(OPENMS_GET_TEST_DATA_PATH("MzMLFile_1.mzML"), exp);
+  file.getOptions().setWriteIndex(false); // the edits of the tests move the offsets an index would point to
+  std::string buffer;
+  file.storeBuffer(buffer, exp);
+  return buffer;
+}
+
+/// loads @p original with the count attribute of every @p list element set to @p count into @p loaded;
+/// returns what went wrong, naming the list and count: an exception escaping the load, or the edit not applied
+std::string loadWithListCount(const std::string& original, const std::string& list, const std::string& count, PeakMap& loaded)
+{
+  const std::string input = list + " count=\"" + count + "\"";
+  const std::string buffer = std::regex_replace(original, std::regex("<" + list + " count=\"[0-9]+\""), "<" + input);
+  if (!StringUtils::hasSubstring(buffer, "<" + input))
+  {
+    return input + ": not found in the stored mzML";
+  }
+  try
+  {
+    MzMLFile().loadBuffer(buffer, loaded);
+  }
+  catch (...) // OpenMS' OutOfMemory is a std::exception twice over, which 'catch (const std::exception&)' misses
+  {
+    return input + ": the load threw " + TEST::describeCaughtException();
+  }
+  return "";
 }
 
 ///////////////////////////
@@ -1547,6 +1583,197 @@ START_SECTION(([EXTRA] chromatogram precursors keep supplemental activation))
   TEST_TRUE(reloaded.metaValueExists("supplemental beam-type collision-induced dissociation"))
   TEST_TRUE(reloaded.metaValueExists("supplemental collision energy"))
   TEST_EQUAL(reloaded.getActivationMethods().count(Precursor::ActivationMethod::EThcD), 1)
+}
+END_SECTION
+
+START_SECTION(([EXTRA] spectrumList count is only a capacity hint))
+{
+  // The count attributes sized reserves unchecked: -1 converted to SIZE_MAX (std::length_error
+  // escaping the load) and a huge count reserved that many entries before a single child had been
+  // read. At most 1 << 16 spectra or chromatograms are reserved now, see MzMLHandler.
+  const std::string original = mzMLFile1WithoutIndex();
+  PeakMap reference;
+  MzMLFile().loadBuffer(original, reference);
+  TEST_EQUAL(reference.getNrSpectra(), 4)
+
+  PeakMap huge, negative;
+  TEST_STRING_EQUAL(loadWithListCount(original, "spectrumList", "2000000000", huge), "")
+  TEST_EQUAL(huge.getSpectra() == reference.getSpectra(), true)
+  TEST_EQUAL(huge.getSpectra().capacity() <= (1 << 16), true)
+  TEST_STRING_EQUAL(loadWithListCount(original, "spectrumList", "-1", negative), "")
+  TEST_EQUAL(negative.getSpectra() == reference.getSpectra(), true)
+}
+END_SECTION
+
+START_SECTION(([EXTRA] chromatogramList count is only a capacity hint))
+{
+  const std::string original = mzMLFile1WithoutIndex();
+  PeakMap reference;
+  MzMLFile().loadBuffer(original, reference);
+  TEST_EQUAL(reference.getNrChromatograms(), 2)
+
+  PeakMap huge, negative;
+  TEST_STRING_EQUAL(loadWithListCount(original, "chromatogramList", "2000000000", huge), "")
+  TEST_EQUAL(huge.getChromatograms() == reference.getChromatograms(), true)
+  TEST_EQUAL(huge.getChromatograms().capacity() <= (1 << 16), true)
+  TEST_STRING_EQUAL(loadWithListCount(original, "chromatogramList", "-1", negative), "")
+  TEST_EQUAL(negative.getChromatograms() == reference.getChromatograms(), true)
+}
+END_SECTION
+
+START_SECTION(([EXTRA] binaryDataArrayList count is only a capacity hint))
+{
+  // Only -1 is tested: a huge count reserved that many entries (at most 16 now) of a buffer that does
+  // not outlive the load, so on a host that overcommits memory the reserve succeeds and leaves nothing
+  // to check afterwards.
+  const std::string original = mzMLFile1WithoutIndex();
+  PeakMap reference;
+  MzMLFile().loadBuffer(original, reference);
+
+  PeakMap negative;
+  TEST_STRING_EQUAL(loadWithListCount(original, "binaryDataArrayList", "-1", negative), "")
+  TEST_EQUAL(negative.getSpectra() == reference.getSpectra(), true)
+  TEST_EQUAL(negative.getChromatograms() == reference.getChromatograms(), true)
+}
+END_SECTION
+
+START_SECTION(([EXTRA] numpress data arrays are bounded by their decoded length))
+{
+  // The numpress branch of MzMLHandlerHelper::decodeBase64Arrays kept the length declared in the file
+  // (arrayLength, or defaultArrayLength without it) instead of the decoded one, and the supplemental
+  // arrays were copied by that length: past the end of the decoded values.
+  MSSpectrum spectrum;
+  spectrum.setNativeID("spectrum=0");
+  spectrum.setRT(10.0);
+  MSChromatogram chrom;
+  chrom.setNativeID("chromatogram=0");
+  for (int i = 0; i < 10; ++i)
+  {
+    spectrum.push_back(Peak1D(100.0 + i, 1000.0 + i));
+    chrom.push_back(ChromatogramPeak(1.0 + i, 10.0 + i));
+  }
+  spectrum.getFloatDataArrays().push_back({1.5f, 2.5f, 3.5f});
+  spectrum.getFloatDataArrays()[0].setName("short array");
+  chrom.getFloatDataArrays().push_back({4.5f, 5.5f, 6.5f});
+  chrom.getFloatDataArrays()[0].setName("short array");
+  PeakMap exp;
+  exp.addSpectrum(spectrum);
+  exp.addChromatogram(chrom);
+
+  std::string buffer;
+  {
+    MzMLFile file;
+    MSNumpressCoder::NumpressConfig np_config;
+    np_config.np_compression = MSNumpressCoder::LINEAR;
+    file.getOptions().setNumpressConfigurationFloatDataArray(np_config);
+    file.getOptions().setWriteIndex(false); // the edit below moves the offsets an index would point to
+    file.storeBuffer(buffer, exp);
+  }
+  TEST_TRUE(StringUtils::hasSubstring(buffer, "MS:1002312")) // MS-Numpress linear prediction compression
+  // the arrays of 3 values are the only ones with an arrayLength: without it, they are declared with
+  // the defaultArrayLength of 10
+  TEST_TRUE(StringUtils::hasSubstring(buffer, "defaultArrayLength=\"10\""))
+  TEST_TRUE(StringUtils::hasSubstring(buffer, "<binaryDataArray arrayLength=\"3\" "))
+  StringUtils::substitute(buffer, "<binaryDataArray arrayLength=\"3\" ", "<binaryDataArray ");
+  TEST_FALSE(StringUtils::hasSubstring(buffer, "arrayLength=\"3\""))
+
+  // unfiltered load
+  {
+    PeakMap loaded;
+    MzMLFile().loadBuffer(buffer, loaded);
+    ABORT_IF(loaded.getNrSpectra() != 1 || loaded.getNrChromatograms() != 1)
+    const MSSpectrum& loaded_spectrum = loaded.getSpectra()[0];
+    TEST_EQUAL(loaded_spectrum.size(), 10)
+    ABORT_IF(loaded_spectrum.getFloatDataArrays().size() != 1)
+    TEST_EQUAL(loaded_spectrum.getFloatDataArrays()[0].size(), 3)
+    ABORT_IF(loaded_spectrum.getFloatDataArrays()[0].size() < 3)
+    TEST_REAL_SIMILAR(loaded_spectrum.getFloatDataArrays()[0][0], 1.5)
+    TEST_REAL_SIMILAR(loaded_spectrum.getFloatDataArrays()[0][2], 3.5)
+
+    const MSChromatogram& loaded_chrom = loaded.getChromatograms()[0];
+    TEST_EQUAL(loaded_chrom.size(), 10)
+    ABORT_IF(loaded_chrom.getFloatDataArrays().size() != 1)
+    TEST_EQUAL(loaded_chrom.getFloatDataArrays()[0].size(), 3)
+    ABORT_IF(loaded_chrom.getFloatDataArrays()[0].size() < 3)
+    TEST_REAL_SIMILAR(loaded_chrom.getFloatDataArrays()[0][0], 4.5)
+    TEST_REAL_SIMILAR(loaded_chrom.getFloatDataArrays()[0][2], 6.5)
+  }
+
+  // load with an m/z range: spectra then copy the supplemental arrays peak by peak instead of in bulk
+  // (chromatograms have only the peak by peak copy, which the load above took)
+  {
+    MzMLFile file;
+    file.getOptions().setMZRange(makeRange(0.0, 1000.0));
+    PeakMap loaded;
+    file.loadBuffer(buffer, loaded);
+    ABORT_IF(loaded.getNrSpectra() != 1)
+    const MSSpectrum& loaded_spectrum = loaded.getSpectra()[0];
+    TEST_EQUAL(loaded_spectrum.size(), 10)
+    ABORT_IF(loaded_spectrum.getFloatDataArrays().size() != 1)
+    TEST_EQUAL(loaded_spectrum.getFloatDataArrays()[0].size(), 3)
+    ABORT_IF(loaded_spectrum.getFloatDataArrays()[0].size() < 3)
+    TEST_REAL_SIMILAR(loaded_spectrum.getFloatDataArrays()[0][0], 1.5)
+    TEST_REAL_SIMILAR(loaded_spectrum.getFloatDataArrays()[0][2], 3.5)
+  }
+
+  // The records decoded on their own (indexed and on-disc access). Every array of the edited buffer is
+  // declared with the defaultArrayLength of its record, and the decoder reserved that declared length
+  // for the float data array.
+  const std::string::size_type spectrum_begin = buffer.find("<spectrum ");
+  const std::string::size_type spectrum_end = buffer.find("</spectrum>");
+  const std::string::size_type chrom_begin = buffer.find("<chromatogram ");
+  const std::string::size_type chrom_end = buffer.find("</chromatogram>");
+  ABORT_IF(spectrum_begin == std::string::npos || spectrum_end == std::string::npos ||
+           chrom_begin == std::string::npos || chrom_end == std::string::npos)
+  const std::string spectrum_xml = buffer.substr(spectrum_begin, spectrum_end + 11 - spectrum_begin);
+  const std::string chrom_xml = buffer.substr(chrom_begin, chrom_end + 15 - chrom_begin);
+  TEST_TRUE(StringUtils::hasSubstring(spectrum_xml, "defaultArrayLength=\"10\""))
+  TEST_TRUE(StringUtils::hasSubstring(chrom_xml, "defaultArrayLength=\"10\""))
+
+  // decodes 'xml' with its defaultArrayLength set to 'length' into 'record'; returns what went wrong
+  auto decode = [](std::string xml, const std::string& length, auto& record)
+  {
+    StringUtils::substitute(xml, "defaultArrayLength=\"10\"", "defaultArrayLength=\"" + length + "\"");
+    try
+    {
+      MzMLSpectrumDecoder decoder;
+      if constexpr (std::is_same_v<std::decay_t<decltype(record)>, MSSpectrum>)
+      {
+        decoder.domParseSpectrum(xml, record);
+      }
+      else
+      {
+        decoder.domParseChromatogram(xml, record);
+      }
+    }
+    catch (...)
+    {
+      return "defaultArrayLength " + length + ": the decoder threw " + TEST::describeCaughtException();
+    }
+    return std::string();
+  };
+  for (const std::string length : {"-1", "2000000000"})
+  {
+    STATUS("decoded with defaultArrayLength " << length)
+    MSSpectrum decoded_spectrum;
+    TEST_STRING_EQUAL(decode(spectrum_xml, length, decoded_spectrum), "")
+    // no ABORT_IF in this loop: it would leave only the loop and skip the remaining lengths unreported
+    TEST_EQUAL(decoded_spectrum.getFloatDataArrays().size(), 1)
+    if (decoded_spectrum.getFloatDataArrays().size() == 1)
+    {
+      TEST_EQUAL(decoded_spectrum.getFloatDataArrays()[0].size(), 3)
+      TEST_EQUAL(decoded_spectrum.getFloatDataArrays()[0].capacity() <= 16, true)
+    }
+
+    MSChromatogram decoded_chrom;
+    TEST_STRING_EQUAL(decode(chrom_xml, length, decoded_chrom), "")
+    TEST_EQUAL(decoded_chrom.getFloatDataArrays().size(), 1)
+    if (decoded_chrom.getFloatDataArrays().size() == 1)
+    {
+      TEST_EQUAL(decoded_chrom.getFloatDataArrays()[0].size(), 3)
+      TEST_EQUAL(decoded_chrom.getFloatDataArrays()[0].capacity() <= 16, true)
+    }
+  }
 }
 END_SECTION
 
