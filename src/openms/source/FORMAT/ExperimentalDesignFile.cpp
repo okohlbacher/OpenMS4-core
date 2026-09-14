@@ -340,10 +340,10 @@ namespace OpenMS
       ParseState state(RUN_HEADER);
       Size n_col = 0;
 
-      for (std::string s : text_file)
+      for (const std::string& raw_line : text_file)
       {
         // skip empty lines (except in state RUN_CONTENT, where the sample table is read)
-        const std::string line(StringUtils::trim(s));
+        const std::string line = StringUtils::trimmed(raw_line);
 	      // also skip comment lines
         if (StringUtils::hasPrefix(line, "#") || (line.empty() && state != RUN_CONTENT))
         {
@@ -352,7 +352,9 @@ namespace OpenMS
 
         // Now split the line into individual cells
         StringList cells;
-        StringUtils::split(line, "\t", cells);
+        // Split a sample row before trimming it: trimming the line would also drop a blank first or last cell (its
+        // tab is whitespace), and every later value would then move into the wrong column. Cells are trimmed below.
+        StringUtils::split(state == SAMPLE_CONTENT ? raw_line : line, "\t", cells);
 
         // Trim whitespace from all cells (so , foo , and  ,foo, is the same)
         std::transform(cells.begin(), cells.end(), cells.begin(),
@@ -439,12 +441,16 @@ namespace OpenMS
         // Parse Sample Row
         else if (state == SAMPLE_CONTENT)
         {
-          // Same width check as the file section: the Sample lookup below indexes the row
-          // unchecked, and a short row stored here would be read past its end by getFactorValue().
-          parseErrorIf_(n_col != cells.size(), tsv_file, "Wrong number of records in line");
+          // Blank cells keep their column (see the split above), but a row may still lack trailing cells, e.g. when
+          // an editor drops the tabs after a blank last value. Pad it with empty values and ignore cells beyond
+          // the header, so every stored row has exactly one value per column and getFactorValue() stays inside it.
+          // Only the sample name itself must be present.
+          const Size sample_column = sample_columnname_to_columnindex_.at("Sample");
+          cells.resize(n_col);
+          parseErrorIf_(cells[sample_column].empty(), tsv_file, "Missing sample name in a row of the sample table");
 
           // Parse Error if sample appears multiple times
-          const std::string& sample = cells[sample_columnname_to_columnindex_["Sample"]];
+          const std::string& sample = cells[sample_column];
           parseErrorIf_(sample_sample_to_rowindex_.contains(sample),
                         tsv_file,
                         "Sample: " + std::string(sample) + " appears multiple times in the sample table");
@@ -455,7 +461,13 @@ namespace OpenMS
 
       for (auto& e : msfile_section)
       {
-        e.sample = sample_sample_to_rowindex_.at(e.sample_name);
+        // Every sample the file section uses needs a row in the sample section. Name a missing one, instead of
+        // letting the lookup throw a bare std::out_of_range that does not say which sample it was.
+        const auto row = sample_sample_to_rowindex_.find(e.sample_name);
+        parseErrorIf_(row == sample_sample_to_rowindex_.end(), tsv_file,
+                      "Sample '" + e.sample_name + "' of the MS file section is missing from the sample section" +
+                      (has_sample ? "" : " (the file section has no Sample column, so it names each sample after its fraction group)"));
+        e.sample = row->second;
       }
 
       // Create Sample Section and set in design
@@ -488,7 +500,8 @@ namespace OpenMS
 
     ExperimentalDesign ExperimentalDesignFile::load(const std::string &tsv_file, const bool require_spectra_file)
     {
-      const TextFile text_file(tsv_file, true);
+      // Lines are not trimmed here: the parsers trim them, except sample rows, which need their leading and trailing tabs.
+      const TextFile text_file(tsv_file);
       return load(text_file, require_spectra_file, tsv_file);
     }
 

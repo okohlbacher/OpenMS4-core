@@ -69,6 +69,28 @@ public:
         @brief Decodes a Base64 string to a vector of floating point numbers
 
         You have to specify the byte order of the input and if it is zlib-compressed.
+
+        @p in is checked before it is decoded:
+        - ASCII whitespace (space, tab, CR, LF) may appear anywhere, as in line-wrapped xs:base64Binary. It is
+          skipped, so wrapped input decodes to the same values as unwrapped input.
+        - Empty input, whitespace only, fewer than four characters besides whitespace (these are not checked)
+          and '=' only decode to an empty @p out, with or without compression.
+        - Otherwise Exception::ConversionError is thrown if the length without whitespace is not a multiple of 4,
+          a byte is neither in the Base64 alphabet nor whitespace (other control characters such as form feed
+          included), data follows an '=', or there are more than two '='.
+
+        Without compression, bytes at the end that do not fill a whole value are ignored. With compression, data
+        that decompresses to nothing gives an empty @p out, and decompressed data whose size is not a multiple of
+        sizeof(ToType) throws.
+
+        @param[in] in The Base64 text
+        @param[in] from_byte_order The byte order of the encoded values
+        @param[out] out The decoded values (previous content is discarded)
+        @param[in] zlib_compression Whether the decoded bytes are zlib-compressed
+
+        @throws Exception::ConversionError if @p in is malformed as described above, or if the decompressed data
+                is not a whole number of values
+        @throws Exception::InternalToolError if zlib cannot decompress the data
     */
     template <typename ToType>
     static void decode(const std::string & in, ByteOrder from_byte_order, std::vector<ToType> & out, bool zlib_compression = false);
@@ -87,6 +109,29 @@ public:
         @brief Decodes a Base64 string to a vector of integer numbers
 
         You have to specify the byte order of the input and if it is zlib-compressed.
+
+        @p in is checked as for decode(): ASCII whitespace (space, tab, CR, LF) is skipped anywhere, and a length
+        without whitespace that is not a multiple of 4, any other byte outside the Base64 alphabet, data after an
+        '=' or more than two '=' throw Exception::ConversionError.
+
+        Without compression, empty input, whitespace only, fewer than four characters besides whitespace (these
+        are not checked) and '=' only decode to an empty @p out. The bytes that '=' padding stands for are decoded
+        as well (as zero bytes if the unused low bits of the character before the padding are zero, as encoders
+        write them), so they can complete the last value; bytes that still do not fill a whole value are ignored.
+
+        With compression, only empty and whitespace-only input give an empty @p out. Everything else must
+        decompress to a whole, non-zero number of values: fewer than four characters besides whitespace, '=' only,
+        data that decompresses to nothing, and decompressed data whose size is not a multiple of sizeof(ToType)
+        all throw Exception::ConversionError.
+
+        @param[in] in The Base64 text
+        @param[in] from_byte_order The byte order of the encoded values
+        @param[out] out The decoded values (previous content is discarded)
+        @param[in] zlib_compression Whether the decoded bytes are zlib-compressed
+
+        @throws Exception::ConversionError if @p in is malformed, or compressed @p in does not decompress to a
+                whole, non-zero number of values, as described above
+        @throws Exception::InternalToolError if zlib cannot decompress the data
     */
     template <typename ToType>
     static void decodeIntegers(const std::string & in, ByteOrder from_byte_order, std::vector<ToType> & out, bool zlib_compression = false);
@@ -145,14 +190,36 @@ private:
     static const char decoder_[];
 
     /**
-        @brief Rejects malformed Base64 before it is decoded into numbers
+        @brief Rejects malformed Base64 before it is decoded into numbers, and skips whitespace
 
         The decoders map every input byte to some 6-bit value, so a byte outside the alphabet or padding
         inside the data would otherwise come back as plausible numeric values instead of an error.
 
-        @return false if @p in carries nothing to decode (shorter than one group, or padding only)
-        @throws Exception::ConversionError if the length is not a multiple of 4, a byte is outside the
-                Base64 alphabet, or padding is anything but a trailing run of at most two '='
+        ASCII whitespace (space, tab, CR, LF) may appear anywhere, as in line-wrapped xs:base64Binary.
+        It does not count towards the length, and the decoders read the input without it, so wrapped
+        input decodes to the same values as unwrapped input.
+
+        @param[in] in The Base64 text
+        @param[out] stripped Receives @p in without whitespace; only written if @p in contains whitespace
+        @return The text to decode: @p in itself, or @p stripped if @p in contains whitespace.
+                nullptr if @p in carries nothing to decode (shorter than one group, or padding only).
+        @throws Exception::ConversionError if the length without whitespace is not a multiple of 4, a byte
+                is neither in the Base64 alphabet nor whitespace, or padding is anything but a trailing
+                run of at most two '='
+    */
+    static const std::string* checkNumericInput_(const std::string& in, std::string& stripped);
+
+    /**
+        @brief The check without whitespace skipping, as in core-v4.0.0-ci.5
+
+        Only kept so that binaries whose decoders were instantiated from the ci.5 headers still load; the decoders
+        in this header use the overload above. It returns and throws for the same inputs as in ci.5, but the
+        message can differ: whitespace is always reported as an invalid character (or as a bad length), where ci.5
+        reports "data after padding" if an '=' comes before the first byte it rejects.
+
+        @return false if @p in carries nothing to decode
+        @throws Exception::ConversionError as the overload above, and also for whitespace in @p in if @p in has at
+                least four characters
     */
     static bool checkNumericInput_(const std::string& in);
 
@@ -289,13 +356,15 @@ private:
   void Base64::decodeCompressed_(const std::string& in, ByteOrder from_byte_order, std::vector<ToType>& out)
   {
     out.clear();
-    if (!checkNumericInput_(in))
+    std::string stripped;
+    const std::string* checked = checkNumericInput_(in, stripped);
+    if (checked == nullptr)
     {
       return;
     }
 
     std::string decompressed;
-    Base64::decodeSingleString(in, decompressed, true);
+    Base64::decodeSingleString(*checked, decompressed, true);
 
     void* byte_buffer = reinterpret_cast<void*>(&decompressed[0]);
     Size buffer_size = decompressed.size();
@@ -326,22 +395,16 @@ private:
 
     // The length of a base64 string is always a multiple of 4 (always 3
     // bytes are encoded as 4 characters)
-    if (!checkNumericInput_(in))
+    std::string stripped;
+    const std::string* checked = checkNumericInput_(in, stripped);
+    if (checked == nullptr)
     {
       return;
     }
 
-    Size src_size = in.size();
-    // last one or two '=' are skipped if contained
-    int padding = 0;
-    if (in[src_size - 1] == '=') padding++;
-    if (in[src_size - 2] == '=') padding++;
-
-    src_size -= padding;
-
     constexpr Size element_size = sizeof(ToType);
     std::string s;
-    stringSimdDecoder_(in,s);
+    stringSimdDecoder_(*checked, s);
 
     // change endianness if necessary (mzML is always LITTLE_ENDIAN; x64 is LITTLE_ENDIAN)
     if ((OPENMS_IS_BIG_ENDIAN && from_byte_order == Base64::BYTEORDER_LITTLEENDIAN) || (!OPENMS_IS_BIG_ENDIAN && from_byte_order == Base64::BYTEORDER_BIGENDIAN))
@@ -419,15 +482,17 @@ private:
   void Base64::decodeIntegersCompressed_(const std::string & in, ByteOrder from_byte_order, std::vector<ToType> & out)
   {
     out.clear();
-    if (in.empty())
+    // nothing to decode (checkNumericInput_() skips whitespace, so whitespace only is like empty input)
+    if (in.find_first_not_of(" \t\n\r") == std::string::npos)
       return;
 
     constexpr Size element_size = sizeof(ToType);
 
     std::string decompressed;
-    if (checkNumericInput_(in))
+    std::string stripped;
+    if (const std::string* checked = checkNumericInput_(in, stripped))
     {
-      Base64::decodeSingleString(in, decompressed, true);
+      Base64::decodeSingleString(*checked, decompressed, true);
     }
     if (decompressed.empty())
     {
@@ -523,16 +588,19 @@ private:
     // The length of a base64 string is a always a multiple of 4 (always 3
     // bytes are encoded as 4 characters). The check also keeps every byte
     // inside the range that decoder_ below is indexed with.
-    if (!checkNumericInput_(in))
+    std::string stripped;
+    const std::string* checked = checkNumericInput_(in, stripped);
+    if (checked == nullptr)
     {
       return;
     }
+    const std::string& src = *checked; // in without whitespace
 
-    Size src_size = in.size();
+    Size src_size = src.size();
     // last one or two '=' are skipped if contained
     int padding = 0;
-    if (in[src_size - 1] == '=') padding++;
-    if (in[src_size - 2] == '=') padding++;
+    if (src[src_size - 1] == '=') padding++;
+    if (src[src_size - 2] == '=') padding++;
 
     src_size -= padding;
 
@@ -571,8 +639,8 @@ private:
       // -------------------------------
 
       // decode the first two chars
-      a = decoder_[(int)in[i] - 43] - 62;
-      b = decoder_[(int)in[i + 1] - 43] - 62;
+      a = decoder_[(int)src[i] - 43] - 62;
+      b = decoder_[(int)src[i + 1] - 43] - 62;
       if (i + 1 >= src_size)
       {
         b = 0;
@@ -600,7 +668,7 @@ private:
       }
 
       // decode the third char
-      a = decoder_[(int)in[i + 2] - 43] - 62;
+      a = decoder_[(int)src[i + 2] - 43] - 62;
       if (i + 2 >= src_size)
       {
         a = 0;
@@ -628,7 +696,7 @@ private:
       }
 
       // decode the fourth char
-      b = decoder_[(int)in[i + 3] - 43] - 62;
+      b = decoder_[(int)src[i + 3] - 43] - 62;
       if (i + 3 >= src_size)
       {
         b = 0;

@@ -348,9 +348,15 @@ namespace OpenMS
     -- OpenMS cannot guess which channel is which material. Without a @c Sample column, the
     sample name defaults to the @c Fraction_Group value, which makes every fraction group its own
     sample.
+  - Rows of the one-table format and of the two-table file section must have exactly as many
+    cells as their header. These lines are trimmed before they are split, so a blank first or
+    last cell counts as missing and the row is rejected.
+  - Two-table format only: every row of the sample section must name its sample. Its other cells
+    are optional: a blank cell keeps its column wherever it is in the row, a row with fewer cells
+    than the sample header is padded with empty values, and cells beyond the header are ignored.
   - Two-table format only: every @c Sample value used in the file section must exist in the
-    sample section, otherwise loading fails with a bare @c std::out_of_range. Omitting the
-    @c Sample column from a two-table file section therefore fails as well, unless the sample
+    sample section, otherwise loading fails with a @c ParseError that names the sample. Omitting
+    the @c Sample column from a two-table file section therefore fails as well, unless the sample
     section literally contains rows named <tt>"Fraction group 1"</tt>,
     <tt>"Fraction group 2"</tt>, ...
   - A relative @c Spectra_Filepath is resolved first against the directory of the design file,
