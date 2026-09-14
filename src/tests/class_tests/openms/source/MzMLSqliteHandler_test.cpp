@@ -18,6 +18,7 @@
 #include <OpenMS/KERNEL/MSExperiment.h>
 
 #include <filesystem>
+#include <functional>
 
 using namespace OpenMS;
 using namespace OpenMS::Internal;
@@ -730,19 +731,29 @@ START_SECTION([EXTRA] reading rejects data arrays of different length and duplic
       MzMLSqliteHandler handler(filename, 0);
       std::vector<MSSpectrum> read_spectra;
       handler.readSpectra(read_spectra, {0, 1, 2});
-      ABORT_IF(read_spectra.size() != 3)
-      TEST_EQUAL(read_spectra[0].size(), 3)
-      TEST_EQUAL(read_spectra[1].size(), 2)
-      TEST_EQUAL(read_spectra[2].size(), 0)
-      TEST_REAL_SIMILAR(read_spectra[0][2].getMZ(), 300.0)
-      TEST_REAL_SIMILAR(read_spectra[0][2].getIntensity(), 3000.0)
+      // no ABORT_IF in this loop: it would leave only the loop and skip the remaining cases unreported
+      TEST_EQUAL(read_spectra.size(), 3)
+      if (read_spectra.size() == 3)
+      {
+        TEST_EQUAL(read_spectra[0].size(), 3)
+        TEST_EQUAL(read_spectra[1].size(), 2)
+        TEST_EQUAL(read_spectra[2].size(), 0)
+        if (read_spectra[0].size() == 3)
+        {
+          TEST_REAL_SIMILAR(read_spectra[0][2].getMZ(), 300.0)
+          TEST_REAL_SIMILAR(read_spectra[0][2].getIntensity(), 3000.0)
+        }
+      }
 
       std::vector<MSChromatogram> read_chroms;
       handler.readChromatograms(read_chroms, {0, 1, 2});
-      ABORT_IF(read_chroms.size() != 3)
-      TEST_EQUAL(read_chroms[0].size(), 3)
-      TEST_EQUAL(read_chroms[1].size(), 2)
-      TEST_EQUAL(read_chroms[2].size(), 0)
+      TEST_EQUAL(read_chroms.size(), 3)
+      if (read_chroms.size() == 3)
+      {
+        TEST_EQUAL(read_chroms[0].size(), 3)
+        TEST_EQUAL(read_chroms[1].size(), 2)
+        TEST_EQUAL(read_chroms[2].size(), 0)
+      }
 
       MSExperiment exp;
       handler.readExperiment(exp);
@@ -750,81 +761,149 @@ START_SECTION([EXTRA] reading rejects data arrays of different length and duplic
       TEST_EQUAL(exp.getNrChromatograms(), 3)
     }
 
-    // The rows of one record are read in the order SQLite returns them, which the query does not fix
-    // (it orders by record only). Each length edit below is therefore written twice, once with the
-    // intensity row and once with the m/z (RT) row re-inserted at the end of the table, so that each
-    // of the two arrays is the one read second in one of the files.
-    // 'replaceIntensities' gives record 1 (2 peaks) the intensity array of record 'donor' and moves
-    // its row of 'last_type' to the end; 'id' is SPECTRUM_ID or CHROMATOGRAM_ID.
-    auto replaceIntensities = [](const std::string& id, int donor, int last_type)
+    // Record 1 (2 m/z or RT values) with the intensity array of record 0 (3 values) or of record 2 (none).
+    // What has to reject it depends on which of its two arrays is read first: a longer array read second
+    // must not be truncated, and an empty array read first must not leave the length to the next array.
+    // The reading queries order the rows by record only, so within a record the order is whatever the
+    // query plan of the SQLite in use produces; the test cannot set it. The test sets the rowids: each
+    // variant is written twice, with the intensity row stored after the m/z (RT) row (at the higher
+    // rowid) and before it. It does not assume that a read follows the rowids. It takes the order a read
+    // saw from the error, which gives the length of the array read second first, and requires the two
+    // files to be read in opposite orders. If SQLite read the rows of a record in the same order from
+    // both files, one of the two orders would go untested, and the test fails.
+
+    // 'storeRecord1' gives record 1 the intensity array (and its compression) of record 'donor', then
+    // stores the two rows of record 1 again at the rowids 'rowid' (its row of DATA_TYPE 'first_type')
+    // and 'rowid' + 1; 'id' is SPECTRUM_ID or CHROMATOGRAM_ID
+    auto storeRecord1 = [](const std::string& id, int donor, int first_type, int rowid)
     {
       const std::string donor_row = " FROM DATA WHERE " + id + " = " + std::to_string(donor) + " AND DATA_TYPE = 1)";
-      const std::string last_row = " FROM DATA WHERE " + id + " = 1 AND DATA_TYPE = " + std::to_string(last_type);
+      const std::string rowids = std::to_string(rowid) + ", " + std::to_string(rowid + 1);
       return "UPDATE DATA SET COMPRESSION = (SELECT COMPRESSION" + donor_row + ", DATA = (SELECT DATA" + donor_row +
              " WHERE " + id + " = 1 AND DATA_TYPE = 1;"
-             "INSERT INTO DATA (SPECTRUM_ID, CHROMATOGRAM_ID, COMPRESSION, DATA_TYPE, DATA)"
-             " SELECT SPECTRUM_ID, CHROMATOGRAM_ID, COMPRESSION, DATA_TYPE, DATA" + last_row + ";"
-             "DELETE FROM DATA WHERE rowid = (SELECT MIN(rowid)" + last_row + ");";
+             "INSERT INTO DATA (rowid, SPECTRUM_ID, CHROMATOGRAM_ID, COMPRESSION, DATA_TYPE, DATA)"
+             " SELECT " + std::to_string(rowid) + " + (DATA_TYPE != " + std::to_string(first_type) + "),"
+             " SPECTRUM_ID, CHROMATOGRAM_ID, COMPRESSION, DATA_TYPE, DATA FROM DATA WHERE " + id + " = 1;"
+             "DELETE FROM DATA WHERE " + id + " = 1 AND rowid NOT IN (" + rowids + ");";
     };
-    // record 1 with 3 intensities (record 0's, longer than its 2 m/z or RT values) or none (record 2's)
+    // Runs 'read', which has to reject record 1 (2 m/z or RT values, 'intensities' intensities) for data
+    // arrays of different length. Returns "" and sets 'second' to the array the read took second, or
+    // returns what happened instead.
+    auto lengthRejection = [](Size intensities, std::string& second, const std::function<void()>& read) -> std::string
+    {
+      try
+      {
+        read();
+      }
+      catch (const Exception::IllegalArgument& e)
+      {
+        const std::string message = e.what();
+        if (message.ends_with(" differ in length: " + std::to_string(intensities) + " != 2"))
+        {
+          second = "intensity";
+          return "";
+        }
+        if (message.ends_with(" differ in length: 2 != " + std::to_string(intensities)))
+        {
+          second = "m/z (RT)";
+          return "";
+        }
+        return std::string("rejected for another reason: ") + message;
+      }
+      catch (...)
+      {
+        return "threw " + TEST::describeCaughtException();
+      }
+      return "not rejected";
+    };
     for (int donor : {0, 2})
     {
-      for (bool intensities_last : {true, false})
+      const Size intensities = spectra[donor].size();
+      // the array each read took second from the file with the intensity row stored last [0] and first [1]
+      std::string spectra_second[2], chroms_second[2], exp_second[2];
+      for (int file : {0, 1})
       {
+        const bool intensities_last = (file == 0);
         STATUS((lossy ? "lossy" : "lossless") << ": record 1 with the intensity array of record " << donor << ", "
-               << (intensities_last ? "intensity" : "m/z (RT)") << " row last")
-        // a file name per variant: a rejected read leaves its connection open (the file is locked on Windows)
+               << (intensities_last ? "intensity" : "m/z (RT)") << " row stored last")
+        // a file name per variant: a rejected read does not finalize its statement, so the file stays open
+        // until the end of the process (and cannot be removed on Windows)
         std::string filename;
         NEW_TMP_FILE_EXT(filename, ".donor" + std::to_string(donor) + (intensities_last ? ".intensity_last" : ".coordinate_last") + extension);
-        writeAltered(filename, replaceIntensities("SPECTRUM_ID", donor, intensities_last ? 1 : 0) +
-                               replaceIntensities("CHROMATOGRAM_ID", donor, intensities_last ? 1 : 2));
+        writeAltered(filename, storeRecord1("SPECTRUM_ID", donor, intensities_last ? 0 : 1, 1001) +
+                               storeRecord1("CHROMATOGRAM_ID", donor, intensities_last ? 2 : 1, 2001));
         MzMLSqliteHandler handler(filename, 0);
+        // distinct per file, so that a read not rejected as expected does not also fail the order check below
+        spectra_second[file] = chroms_second[file] = exp_second[file] = "not determined for file " + std::to_string(file);
+
         std::vector<MSSpectrum> read_spectra;
-        TEST_EXCEPTION(Exception::IllegalArgument, handler.readSpectra(read_spectra, {1}))
+        TEST_STRING_EQUAL(lengthRejection(intensities, spectra_second[file], [&]() { handler.readSpectra(read_spectra, {1}); }), "")
         read_spectra.clear();
         handler.readSpectra(read_spectra, {0, 2}); // not altered
-        ABORT_IF(read_spectra.size() != 2)
-        TEST_EQUAL(read_spectra[0].size(), 3)
-        TEST_EQUAL(read_spectra[1].size(), 0)
+        TEST_EQUAL(read_spectra.size(), 2)
+        if (read_spectra.size() == 2)
+        {
+          TEST_EQUAL(read_spectra[0].size(), 3)
+          TEST_EQUAL(read_spectra[1].size(), 0)
+        }
 
         std::vector<MSChromatogram> read_chroms;
-        TEST_EXCEPTION(Exception::IllegalArgument, handler.readChromatograms(read_chroms, {1}))
+        TEST_STRING_EQUAL(lengthRejection(intensities, chroms_second[file], [&]() { handler.readChromatograms(read_chroms, {1}); }), "")
         read_chroms.clear();
         handler.readChromatograms(read_chroms, {0, 2}); // not altered
-        ABORT_IF(read_chroms.size() != 2)
-        TEST_EQUAL(read_chroms[0].size(), 3)
-        TEST_EQUAL(read_chroms[1].size(), 0)
+        TEST_EQUAL(read_chroms.size(), 2)
+        if (read_chroms.size() == 2)
+        {
+          TEST_EQUAL(read_chroms[0].size(), 3)
+          TEST_EQUAL(read_chroms[1].size(), 0)
+        }
 
         MSExperiment exp;
-        TEST_EXCEPTION(Exception::IllegalArgument, handler.readExperiment(exp))
+        TEST_STRING_EQUAL(lengthRejection(intensities, exp_second[file], [&]() { handler.readExperiment(exp); }), "")
       }
+      STATUS((lossy ? "lossy" : "lossless") << ": record 1 with the intensity array of record " << donor
+             << ", array read second with the intensity row stored last / first: spectra " << spectra_second[0] << " / " << spectra_second[1]
+             << ", chromatograms " << chroms_second[0] << " / " << chroms_second[1] << ", experiment " << exp_second[0] << " / " << exp_second[1])
+      TEST_NOT_EQUAL(spectra_second[0], spectra_second[1])
+      TEST_NOT_EQUAL(chroms_second[0], chroms_second[1])
+      TEST_NOT_EQUAL(exp_second[0], exp_second[1])
     }
 
     // record 0 with both arrays and a copy of one of them: the copy has the length of the others and
-    // both roles are present, so only the check for a repeated role rejects it
+    // both roles are present, so only the check for a repeated role rejects it, in whatever order the
+    // rows are read (the copy is stored at an explicit rowid all the same)
     for (bool copy_intensities : {false, true})
     {
       STATUS((lossy ? "lossy" : "lossless") << ": record 0 with a second " << (copy_intensities ? "intensity" : "m/z (RT)") << " array")
-      const std::string copy_row = "INSERT INTO DATA (SPECTRUM_ID, CHROMATOGRAM_ID, COMPRESSION, DATA_TYPE, DATA)"
-                                   " SELECT SPECTRUM_ID, CHROMATOGRAM_ID, COMPRESSION, DATA_TYPE, DATA FROM DATA WHERE ";
+      const auto copyRow = [](const std::string& rowid)
+      {
+        return "INSERT INTO DATA (rowid, SPECTRUM_ID, CHROMATOGRAM_ID, COMPRESSION, DATA_TYPE, DATA)"
+               " SELECT " + rowid + ", SPECTRUM_ID, CHROMATOGRAM_ID, COMPRESSION, DATA_TYPE, DATA FROM DATA WHERE ";
+      };
       std::string filename;
       NEW_TMP_FILE_EXT(filename, (copy_intensities ? ".intensity_copy" : ".coordinate_copy") + extension);
-      writeAltered(filename, copy_row + "SPECTRUM_ID = 0 AND DATA_TYPE = " + (copy_intensities ? "1" : "0") + ";" +
-                             copy_row + "CHROMATOGRAM_ID = 0 AND DATA_TYPE = " + (copy_intensities ? "1" : "2") + ";");
+      writeAltered(filename, copyRow("1001") + "SPECTRUM_ID = 0 AND DATA_TYPE = " + (copy_intensities ? "1" : "0") + ";" +
+                             copyRow("2001") + "CHROMATOGRAM_ID = 0 AND DATA_TYPE = " + (copy_intensities ? "1" : "2") + ";");
       MzMLSqliteHandler handler(filename, 0);
       std::vector<MSSpectrum> read_spectra;
       TEST_EXCEPTION(Exception::IllegalArgument, handler.readSpectra(read_spectra, {0}))
       read_spectra.clear();
       handler.readSpectra(read_spectra, {1}); // not altered
-      ABORT_IF(read_spectra.size() != 1)
-      TEST_EQUAL(read_spectra[0].size(), 2)
+      TEST_EQUAL(read_spectra.size(), 1)
+      if (read_spectra.size() == 1)
+      {
+        TEST_EQUAL(read_spectra[0].size(), 2)
+      }
 
       std::vector<MSChromatogram> read_chroms;
       TEST_EXCEPTION(Exception::IllegalArgument, handler.readChromatograms(read_chroms, {0}))
       read_chroms.clear();
       handler.readChromatograms(read_chroms, {1}); // not altered
-      ABORT_IF(read_chroms.size() != 1)
-      TEST_EQUAL(read_chroms[0].size(), 2)
+      TEST_EQUAL(read_chroms.size(), 1)
+      if (read_chroms.size() == 1)
+      {
+        TEST_EQUAL(read_chroms[0].size(), 2)
+      }
     }
 
     // record 0 without an intensity array: only the check that every record has both roles rejects it
@@ -877,9 +956,10 @@ END_SECTION
 
 START_SECTION([EXTRA] reading ignores stored activation methods outside the enum)
 {
-  // The metadata readers skipped only -1 ("no activation method"), so -2 and below became
-  // ActivationMethod values outside the range Precursor's name tables are indexed with, and
-  // the 32 bit read wrapped larger stored values into that range.
+  // The metadata readers skipped NULL, -1 ("no activation method") and codes from
+  // SIZE_OF_ACTIVATIONMETHOD up, but not -2 and below, which became ActivationMethod values
+  // outside the range Precursor's name tables are indexed with. The 32 bit read also wrapped
+  // stored values above 2^31 - 1, to negative codes or to valid ones.
   Precursor precursor;
   precursor.setMZ(500.25);
   precursor.getActivationMethods().insert(Precursor::ActivationMethod::CID);
