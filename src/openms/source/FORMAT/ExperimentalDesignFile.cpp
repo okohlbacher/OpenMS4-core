@@ -461,7 +461,13 @@ namespace OpenMS
 
       for (auto& e : msfile_section)
       {
-        e.sample = sample_sample_to_rowindex_.at(e.sample_name);
+        // Every sample the file section uses needs a row in the sample section. Name a missing one, instead of
+        // letting the lookup throw a bare std::out_of_range that does not say which sample it was.
+        const auto row = sample_sample_to_rowindex_.find(e.sample_name);
+        parseErrorIf_(row == sample_sample_to_rowindex_.end(), tsv_file,
+                      "Sample '" + e.sample_name + "' of the MS file section is missing from the sample section" +
+                      (has_sample ? "" : " (the file section has no Sample column, so it names each sample after its fraction group)"));
+        e.sample = row->second;
       }
 
       // Create Sample Section and set in design

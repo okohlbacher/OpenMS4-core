@@ -59,7 +59,10 @@ namespace OpenMS
                  existing file; otherwise unresolvable paths are kept as written
       @throws Exception::ParseError on a missing mandatory column, an unknown column in the file
               section of a two-table design, a row of the MS file section with the wrong number
-              of records, a row of the sample section without a sample name, or -- with
+              of records, a row of the sample section without a sample name, a @c Sample in the
+              file section of a two-table design that the sample section does not define
+              (including the implicit <tt>"Fraction group N"</tt> names used when the file section
+              has no @c Sample column; the message names the sample), or -- with
               @p require_spectra_files -- a spectra file that does not exist
       @throws Exception::ConversionError if @c Fraction_Group, @c Fraction or @c Label is not an
               integer
@@ -67,9 +70,6 @@ namespace OpenMS
       @throws Exception::MissingInformation if a (fraction group, fraction, label) triple or a
               (path, label) pair repeats, or a design with a single distinct label maps one
               (fraction group, label) to several samples
-      @throws std::out_of_range if the file section of a two-table design names a @c Sample that
-              the sample section does not define -- including the implicit
-              <tt>"Fraction group N"</tt> names used when the file section has no @c Sample column
     */
     static ExperimentalDesign load(const std::string& tsv_file, bool require_spectra_files);
 

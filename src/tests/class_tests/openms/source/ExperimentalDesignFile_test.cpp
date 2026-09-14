@@ -165,6 +165,58 @@ START_SECTION((static ExperimentalDesign load(const TextFile&, bool, String) kee
 }
 END_SECTION
 
+START_SECTION((static ExperimentalDesign load(const TextFile&, bool, String) names a file-section sample that the sample section lacks))
+{
+  // This used to escape as a bare std::out_of_range ("map::at") that did not say which sample was missing.
+  TextFile undefined;
+  undefined.addLine("Fraction_Group\tFraction\tSpectra_Filepath\tLabel\tSample");
+  undefined.addLine("1\t1\ta.mzML\t1\tS1");
+  undefined.addLine("2\t1\tb.mzML\t1\tS3");
+  undefined.addLine("3\t1\tc.mzML\t1\tS4");
+  undefined.addLine("");
+  undefined.addLine("Sample\tMSstats_Condition");
+  undefined.addLine("S1\tA");
+  undefined.addLine("S2\tB");
+  TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, ExperimentalDesignFile::load(undefined, false, "inline_undefined_sample.tsv"),
+    "Error: Sample 'S3' of the MS file section is missing from the sample section in: inline_undefined_sample.tsv")
+
+  // the same from a file
+  std::string filename;
+  NEW_TMP_FILE(filename);
+  undefined.store(filename);
+  TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, ExperimentalDesignFile::load(filename, false),
+    "Error: Sample 'S3' of the MS file section is missing from the sample section in: " + filename)
+
+  // a blank Sample cell inside a file-section row names no sample of the sample section either
+  TextFile blank;
+  blank.addLine("Fraction_Group\tFraction\tSample\tSpectra_Filepath");
+  blank.addLine("1\t1\t\ta.mzML");
+  blank.addLine("");
+  blank.addLine("Sample\tMSstats_Condition");
+  blank.addLine("S1\tA");
+  TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, ExperimentalDesignFile::load(blank, false, "inline_blank_file_sample.tsv"),
+    "Error: Sample '' of the MS file section is missing from the sample section in: inline_blank_file_sample.tsv")
+
+  // without a Sample column the file section names its samples after the fraction groups
+  TextFile no_sample_column;
+  no_sample_column.addLine("Fraction_Group\tFraction\tSpectra_Filepath\tLabel");
+  no_sample_column.addLine("1\t1\ta.mzML\t1");
+  no_sample_column.addLine("");
+  no_sample_column.addLine("Sample\tMSstats_Condition");
+  no_sample_column.addLine("S1\tA");
+  TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, ExperimentalDesignFile::load(no_sample_column, false, "inline_no_sample_column.tsv"),
+    "Error: Sample 'Fraction group 1' of the MS file section is missing from the sample section"
+    " (the file section has no Sample column, so it names each sample after its fraction group) in: inline_no_sample_column.tsv")
+
+  // which still loads if the sample section uses those names
+  no_sample_column.addLine("Fraction group 1\tB");
+  const ExperimentalDesign design = ExperimentalDesignFile::load(no_sample_column, false, "inline_fraction_group_names.tsv");
+  TEST_EQUAL(design.getMSFileSection().size(), 1)
+  TEST_EQUAL(design.getMSFileSection()[0].sample, 1)
+  TEST_EQUAL(design.getSampleSection().getFactorValue("Fraction group 1", "MSstats_Condition"), "B")
+}
+END_SECTION
+
 START_SECTION((static ExperimentalDesign load(const TextFile&, bool, String) ignores extra cells in sample rows))
 {
   TextFile tf;
