@@ -673,16 +673,85 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
   TEST_STRING_EQUAL(result[0].getComment(), "Scan Comment")
   TEST_STRING_EQUAL(result.getInstrument().getMetaValue("#comment").toString(), "Instrument Comment")
 
-  for (const std::string count : {"2", "0", "-1"})
-  {
+  // A peaksCount that disagrees with the decoded payload does not fail the file: each such scan keeps the
+  // pairs that are both declared and decoded (all decoded pairs for a negative count), and a warning is logged.
+  const std::string one_pair = "QvAAAELIAAA=";                     // (120, 100)
+  const std::string two_pairs = "QvAAAELIAABDAgAAQ0gAAA==";        // (120, 100), (130, 200)
+  const std::string three_values = "QvAAAELIAABDAgAA";             // (120, 100), 130
+  const std::string two_pairs_64 = "QF4AAAAAAABAWQAAAAAAAEBgQAAAAAAAQGkAAAAAAAA="; // (120, 100), (130, 200)
+  auto scan = [](const std::string& num, const std::string& count, const std::string& precision, const std::string& payload) {
+    return "<scan num=\"" + num + "\" msLevel=\"1\" peaksCount=\"" + count + "\" retentionTime=\"PT" + num
+           + "S\"><peaks precision=\"" + precision + "\" byteOrder=\"network\" contentType=\"m/z-int\">" + payload + "</peaks></scan>";
+  };
+  auto loadScans = [&](const std::string& scans) {
     std::string malformed;
     NEW_TMP_FILE(malformed)
-    std::ofstream(malformed) << prefix << "<scan num=\"1\" msLevel=\"1\" peaksCount=\"" << count
-                             << "\" retentionTime=\"PT1S\"><peaks precision=\"32\" byteOrder=\"network\" contentType=\"m/z-int\">QvAAAELIAAA=</peaks>"
-                             << suffix;
-    TEST_EXCEPTION(Exception::ParseError, file.load(malformed, result))
+    std::ofstream(malformed) << prefix << scans << "</msRun></mzXML>";
+    PeakMap loaded;
+    file.load(malformed, loaded);
     File::remove(malformed);
-  }
+    return loaded;
+  };
+
+  // declared larger than decoded: only the decoded pair is read, nothing past the payload
+  PeakMap larger = loadScans(scan("1", "2", "32", one_pair));
+  TEST_EQUAL(larger.size(), 1)
+  ABORT_IF(larger.size() != 1)
+  TEST_EQUAL(larger[0].size(), 1)
+  ABORT_IF(larger[0].size() != 1)
+  TEST_REAL_SIMILAR(larger[0][0].getMZ(), 120.0)
+  TEST_REAL_SIMILAR(larger[0][0].getIntensity(), 100.0)
+
+  // the same in 64-bit precision
+  PeakMap larger_64 = loadScans(scan("1", "3", "64", two_pairs_64));
+  TEST_EQUAL(larger_64.size(), 1)
+  ABORT_IF(larger_64.size() != 1)
+  TEST_EQUAL(larger_64[0].size(), 2)
+  ABORT_IF(larger_64[0].size() != 2)
+  TEST_REAL_SIMILAR(larger_64[0][1].getMZ(), 130.0)
+  TEST_REAL_SIMILAR(larger_64[0][1].getIntensity(), 200.0)
+
+  // an odd number of decoded values: the unpaired trailing m/z is not read together with an intensity past the end
+  PeakMap odd = loadScans(scan("1", "2", "32", three_values));
+  TEST_EQUAL(odd.size(), 1)
+  ABORT_IF(odd.size() != 1)
+  TEST_EQUAL(odd[0].size(), 1)
+  ABORT_IF(odd[0].size() != 1)
+  TEST_REAL_SIMILAR(odd[0][0].getMZ(), 120.0)
+
+  // declared smaller than decoded: only the declared pairs are read
+  PeakMap smaller = loadScans(scan("1", "1", "32", two_pairs) + scan("2", "0", "32", one_pair));
+  TEST_EQUAL(smaller.size(), 2)
+  ABORT_IF(smaller.size() != 2)
+  TEST_EQUAL(smaller[0].size(), 1)
+  ABORT_IF(smaller[0].size() != 1)
+  TEST_REAL_SIMILAR(smaller[0][0].getMZ(), 120.0)
+  TEST_REAL_SIMILAR(smaller[0][0].getIntensity(), 100.0)
+  TEST_EQUAL(smaller[1].size(), 0)
+
+  // negative declared: the decoded length is used (and the reserve stays bounded)
+  PeakMap negative = loadScans(scan("1", "-1", "32", two_pairs));
+  TEST_EQUAL(negative.size(), 1)
+  ABORT_IF(negative.size() != 1)
+  TEST_EQUAL(negative[0].size(), 2)
+  ABORT_IF(negative[0].size() != 2)
+  TEST_REAL_SIMILAR(negative[0][0].getMZ(), 120.0)
+  TEST_REAL_SIMILAR(negative[0][1].getMZ(), 130.0)
+  TEST_REAL_SIMILAR(negative[0][1].getIntensity(), 200.0)
+
+  // a bad scan does not affect a consistent scan next to it in the same file
+  PeakMap mixed = loadScans(scan("1", "2", "32", two_pairs) + scan("2", "5", "32", one_pair) + scan("3", "2", "32", two_pairs));
+  TEST_EQUAL(mixed.size(), 3)
+  ABORT_IF(mixed.size() != 3)
+  TEST_EQUAL(mixed[0].size(), 2)
+  TEST_EQUAL(mixed[1].size(), 1)
+  TEST_EQUAL(mixed[2].size(), 2)
+  ABORT_IF(mixed[0].size() != 2 || mixed[1].size() != 1 || mixed[2].size() != 2)
+  TEST_STRING_EQUAL(mixed[1].getNativeID(), "scan=2")
+  TEST_REAL_SIMILAR(mixed[1][0].getMZ(), 120.0)
+  TEST_REAL_SIMILAR(mixed[2][1].getMZ(), 130.0)
+  TEST_REAL_SIMILAR(mixed[2][1].getIntensity(), 200.0)
+
   // Deliberately incomplete reader fixtures are excluded from writer-schema checks.
   File::remove(input);
 }

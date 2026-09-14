@@ -117,7 +117,8 @@ protected:
       */
       struct SpectrumData
       {
-        UInt peak_count_;
+        /// peaksCount as declared in the file (negative in a malformed file); the peaks are bounded by the decoded payload
+        Int peak_count_;
         std::string precision_;
         std::string compressionType_;
         std::string char_rest_;
