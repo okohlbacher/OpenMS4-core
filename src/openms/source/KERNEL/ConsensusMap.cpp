@@ -770,6 +770,8 @@ OPENMS_THREAD_CRITICAL(LOGSTREAM)
       for (const FeatureHandle& fh : cf.getFeatures())
       {
         UInt64 index = fh.getMapIndex();
+        // Handles are ordered by map index, then unique id, so of several handles of one map index each
+        // overwrites the previous one below: only the one with the largest unique id is kept (documented).
         // GCC-OPT 4.8 does not compile with:  new_feats.emplace(index, fh);
         // , thus we use:
         new_feats[index] = BaseFeature(fh);

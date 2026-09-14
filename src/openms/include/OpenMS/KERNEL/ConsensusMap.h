@@ -330,7 +330,11 @@ public:
      provided by the map index.
      One FeatureMap is returned per column header: the k-th output map corresponds to the k-th column header in key
      (map index) order. This is map index k only if the column headers are keyed 0..n-1.
-     Each FeatureHandle of a ConsensusFeature becomes a Feature in the FeatureMap of its map index.
+     Each ConsensusFeature yields at most one Feature per map index, in the FeatureMap of that map index. It is
+     built from the ConsensusFeature's FeatureHandle of that map index. A ConsensusFeature can hold several
+     FeatureHandles of the same map index (they differ by unique id, and isMapConsistent() does not report this):
+     only the one with the largest unique id becomes a Feature, the others are dropped without an exception or a
+     warning.
 
      If the ConsensusMap originated from the IsobaricAnalyzer, only Features are separated. All PeptideIdentifications
      (assigned and unassigned) and all ProteinIdentifications are added to the first FeatureMap.

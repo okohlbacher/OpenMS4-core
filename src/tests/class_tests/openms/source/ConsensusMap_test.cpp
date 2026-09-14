@@ -1035,6 +1035,62 @@ START_SECTION(([EXTRA] std::vector<FeatureMap> split(SplitMeta mode = SplitMeta:
 }
 END_SECTION
 
+START_SECTION(([EXTRA] std::vector<FeatureMap> split(SplitMeta mode = SplitMeta::DISCARD) const with several FeatureHandles of the same map index))
+{
+  // A consensus feature can hold several handles of one map index (the handle set orders them by map index,
+  // then unique id), and the map is still consistent. split() makes at most one feature per map index of a
+  // consensus feature: the handle with the largest unique id is kept, the others are dropped silently. The
+  // feature does not carry the unique id (BaseFeature(const FeatureHandle&) copies the handle as a Peak2D), so
+  // the handles are told apart by position and intensity.
+  ConsensusMap cm;
+  cm.getColumnHeaders()[0].filename = "file0.featureXML";
+  cm.getColumnHeaders()[1].filename = "file1.featureXML";
+
+  ConsensusFeature cf;
+  // inserted in reverse unique id order: which handle is kept does not depend on the insertion order
+  cf.insert(FeatureHandle(0, Peak2D({ 20, 533.33 }, 200000), 2));
+  cf.insert(FeatureHandle(0, Peak2D({ 10, 433.33 }, 100000), 1));
+  cf.insert(FeatureHandle(1, Peak2D({ 30, 633.33 }, 300000), 3));
+  PeptideIdentification id0;
+  id0.insertHit(PeptideHit(0.1, 1, 3, AASequence::fromString("AAA")));
+  id0.setMetaValue("map_index", 0);
+  cf.getPeptideIdentifications().push_back(id0);
+  cm.push_back(cf);
+  TEST_EQUAL(cm[0].size(), 3)
+  TEST_TRUE(cm.isMapConsistent())
+
+  std::ostringstream warnings;
+  vector<FeatureMap> fmaps;
+  OPENMS_LOG_WARN.insert(warnings);
+  try
+  {
+    fmaps = cm.split(ConsensusMap::SplitMeta::DISCARD);
+  }
+  catch (...)
+  {
+    OPENMS_LOG_WARN.remove(warnings);
+    throw;
+  }
+  OPENMS_LOG_WARN.remove(warnings);
+  TEST_EQUAL(warnings.str().find("ConsensusMap::split()"), std::string::npos)
+
+  TEST_EQUAL(fmaps.size(), 2)
+  ABORT_IF(fmaps.size() != 2)
+  TEST_EQUAL(fmaps[0].size(), 1)
+  ABORT_IF(fmaps[0].size() != 1)
+  TEST_EQUAL(fmaps[0][0].getRT(), 20)
+  TEST_EQUAL(fmaps[0][0].getMZ(), 533.33)
+  TEST_EQUAL(fmaps[0][0].getIntensity(), 200000)
+  // the identification of map index 0 goes to the one feature that is kept
+  TEST_EQUAL(fmaps[0][0].getPeptideIdentifications().size(), 1)
+  ABORT_IF(fmaps[0][0].getPeptideIdentifications().size() != 1)
+  TEST_EQUAL(fmaps[0][0].getPeptideIdentifications()[0].getHits()[0].getSequence().toString(), "AAA")
+  TEST_EQUAL(fmaps[1].size(), 1)
+  ABORT_IF(fmaps[1].size() != 1)
+  TEST_EQUAL(fmaps[1][0].getRT(), 30)
+}
+END_SECTION
+
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 END_TEST
