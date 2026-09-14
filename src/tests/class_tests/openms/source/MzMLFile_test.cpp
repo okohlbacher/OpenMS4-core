@@ -35,7 +35,7 @@ DRange<1> makeRange(double a, double b)
   return DRange<1>(pa, pb);
 }
 
-/// MzMLFile_1.mzML (4 spectra, 2 chromatograms, 2 binary data arrays each) as mzML buffer without index
+/// MzMLFile_1.mzML (4 spectra and 2 chromatograms) stored to an mzML buffer without index
 std::string mzMLFile1WithoutIndex()
 {
   PeakMap exp;
@@ -1623,8 +1623,9 @@ END_SECTION
 
 START_SECTION(([EXTRA] binaryDataArrayList count is only a capacity hint))
 {
-  // Only -1 is observable here: the reserve a huge count made (16 entries now) is of a buffer that
-  // does not outlive the load, so on a host that overcommits memory it succeeds without a trace.
+  // Only -1 is tested: a huge count reserved that many entries (at most 16 now) of a buffer that does
+  // not outlive the load, so on a host that overcommits memory the reserve succeeds and leaves nothing
+  // to check afterwards.
   const std::string original = mzMLFile1WithoutIndex();
   PeakMap reference;
   MzMLFile().loadBuffer(original, reference);
@@ -1715,8 +1716,9 @@ START_SECTION(([EXTRA] numpress data arrays are bounded by their decoded length)
     TEST_REAL_SIMILAR(loaded_spectrum.getFloatDataArrays()[0][2], 3.5)
   }
 
-  // The records decoded on their own (indexed and on-disc access), where every array is declared with
-  // the defaultArrayLength of its record, and the float data arrays reserved that length.
+  // The records decoded on their own (indexed and on-disc access). Every array of the edited buffer is
+  // declared with the defaultArrayLength of its record, and the decoder reserved that declared length
+  // for the float data array.
   const std::string::size_type spectrum_begin = buffer.find("<spectrum ");
   const std::string::size_type spectrum_end = buffer.find("</spectrum>");
   const std::string::size_type chrom_begin = buffer.find("<chromatogram ");
@@ -1755,15 +1757,22 @@ START_SECTION(([EXTRA] numpress data arrays are bounded by their decoded length)
     STATUS("decoded with defaultArrayLength " << length)
     MSSpectrum decoded_spectrum;
     TEST_STRING_EQUAL(decode(spectrum_xml, length, decoded_spectrum), "")
-    ABORT_IF(decoded_spectrum.getFloatDataArrays().size() != 1)
-    TEST_EQUAL(decoded_spectrum.getFloatDataArrays()[0].size(), 3)
-    TEST_EQUAL(decoded_spectrum.getFloatDataArrays()[0].capacity() <= 16, true)
+    // no ABORT_IF in this loop: it would leave only the loop and skip the remaining lengths unreported
+    TEST_EQUAL(decoded_spectrum.getFloatDataArrays().size(), 1)
+    if (decoded_spectrum.getFloatDataArrays().size() == 1)
+    {
+      TEST_EQUAL(decoded_spectrum.getFloatDataArrays()[0].size(), 3)
+      TEST_EQUAL(decoded_spectrum.getFloatDataArrays()[0].capacity() <= 16, true)
+    }
 
     MSChromatogram decoded_chrom;
     TEST_STRING_EQUAL(decode(chrom_xml, length, decoded_chrom), "")
-    ABORT_IF(decoded_chrom.getFloatDataArrays().size() != 1)
-    TEST_EQUAL(decoded_chrom.getFloatDataArrays()[0].size(), 3)
-    TEST_EQUAL(decoded_chrom.getFloatDataArrays()[0].capacity() <= 16, true)
+    TEST_EQUAL(decoded_chrom.getFloatDataArrays().size(), 1)
+    if (decoded_chrom.getFloatDataArrays().size() == 1)
+    {
+      TEST_EQUAL(decoded_chrom.getFloatDataArrays()[0].size(), 3)
+      TEST_EQUAL(decoded_chrom.getFloatDataArrays()[0].capacity() <= 16, true)
+    }
   }
 }
 END_SECTION
