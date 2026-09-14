@@ -725,14 +725,9 @@ START_SECTION(([EXTRA] fragment isotope distributions truncated by a nonzero max
   // The old out-of-bounds write changes none of the returned values, so no assertion here can see
   // it. Only a heap checker detects it reliably: AddressSanitizer, or glibc malloc checking
   // (LD_PRELOAD=libc_malloc_debug.so.0 GLIBC_TUNABLES=glibc.malloc.check=3, which CMakeLists.txt
-  // sets for this test on Linux unless the build uses a sanitizer). With malloc checking, each part
-  // aborts on its own.
-  //
-  // Without a checker, plain glibc aborts only when the write happens to corrupt heap metadata, so
-  // the result depends on the environment. Against the old code on glibc 2.39, part (a) alone and
-  // part (b) alone each passed with OMP_NUM_THREADS unset or empty, and aborted with it set to a
-  // number (1, 2, 4 or 48; CI sets 1). The whole section aborted with it unset as well as set.
-  // Other allocators (e.g. macOS) may not notice the write at all.
+  // sets for this test on Linux unless the build uses a sanitizer). Without a heap checker, whether
+  // the old code aborts depends on the allocator state and environment; other allocators (e.g.
+  // macOS) may not notice the write at all.
   std::set<UInt> precursor_isotopes = {0, 1, 2};
 
   // (a) estimateForFragmentFromPeptideWeight
