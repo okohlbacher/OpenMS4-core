@@ -21,6 +21,7 @@
 #include <fstream>
 #include <regex>
 #include <sstream>
+#include <utility>
 #include <vector>
 
 using namespace OpenMS;
@@ -930,13 +931,20 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
     TEST_EQUAL(spectrum.size(), 2)
   }
 
-  // text that is not an integer still fails the load
-  std::string not_a_count;
-  NEW_TMP_FILE(not_a_count)
-  std::ofstream(not_a_count) << prefix << scan("37", "2x", "32", two_pairs) << "</msRun></mzXML>";
-  PeakMap not_loaded;
-  TEST_EXCEPTION(Exception::ParseError, file.load(not_a_count, not_loaded))
-  File::remove(not_a_count);
+  // text that is not an integer still fails the load, with a message that names the scan and the text as
+  // written (the .mzXML suffix keeps FileHandler's hint about a suffix that does not match the content out of it)
+  const std::vector<std::pair<std::string, std::string>> not_counts = {{"37", "2x"}, {"44", ""}, {"45", "+-2"}, {"46", "2.0"}};
+  for (const auto& [num, count] : not_counts)
+  {
+    std::string not_a_count;
+    NEW_TMP_FILE_EXT(not_a_count, ".mzXML")
+    std::ofstream(not_a_count) << prefix << scan(num, count, "32", two_pairs) << "</msRun></mzXML>";
+    PeakMap not_loaded;
+    TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, file.load(not_a_count, not_loaded),
+                                "While loading '" + not_a_count + "': Scan 'scan=" + num + "' declares peaksCount=\"" + count
+                                + "\", which is not an integer. in: " + not_a_count)
+    File::remove(not_a_count);
+  }
 
   // a count beyond the 64-bit range is outside the Int range too
   PeakMap beyond_64 = loadScans(scan("38", "99999999999999999999", "32", two_pairs));
