@@ -69,6 +69,28 @@ public:
         @brief Decodes a Base64 string to a vector of floating point numbers
 
         You have to specify the byte order of the input and if it is zlib-compressed.
+
+        @p in is checked before it is decoded:
+        - ASCII whitespace (space, tab, CR, LF) may appear anywhere, as in line-wrapped xs:base64Binary. It is
+          skipped, so wrapped input decodes to the same values as unwrapped input.
+        - Empty input, whitespace only, fewer than four characters besides whitespace (these are not checked)
+          and '=' only decode to an empty @p out, with or without compression.
+        - Otherwise Exception::ConversionError is thrown if the length without whitespace is not a multiple of 4,
+          a byte is neither in the Base64 alphabet nor whitespace (other control characters such as form feed
+          included), data follows an '=', or there are more than two '='.
+
+        Without compression, bytes at the end that do not fill a whole value are ignored. With compression, data
+        that decompresses to nothing gives an empty @p out, and decompressed data whose size is not a multiple of
+        sizeof(ToType) throws.
+
+        @param[in] in The Base64 text
+        @param[in] from_byte_order The byte order of the encoded values
+        @param[out] out The decoded values (previous content is discarded)
+        @param[in] zlib_compression Whether the decoded bytes are zlib-compressed
+
+        @throws Exception::ConversionError if @p in is malformed as described above, or if the decompressed data
+                is not a whole number of values
+        @throws Exception::InternalToolError if zlib cannot decompress the data
     */
     template <typename ToType>
     static void decode(const std::string & in, ByteOrder from_byte_order, std::vector<ToType> & out, bool zlib_compression = false);
@@ -87,6 +109,29 @@ public:
         @brief Decodes a Base64 string to a vector of integer numbers
 
         You have to specify the byte order of the input and if it is zlib-compressed.
+
+        @p in is checked as for decode(): ASCII whitespace (space, tab, CR, LF) is skipped anywhere, and a length
+        without whitespace that is not a multiple of 4, any other byte outside the Base64 alphabet, data after an
+        '=' or more than two '=' throw Exception::ConversionError.
+
+        Without compression, empty input, whitespace only, fewer than four characters besides whitespace (these
+        are not checked) and '=' only decode to an empty @p out. The bytes that '=' padding stands for are decoded
+        as well (as zero bytes if the unused low bits of the character before the padding are zero, as encoders
+        write them), so they can complete the last value; bytes that still do not fill a whole value are ignored.
+
+        With compression, only empty and whitespace-only input give an empty @p out. Everything else must
+        decompress to a whole, non-zero number of values: fewer than four characters besides whitespace, '=' only,
+        data that decompresses to nothing, and decompressed data whose size is not a multiple of sizeof(ToType)
+        all throw Exception::ConversionError.
+
+        @param[in] in The Base64 text
+        @param[in] from_byte_order The byte order of the encoded values
+        @param[out] out The decoded values (previous content is discarded)
+        @param[in] zlib_compression Whether the decoded bytes are zlib-compressed
+
+        @throws Exception::ConversionError if @p in is malformed, or compressed @p in does not decompress to a
+                whole, non-zero number of values, as described above
+        @throws Exception::InternalToolError if zlib cannot decompress the data
     */
     template <typename ToType>
     static void decodeIntegers(const std::string & in, ByteOrder from_byte_order, std::vector<ToType> & out, bool zlib_compression = false);
@@ -167,11 +212,14 @@ private:
     /**
         @brief The check without whitespace skipping, as in core-v4.0.0-ci.5
 
-        Only kept so that binaries whose decoders were instantiated from the ci.5 headers still load and behave as
-        before; the decoders in this header use the overload above.
+        Only kept so that binaries whose decoders were instantiated from the ci.5 headers still load; the decoders
+        in this header use the overload above. It returns and throws for the same inputs as in ci.5, but the
+        message can differ: whitespace is always reported as an invalid character (or as a bad length), where ci.5
+        reports "data after padding" if an '=' comes before the first byte it rejects.
 
         @return false if @p in carries nothing to decode
-        @throws Exception::ConversionError as the overload above, and also for whitespace in @p in
+        @throws Exception::ConversionError as the overload above, and also for whitespace in @p in if @p in has at
+                least four characters
     */
     static bool checkNumericInput_(const std::string& in);
 

@@ -352,7 +352,10 @@ namespace OpenMS
   bool Base64::checkNumericInput_(const std::string& in)
   {
     // Kept for binaries built against the core-v4.0.0-ci.5 headers, whose decoders call this and then decode
-    // in itself. So for them whitespace stays an error, and the result is the same as in that release.
+    // in itself. So for them whitespace stays an error: the same inputs pass, return false or throw ConversionError as
+    // in that release. Only the message can differ: ci.5 checks byte by byte and says "data after padding" when
+    // an '=' comes before the first byte it rejects, while this says "invalid character" (or reports the length)
+    // for all such input with whitespace.
     if (in.size() >= 4 && in.find_first_of(base64_whitespace) != std::string::npos)
     {
       throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
