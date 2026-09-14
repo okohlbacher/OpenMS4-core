@@ -20,6 +20,9 @@
 #include <OpenMS/METADATA/ProteinIdentification.h>
 #include <OpenMS/METADATA/PeptideIdentification.h>
 #include <OpenMS/METADATA/DataProcessing.h>
+#include <OpenMS/CONCEPT/LogStream.h>
+
+#include <sstream>
 
 using namespace OpenMS;
 using namespace std;
@@ -791,6 +794,300 @@ START_SECTION(void split(std::vector<FeatureMap>& fmaps, SplitMeta mode = SplitM
   TEST_EQUAL(fmaps[0][0].getMetaValue("test"),"some information");
   TEST_EQUAL(fmaps[1][0].metaValueExists("test"), true);
   TEST_EQUAL(fmaps[1][0].getMetaValue("test"),"some information");
+}
+END_SECTION
+
+START_SECTION(([EXTRA] std::vector<FeatureMap> split(SplitMeta mode = SplitMeta::DISCARD) const with sparse column header keys))
+{
+  // column headers keyed {0, 3}: the k-th output map belongs to the k-th header in key order
+  ConsensusMap cm;
+  cm.getColumnHeaders()[0].filename = "file0.featureXML";
+  cm.getColumnHeaders()[3].filename = "file3.featureXML";
+
+  ConsensusFeature cf1, cf2;
+  cf1.insert(FeatureHandle(0, Peak2D({ 10, 433.33 }, 100000), 0));
+  cf1.insert(FeatureHandle(3, Peak2D({ 11, 434.33 }, 200000), 0));
+  PeptideIdentification id1;
+  id1.insertHit(PeptideHit(0.1, 1, 3, AASequence::fromString("AAA")));
+  id1.setMetaValue("map_index", 3);
+  cf1.getPeptideIdentifications().push_back(id1);
+  cm.push_back(cf1);
+
+  cf2.insert(FeatureHandle(3, Peak2D({ 21, 435.33 }, 300000), 1));
+  cm.push_back(cf2);
+
+  PeptideIdentification uid0, uid3;
+  uid0.insertHit(PeptideHit(0.1, 1, 3, AASequence::fromString("LLL")));
+  uid0.setMetaValue("map_index", 0);
+  uid3.insertHit(PeptideHit(0.1, 1, 3, AASequence::fromString("KKK")));
+  uid3.setMetaValue("map_index", 3);
+  cm.getUnassignedPeptideIdentifications().push_back(uid0);
+  cm.getUnassignedPeptideIdentifications().push_back(uid3);
+  TEST_TRUE(cm.isMapConsistent())
+
+  vector<FeatureMap> fmaps = cm.split(ConsensusMap::SplitMeta::DISCARD);
+  TEST_EQUAL(fmaps.size(), 2)
+  ABORT_IF(fmaps.size() != 2)
+  // map index 0
+  TEST_EQUAL(fmaps[0].size(), 1)
+  ABORT_IF(fmaps[0].size() != 1)
+  TEST_EQUAL(fmaps[0][0].getRT(), 10)
+  TEST_EQUAL(fmaps[0][0].getPeptideIdentifications().empty(), true)
+  TEST_EQUAL(fmaps[0].getUnassignedPeptideIdentifications().size(), 1)
+  ABORT_IF(fmaps[0].getUnassignedPeptideIdentifications().size() != 1)
+  TEST_EQUAL(fmaps[0].getUnassignedPeptideIdentifications()[0].getHits()[0].getSequence().toString(), "LLL")
+  // map index 3
+  TEST_EQUAL(fmaps[1].size(), 2)
+  ABORT_IF(fmaps[1].size() != 2)
+  TEST_EQUAL(fmaps[1][0].getRT(), 11)
+  TEST_EQUAL(fmaps[1][0].getPeptideIdentifications().size(), 1)
+  ABORT_IF(fmaps[1][0].getPeptideIdentifications().size() != 1)
+  TEST_EQUAL(fmaps[1][0].getPeptideIdentifications()[0].getHits()[0].getSequence().toString(), "AAA")
+  TEST_EQUAL(fmaps[1][1].getRT(), 21)
+  TEST_EQUAL(fmaps[1].getUnassignedPeptideIdentifications().size(), 1)
+  ABORT_IF(fmaps[1].getUnassignedPeptideIdentifications().size() != 1)
+  TEST_EQUAL(fmaps[1].getUnassignedPeptideIdentifications()[0].getHits()[0].getSequence().toString(), "KKK")
+}
+END_SECTION
+
+START_SECTION(([EXTRA] std::vector<FeatureMap> split(SplitMeta mode = SplitMeta::DISCARD) const with PeptideIdentifications of unknown map indices))
+{
+  // Identifications that reference a map without a column header (e.g. kept from a map whose column was
+  // removed) do not make the map inconsistent. No output map belongs to their run, so split() drops them
+  // instead of filing them under another map, and logs one warning per call that lists the dropped counts.
+  //
+  // OpenMS LogStream does not write a line again that is identical to one of the last lines it wrote (it
+  // only counts the repeats), so the log assertions below rely on these warnings being logged here for the
+  // first time; the unusual map indices 23 and 117 keep other sections from logging the same text first.
+  auto splitCapturingWarnings = [](const ConsensusMap& map, ConsensusMap::SplitMeta mode, std::string& log)
+  {
+    std::ostringstream warnings;
+    OPENMS_LOG_WARN.insert(warnings);
+    vector<FeatureMap> result;
+    try
+    {
+      result = map.split(mode);
+    }
+    catch (...)
+    {
+      OPENMS_LOG_WARN.remove(warnings);
+      throw;
+    }
+    OPENMS_LOG_WARN.remove(warnings);
+    log = warnings.str();
+    return result;
+  };
+  auto count = [](const std::string& log, const std::string& what)
+  {
+    Size n(0);
+    for (std::string::size_type pos = log.find(what); pos != std::string::npos; pos = log.find(what, pos + what.size()))
+    {
+      ++n;
+    }
+    return n;
+  };
+
+  ConsensusMap cm;
+  cm.getColumnHeaders()[0].filename = "file0.featureXML";
+  cm.getColumnHeaders()[1].filename = "file1.featureXML";
+
+  ConsensusFeature cf;
+  cf.insert(FeatureHandle(0, Peak2D({ 10, 433.33 }, 100000), 0));
+  cf.insert(FeatureHandle(1, Peak2D({ 11, 434.33 }, 200000), 0));
+  PeptideIdentification id0, id23, id117;
+  id0.insertHit(PeptideHit(0.1, 1, 3, AASequence::fromString("AAA")));
+  id0.setMetaValue("map_index", 0);
+  id23.insertHit(PeptideHit(0.1, 1, 3, AASequence::fromString("CCC")));
+  id23.setMetaValue("map_index", 23);
+  id117.insertHit(PeptideHit(0.1, 1, 3, AASequence::fromString("DDD")));
+  id117.setMetaValue("map_index", 117);
+  cf.getPeptideIdentifications().push_back(id0);
+  cf.getPeptideIdentifications().push_back(id23);
+  cf.getPeptideIdentifications().push_back(id117);
+  cm.push_back(cf);
+
+  PeptideIdentification uid1, uid23;
+  uid1.insertHit(PeptideHit(0.1, 1, 3, AASequence::fromString("KKK")));
+  uid1.setMetaValue("map_index", 1);
+  uid23.insertHit(PeptideHit(0.1, 1, 3, AASequence::fromString("EEE")));
+  uid23.setMetaValue("map_index", 23);
+  cm.getUnassignedPeptideIdentifications().push_back(uid1);
+  cm.getUnassignedPeptideIdentifications().push_back(uid23);
+  TEST_TRUE(cm.isMapConsistent())
+
+  std::string log;
+  vector<FeatureMap> fmaps = splitCapturingWarnings(cm, ConsensusMap::SplitMeta::COPY_ALL, log);
+
+  TEST_EQUAL(fmaps.size(), 2)
+  ABORT_IF(fmaps.size() != 2)
+  // no features are made up for the unknown map indices
+  TEST_EQUAL(fmaps[0].size(), 1)
+  TEST_EQUAL(fmaps[1].size(), 1)
+  ABORT_IF(fmaps[0].size() != 1 || fmaps[1].size() != 1)
+  TEST_EQUAL(fmaps[0][0].getPeptideIdentifications().size(), 1)
+  ABORT_IF(fmaps[0][0].getPeptideIdentifications().size() != 1)
+  TEST_EQUAL(fmaps[0][0].getPeptideIdentifications()[0].getHits()[0].getSequence().toString(), "AAA")
+  TEST_EQUAL(fmaps[1][0].getPeptideIdentifications().empty(), true)
+
+  // the identifications of unknown maps are in none of the maps
+  TEST_EQUAL(fmaps[0].getUnassignedPeptideIdentifications().size(), 0)
+  TEST_EQUAL(fmaps[1].getUnassignedPeptideIdentifications().size(), 1)
+  ABORT_IF(fmaps[1].getUnassignedPeptideIdentifications().size() != 1)
+  TEST_EQUAL(fmaps[1].getUnassignedPeptideIdentifications()[0].getHits()[0].getSequence().toString(), "KKK")
+
+  // one warning for the call, listing each unknown map index with its number of dropped identifications
+  TEST_EQUAL(count(log, "ConsensusMap::split()"), 1)
+  TEST_EQUAL(count(log, "dropped PeptideIdentifications"), 1)
+  TEST_EQUAL(count(log, "(map index 23: 2, map index 117: 1)"), 1)
+
+  // without any column, all identifications are dropped and there are no maps
+  ConsensusMap no_columns;
+  ConsensusFeature cf_without_handles;
+  cf_without_handles.getPeptideIdentifications().push_back(id117);
+  no_columns.push_back(cf_without_handles);
+  no_columns.getUnassignedPeptideIdentifications().push_back(uid23);
+  std::string no_columns_log;
+  TEST_EQUAL(splitCapturingWarnings(no_columns, ConsensusMap::SplitMeta::DISCARD, no_columns_log).size(), 0)
+  TEST_EQUAL(count(no_columns_log, "dropped PeptideIdentifications"), 1)
+  TEST_EQUAL(count(no_columns_log, "(map index 23: 1, map index 117: 1)"), 1)
+}
+END_SECTION
+
+START_SECTION(([EXTRA] std::vector<FeatureMap> split(SplitMeta mode = SplitMeta::DISCARD) const with a FeatureHandle of an unknown map index))
+{
+  // column headers keyed {0, 3} give two output maps; map index 1 is not a header key although it would be
+  // a valid position in the output, so it must not be filed under the second map (the one of map index 3)
+  ConsensusMap cm;
+  cm.getColumnHeaders()[0].filename = "file0.featureXML";
+  cm.getColumnHeaders()[3].filename = "file3.featureXML";
+
+  ConsensusFeature cf;
+  cf.insert(FeatureHandle(0, Peak2D({ 10, 433.33 }, 100000), 0));
+  cf.insert(FeatureHandle(1, Peak2D({ 11, 434.33 }, 200000), 0));
+  cm.push_back(cf);
+  TEST_FALSE(cm.isMapConsistent())
+
+  TEST_EXCEPTION(Exception::ElementNotFound, cm.split())
+}
+END_SECTION
+
+START_SECTION(([EXTRA] std::vector<FeatureMap> split(SplitMeta mode = SplitMeta::DISCARD) const with a PeptideIdentification of a column without a FeatureHandle))
+{
+  // an assigned identification whose map has a column, but no handle on its consensus feature, gets an
+  // empty feature of its own in that map
+  ConsensusMap cm;
+  cm.getColumnHeaders()[0].filename = "file0.featureXML";
+  cm.getColumnHeaders()[1].filename = "file1.featureXML";
+
+  ConsensusFeature cf;
+  cf.insert(FeatureHandle(0, Peak2D({ 10, 433.33 }, 100000), 0));
+  PeptideIdentification id1;
+  id1.insertHit(PeptideHit(0.1, 1, 3, AASequence::fromString("AAA")));
+  id1.setMetaValue("map_index", 1);
+  cf.getPeptideIdentifications().push_back(id1);
+  cm.push_back(cf);
+
+  vector<FeatureMap> fmaps = cm.split();
+  TEST_EQUAL(fmaps.size(), 2)
+  ABORT_IF(fmaps.size() != 2)
+  TEST_EQUAL(fmaps[0].size(), 1)
+  ABORT_IF(fmaps[0].size() != 1)
+  TEST_EQUAL(fmaps[0][0].getRT(), 10)
+  TEST_EQUAL(fmaps[0][0].getPeptideIdentifications().empty(), true)
+  TEST_EQUAL(fmaps[1].size(), 1)
+  ABORT_IF(fmaps[1].size() != 1)
+  TEST_EQUAL(fmaps[1][0].getRT(), 0)
+  TEST_EQUAL(fmaps[1][0].getMZ(), 0)
+  TEST_EQUAL(fmaps[1][0].getIntensity(), 0)
+  TEST_EQUAL(fmaps[1][0].getPeptideIdentifications().size(), 1)
+  ABORT_IF(fmaps[1][0].getPeptideIdentifications().size() != 1)
+  TEST_EQUAL(fmaps[1][0].getPeptideIdentifications()[0].getHits()[0].getSequence().toString(), "AAA")
+}
+END_SECTION
+
+START_SECTION(([EXTRA] std::vector<FeatureMap> split(SplitMeta mode = SplitMeta::DISCARD) const with a missing or invalid map_index meta value))
+{
+  ConsensusMap cm;
+  cm.getColumnHeaders()[0].filename = "file0.featureXML";
+
+  PeptideIdentification no_index, negative_index, string_index;
+  negative_index.setMetaValue("map_index", -1);
+  string_index.setMetaValue("map_index", "0");
+
+  ConsensusMap unassigned_no_index(cm), unassigned_negative(cm), unassigned_string(cm);
+  unassigned_no_index.getUnassignedPeptideIdentifications().push_back(no_index);
+  unassigned_negative.getUnassignedPeptideIdentifications().push_back(negative_index);
+  unassigned_string.getUnassignedPeptideIdentifications().push_back(string_index);
+  TEST_EXCEPTION(Exception::MissingInformation, unassigned_no_index.split())
+  TEST_EXCEPTION(Exception::ConversionError, unassigned_negative.split())
+  TEST_EXCEPTION(Exception::ConversionError, unassigned_string.split())
+
+  ConsensusMap assigned_negative(cm), assigned_string(cm);
+  ConsensusFeature cf_negative, cf_string;
+  cf_negative.insert(FeatureHandle(0, Peak2D({ 10, 433.33 }, 100000), 0));
+  cf_negative.getPeptideIdentifications().push_back(negative_index);
+  assigned_negative.push_back(cf_negative);
+  cf_string.insert(FeatureHandle(0, Peak2D({ 10, 433.33 }, 100000), 0));
+  cf_string.getPeptideIdentifications().push_back(string_index);
+  assigned_string.push_back(cf_string);
+  TEST_EXCEPTION(Exception::ConversionError, assigned_negative.split())
+  TEST_EXCEPTION(Exception::ConversionError, assigned_string.split())
+}
+END_SECTION
+
+START_SECTION(([EXTRA] std::vector<FeatureMap> split(SplitMeta mode = SplitMeta::DISCARD) const with several FeatureHandles of the same map index))
+{
+  // A consensus feature can hold several handles of one map index (the handle set orders them by map index,
+  // then unique id), and the map is still consistent. split() makes at most one feature per map index of a
+  // consensus feature: the handle with the largest unique id is kept, the others are dropped silently. The
+  // feature does not carry the unique id (BaseFeature(const FeatureHandle&) copies the handle as a Peak2D), so
+  // the handles are told apart by position and intensity.
+  ConsensusMap cm;
+  cm.getColumnHeaders()[0].filename = "file0.featureXML";
+  cm.getColumnHeaders()[1].filename = "file1.featureXML";
+
+  ConsensusFeature cf;
+  // inserted in reverse unique id order: which handle is kept does not depend on the insertion order
+  cf.insert(FeatureHandle(0, Peak2D({ 20, 533.33 }, 200000), 2));
+  cf.insert(FeatureHandle(0, Peak2D({ 10, 433.33 }, 100000), 1));
+  cf.insert(FeatureHandle(1, Peak2D({ 30, 633.33 }, 300000), 3));
+  PeptideIdentification id0;
+  id0.insertHit(PeptideHit(0.1, 1, 3, AASequence::fromString("AAA")));
+  id0.setMetaValue("map_index", 0);
+  cf.getPeptideIdentifications().push_back(id0);
+  cm.push_back(cf);
+  TEST_EQUAL(cm[0].size(), 3)
+  TEST_TRUE(cm.isMapConsistent())
+
+  std::ostringstream warnings;
+  vector<FeatureMap> fmaps;
+  OPENMS_LOG_WARN.insert(warnings);
+  try
+  {
+    fmaps = cm.split(ConsensusMap::SplitMeta::DISCARD);
+  }
+  catch (...)
+  {
+    OPENMS_LOG_WARN.remove(warnings);
+    throw;
+  }
+  OPENMS_LOG_WARN.remove(warnings);
+  TEST_EQUAL(warnings.str().find("ConsensusMap::split()"), std::string::npos)
+
+  TEST_EQUAL(fmaps.size(), 2)
+  ABORT_IF(fmaps.size() != 2)
+  TEST_EQUAL(fmaps[0].size(), 1)
+  ABORT_IF(fmaps[0].size() != 1)
+  TEST_EQUAL(fmaps[0][0].getRT(), 20)
+  TEST_EQUAL(fmaps[0][0].getMZ(), 533.33)
+  TEST_EQUAL(fmaps[0][0].getIntensity(), 200000)
+  // the identification of map index 0 goes to the one feature that is kept
+  TEST_EQUAL(fmaps[0][0].getPeptideIdentifications().size(), 1)
+  ABORT_IF(fmaps[0][0].getPeptideIdentifications().size() != 1)
+  TEST_EQUAL(fmaps[0][0].getPeptideIdentifications()[0].getHits()[0].getSequence().toString(), "AAA")
+  TEST_EQUAL(fmaps[1].size(), 1)
+  ABORT_IF(fmaps[1].size() != 1)
+  TEST_EQUAL(fmaps[1][0].getRT(), 30)
 }
 END_SECTION
 

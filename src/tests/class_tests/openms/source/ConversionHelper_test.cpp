@@ -96,6 +96,97 @@ START_SECTION((static void convert(UInt64 const input_map_index, PeakMap & input
 }
 END_SECTION
 
+START_SECTION(([EXTRA] static void convert(UInt64 const input_map_index, PeakMap & input_map, ConsensusMap& output_map, Size n = -1) with MS2 spectra and chromatograms))
+{
+  // getSize() also counts MS2 peaks and chromatogram points, but only MS1 peaks are converted,
+  // so n must be capped by the number of MS1 peaks
+  PeakMap exp;
+  Peak1D p;
+  MSSpectrum ms1;
+  ms1.setMSLevel(1);
+  ms1.setRT(5.0);
+  const double ms1_intensities[] = { 10.0, 40.0, 20.0, 30.0 };
+  for (Size i = 0; i < 4; ++i)
+  {
+    p.setMZ(100.0 + i);
+    p.setIntensity(ms1_intensities[i]);
+    ms1.push_back(p);
+  }
+  exp.addSpectrum(ms1);
+
+  // more intense than every MS1 peak: they must neither be converted nor displace MS1 peaks
+  MSSpectrum ms2;
+  ms2.setMSLevel(2);
+  ms2.setRT(6.0);
+  for (Size i = 0; i < 3; ++i)
+  {
+    p.setMZ(200.0 + i);
+    p.setIntensity(1000.0 * (i + 1));
+    ms2.push_back(p);
+  }
+  exp.addSpectrum(ms2);
+
+  MSChromatogram chrom;
+  ChromatogramPeak cp;
+  for (Size i = 0; i < 2; ++i)
+  {
+    cp.setRT(1.0 + i);
+    cp.setIntensity(5000.0);
+    chrom.push_back(cp);
+  }
+  exp.addChromatogram(chrom);
+
+  exp.updateRanges();
+  TEST_EQUAL(exp.getSize(), 9)
+
+  // most intense first
+  const double expected_intensities[] = { 40.0, 30.0, 20.0, 10.0 };
+  const double expected_mzs[] = { 101.0, 103.0, 102.0, 100.0 };
+
+  ConsensusMap cm;
+  MapConversion::convert(7, exp, cm); // default n
+  TEST_EQUAL(cm.size(), 4)
+  TEST_EQUAL(cm.getColumnHeaders()[7].size, 4)
+  for (Size i = 0; i < std::min(cm.size(), Size(4)); ++i)
+  {
+    TEST_EQUAL(cm[i].size(), 1)
+    TEST_EQUAL(cm[i].begin()->getMapIndex(), 7)
+    TEST_EQUAL(cm[i].begin()->getUniqueId(), i)
+    TEST_REAL_SIMILAR(cm[i].getRT(), 5.0)
+    TEST_REAL_SIMILAR(cm[i].getMZ(), expected_mzs[i])
+    TEST_REAL_SIMILAR(cm[i].getIntensity(), expected_intensities[i])
+  }
+
+  // n larger than the number of MS1 peaks, but not larger than getSize()
+  MapConversion::convert(7, exp, cm, 8);
+  TEST_EQUAL(cm.size(), 4)
+  TEST_EQUAL(cm.getColumnHeaders()[7].size, 4)
+  for (Size i = 0; i < std::min(cm.size(), Size(4)); ++i)
+  {
+    TEST_REAL_SIMILAR(cm[i].getMZ(), expected_mzs[i])
+    TEST_REAL_SIMILAR(cm[i].getIntensity(), expected_intensities[i])
+  }
+
+  // n smaller than the number of MS1 peaks
+  MapConversion::convert(7, exp, cm, 2);
+  TEST_EQUAL(cm.size(), 2)
+  TEST_EQUAL(cm.getColumnHeaders()[7].size, 2)
+  for (Size i = 0; i < std::min(cm.size(), Size(2)); ++i)
+  {
+    TEST_REAL_SIMILAR(cm[i].getMZ(), expected_mzs[i])
+    TEST_REAL_SIMILAR(cm[i].getIntensity(), expected_intensities[i])
+  }
+
+  // no MS1 spectrum at all: nothing to convert
+  PeakMap ms2_only;
+  ms2_only.addSpectrum(ms2);
+  ms2_only.addChromatogram(chrom);
+  MapConversion::convert(7, ms2_only, cm);
+  TEST_EQUAL(cm.size(), 0)
+  TEST_EQUAL(cm.getColumnHeaders()[7].size, 0)
+}
+END_SECTION
+
 /////
 
 ConsensusMap cm;
