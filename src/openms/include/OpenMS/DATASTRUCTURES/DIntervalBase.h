@@ -48,7 +48,9 @@ public:
       /**
           @brief Default constructor.
 
-          Creates an empty interval with corners at infinity.
+          Creates an empty interval, i.e. minPosition() is PositionType::maxPositive() and maxPosition()
+          is PositionType::minNegative(). Those are the finite extrema of numeric_limits<CoordinateType>
+          (max() and lowest()), not infinity -- testing the corners for infinity will never match.
       */
       DIntervalBase() :
         min_(PositionType::maxPositive()),

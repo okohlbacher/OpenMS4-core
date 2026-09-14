@@ -9,6 +9,7 @@
 #include <OpenMS/CONCEPT/Exception.h>
 #include <OpenMS/IMAGING/MSImagingRegion.h>
 #include <algorithm>
+#include <limits>
 
 namespace OpenMS
 {
@@ -43,6 +44,16 @@ MSImagingRegion MSImagingRegion::fromMask(Size id, const std::string& name, UInt
   {
     throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "invalid mask",
                                   "(w,h): (" + StringUtils::toStr(width) + "," + StringUtils::toStr(height) + ")");
+  }
+  // The far corner below is UInt arithmetic: past UINT_MAX it wraps to a maximum below the
+  // origin, which is the inverted box rectangle() rejects — contains() would then answer
+  // false for every pixel and getBBoxWidth() would underflow, leaving a silently inert
+  // region instead of an error.
+  if (origin_x > std::numeric_limits<UInt>::max() - (width - 1) || origin_y > std::numeric_limits<UInt>::max() - (height - 1))
+  {
+    throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "mask extends past the coordinate range",
+                                  "origin=(" + StringUtils::toStr(origin_x) + "," + StringUtils::toStr(origin_y) + ") (w,h): ("
+                                    + StringUtils::toStr(width) + "," + StringUtils::toStr(height) + ")");
   }
   MSImagingRegion reg;
   reg.id_ = id;

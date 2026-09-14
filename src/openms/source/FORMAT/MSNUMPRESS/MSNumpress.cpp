@@ -239,9 +239,12 @@ double optimalLinearFixedPointMass(
 		size_t dataSize,
         double mass_acc
 ) {
-	if (dataSize < 3)
+	// Only an empty array can do without a fixed point: encodeLinear() quantizes
+	// the first two values with it as well (they are not stored as floats), so
+	// a factor of 0 would decode one- and two-value arrays as 0/0.
+	if (dataSize == 0)
 	{
-		return 0; // we just encode the first two points as floats
+		return 0;
 	}
     // We calculate the maximal fixedPoint we need to achieve a specific mass
     // accuracy. Note that the maximal error we will make by encoding as int is
@@ -282,11 +285,18 @@ double optimalLinearFixedPoint(
 	{
 		return 0;
 	}
+	// Zero leaves the first values without an overflow bound, and dividing by
+	// it gives an infinite factor that encodeLinear() cannot quantize with; use
+	// the bound of 1 that the residual loop below guarantees for longer arrays.
 	if (dataSize == 1)
 	{
-		return floor(0x7FFFFFFFl / data[0]);
+		return floor(0x7FFFFFFFl / (data[0] == 0 ? 1.0 : data[0]));
 	}
 	double maxDouble = max(data[0], data[1]);
+	if (dataSize == 2 && maxDouble == 0)
+	{
+		maxDouble = 1;
+	}
 	double extrapol;
 	double diff;
 

@@ -9,6 +9,8 @@
 
 #include <OpenMS/KERNEL/BinnedSpectrum.h>
 
+#include <cmath>
+
 #include <Eigen/Sparse>
 
 using namespace std;
@@ -21,6 +23,13 @@ using SparseVectorIteratorType = Eigen::SparseVector<float>::InnerIterator;
 
 namespace OpenMS
 {
+
+  BinnedSpectrum::BinnedSpectrum() :
+    // allocate (empty) bins with the same dimension as the detailed constructor: every accessor and the
+    // comparison functors dereference getBins(), and Eigen requires equal dimensions for bin-wise operations
+    bins_(new SparseVectorType(numeric_limits<SparseVectorIndexType>::max()))
+  {
+  }
 
   BinnedSpectrum::BinnedSpectrum(const PeakSpectrum& ps, float size, bool unit_ppm, UInt spread, float offset) :
     bin_spread_(spread), 
@@ -113,8 +122,8 @@ namespace OpenMS
       {
          bins_->coeffRef(idx + j + 1) +=  p.getIntensity();
         
-        // prevent spreading over left boundaries
-        if (static_cast<int>(idx - j - 1) >= 0)
+        // prevent spreading over left boundaries (compare before subtracting: idx is unsigned, so idx - j - 1 would wrap)
+        if (idx > j)
         {
           bins_->coeffRef(idx - j - 1) += p.getIntensity();
         }
@@ -124,14 +133,15 @@ namespace OpenMS
 
   bool BinnedSpectrum::operator==(const BinnedSpectrum& rhs) const
   {
-    // first compare bin layout and precursors
-    if (std::tie(unit_ppm_, bin_size_, bin_spread_, precursors_)
-        != std::tie(rhs.unit_ppm_, rhs.bin_size_, rhs.bin_spread_, rhs.precursors_))
+    // first compare bin layout and precursors; the offset is part of the layout because the same bin index
+    // denotes a different m/z interval under a different offset (consistent with isCompatible())
+    if (std::tie(unit_ppm_, bin_size_, offset_, bin_spread_, precursors_)
+        != std::tie(rhs.unit_ppm_, rhs.bin_size_, rhs.offset_, rhs.bin_spread_, rhs.precursors_))
     {
       return false;
     }
 
-    // handle nullptr bins (default-constructed objects)
+    // defensive only: every constructor allocates bins_
     if (!bins_ && !rhs.bins_) { return true; }
     if (!bins_ || !rhs.bins_) { return false; }
 
@@ -188,9 +198,23 @@ namespace OpenMS
     }
   }
 
-  float BinnedSpectrum::getBinIntensity(double mz)
+  float BinnedSpectrum::getBinIntensity(double mz) const
   {
-    return bins_->coeffRef(getBinIndex(mz));
+    // coeff() instead of coeffRef(): coeffRef() inserts an explicit zero for an absent bin, which would change
+    // nonZeros() and thereby the result of operator== merely by reading
+    // Nothing is stored, or there is no bin layout (a default-constructed spectrum has bin_size_ 0):
+    // getBinIndex() would then convert floor(mz / 0) to an integer, which is undefined behaviour.
+    // No peak lies at a non-positive m/z either, and ppm binning takes the logarithm of it.
+    if (bins_->nonZeros() == 0 || !(bin_size_ > 0.0f) || !(mz > 0.0) || !std::isfinite(mz))
+    {
+      return 0.0f;
+    }
+    const size_t index = getBinIndex(mz);
+    if (index >= static_cast<size_t>(bins_->size()))
+    {
+      return 0.0f; // beyond the last bin; Eigen's coeff() asserts on it
+    }
+    return bins_->coeff(index);
   }
 
 }

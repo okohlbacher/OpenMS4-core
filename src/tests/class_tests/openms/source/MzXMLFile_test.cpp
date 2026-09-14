@@ -12,10 +12,11 @@
 
 ///////////////////////////
 
-#include <OpenMS/FORMAT/MzXMLFile.h>
 #include <OpenMS/FORMAT/FileTypes.h>
+#include <OpenMS/FORMAT/MzXMLFile.h>
 #include <OpenMS/KERNEL/MSExperiment.h>
 #include <OpenMS/KERNEL/StandardTypes.h>
+#include <fstream>
 
 using namespace OpenMS;
 using namespace std;
@@ -646,6 +647,47 @@ END_SECTION
 
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
+START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
+{
+  MzXMLFile file;
+  std::string input;
+  NEW_TMP_FILE(input)
+  const std::string prefix = "<?xml version=\"1.0\"?><mzXML><msRun scanCount=\"1\">"
+                             "<msInstrument><comment>Instr<!-- split -->ument <![CDATA[Comment]]></comment></msInstrument>";
+  const std::string suffix = "</scan></msRun></mzXML>";
+  std::ofstream(input) << prefix
+                       << "<scan num=\"1\" msLevel=\"2\" peaksCount=\"1\" retentionTime=\"PT1S\">"
+                          "<precursorMz precursorIntensity=\"5\" windowWideness=\"10\">12<!-- split -->3.<![CDATA[45]]></precursorMz>"
+                          "<peaks precision=\"32\" byteOrder=\"network\" contentType=\"m/z-int\">QvAAAELIAAA=</peaks>"
+                          "<comment>Scan<!-- split --> Comment</comment>"
+                       << suffix;
+  PeakMap result;
+  file.load(input, result);
+  TEST_EQUAL(result.size(), 1)
+  ABORT_IF(result.size() != 1)
+  TEST_EQUAL(result[0].getPrecursors().size(), 1)
+  ABORT_IF(result[0].getPrecursors().size() != 1)
+  TEST_REAL_SIMILAR(result[0].getPrecursors()[0].getMZ(), 123.45)
+  TEST_REAL_SIMILAR(result[0].getPrecursors()[0].getIsolationWindowLowerOffset(), 5.0)
+  TEST_REAL_SIMILAR(result[0].getPrecursors()[0].getIsolationWindowUpperOffset(), 5.0)
+  TEST_STRING_EQUAL(result[0].getComment(), "Scan Comment")
+  TEST_STRING_EQUAL(result.getInstrument().getMetaValue("#comment").toString(), "Instrument Comment")
+
+  for (const std::string count : {"2", "0", "-1"})
+  {
+    std::string malformed;
+    NEW_TMP_FILE(malformed)
+    std::ofstream(malformed) << prefix << "<scan num=\"1\" msLevel=\"1\" peaksCount=\"" << count
+                             << "\" retentionTime=\"PT1S\"><peaks precision=\"32\" byteOrder=\"network\" contentType=\"m/z-int\">QvAAAELIAAA=</peaks>"
+                             << suffix;
+    TEST_EXCEPTION(Exception::ParseError, file.load(malformed, result))
+    File::remove(malformed);
+  }
+  // Deliberately incomplete reader fixtures are excluded from writer-schema checks.
+  File::remove(input);
+}
+END_SECTION
+
 /// check the temporary files written above against their XML schema (types without a validator are skipped)
 VALIDATE_TMP_FILES
 

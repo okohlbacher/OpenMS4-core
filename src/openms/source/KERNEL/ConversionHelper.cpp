@@ -21,16 +21,20 @@ namespace OpenMS
     output_map.setUniqueId();
 
     input_map.updateRanges();
-    if (n > input_map.getSize())
-    {
-      n = input_map.getSize();
-    }
-    output_map.reserve(n);
     std::vector<Peak2D> tmp;
     tmp.reserve(input_map.getSize());
 
     // TODO Avoid tripling the memory consumption by this call
     input_map.get2DData(tmp);
+
+    // Clamp against what get2DData() actually collected, not against getSize(): the latter
+    // counts MS2 peaks and chromatogram points as well, which get2DData() never emits, so
+    // with any non-MS1 data the partial_sort middle and the loop below would leave tmp.
+    if (n > tmp.size())
+    {
+      n = tmp.size();
+    }
+    output_map.reserve(n);
 
     std::partial_sort(tmp.begin(),
                       tmp.begin() + n,

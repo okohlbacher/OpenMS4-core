@@ -43,7 +43,7 @@ public:
           @brief Construct from the path of an sqMass file.
 
           The file is not opened by the constructor; each accessor opens its
-          own connection on demand.
+          own read-only connection on demand (a missing file is not created).
 
           @param[in] filename Path of the sqMass file to read.
       */
@@ -54,15 +54,20 @@ public:
       /**
           @brief Read the SWATH window boundaries from the file.
 
-          Returns one @c SwathMap entry per distinct precursor isolation
-          centre present at MS level 2; @c center, @c lower and @c upper
-          are filled. Other @c SwathMap fields are left at their default
-          values.
+          Returns one @c SwathMap entry per distinct combination of precursor
+          isolation centre, lower bound and upper bound among the precursors
+          of MS level 2 spectra: two windows with the same centre but
+          different widths are two entries (and @ref readSpectraForWindow,
+          which only uses the centre, returns the same spectra for both).
+          Precursors without an isolation centre are skipped. @c center,
+          @c lower and @c upper are filled; other @c SwathMap fields are left
+          at their default values.
 
           @return SWATH window definitions in the file's natural order.
 
           @throws Exception::SqlOperationFailed if the sqMass file cannot
-                                                be opened.
+                                                be opened or reading a row
+                                                of the result fails.
           @throws Exception::IllegalArgument    if preparing the SQL query
                                                 fails.
       */
@@ -75,7 +80,8 @@ public:
                   order.
 
           @throws Exception::SqlOperationFailed if the sqMass file cannot
-                                                be opened.
+                                                be opened or reading a row
+                                                of the result fails.
           @throws Exception::IllegalArgument    if preparing the SQL query
                                                 fails.
       */
@@ -88,6 +94,8 @@ public:
           The window is identified by @p swath_map's @c center value;
           spectra whose precursor isolation centre lies within a small fixed
           tolerance (@c 0.01 m/z) of @c swath_map.center are returned.
+          Chromatogram precursors in the same range are not spectra and are
+          skipped.
 
           @note Only @c swath_map.center is consulted; the @c lower and
                 @c upper fields are ignored.
@@ -98,7 +106,8 @@ public:
                   natural order.
 
           @throws Exception::SqlOperationFailed if the sqMass file cannot
-                                                be opened.
+                                                be opened or reading a row
+                                                of the result fails.
           @throws Exception::IllegalArgument    if preparing the SQL query
                                                 fails.
       */

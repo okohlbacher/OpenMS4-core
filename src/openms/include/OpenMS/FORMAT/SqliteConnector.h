@@ -62,6 +62,11 @@ namespace OpenMS
     /// Destructor
     ~SqliteConnector();
 
+    /// The connector owns its database handle: copying it would close the same handle twice
+    /// and assignment would drop the previous one.
+    SqliteConnector(const SqliteConnector&) = delete;
+    SqliteConnector& operator=(const SqliteConnector&) = delete;
+
     /**
       @brief Checks whether the given table exists
 
@@ -72,7 +77,9 @@ namespace OpenMS
     bool tableExists(const std::string& tablename);
 
     /// Counts the number of entries in SQL table @p table_name
-    /// @throws Exception::SqlOperationFailed if table is unknown
+    /// @throws Exception::IllegalArgument if the table is unknown: the count query is rejected
+    ///         already while it is prepared, which is the generic 'bad SQL' error of this class
+    /// @throws Exception::SqlOperationFailed if the prepared query yields no row or a NULL count
     Size countTableRows(const std::string& table_name);
 
     /**

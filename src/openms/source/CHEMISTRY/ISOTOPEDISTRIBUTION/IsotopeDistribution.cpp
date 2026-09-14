@@ -209,14 +209,11 @@ namespace OpenMS
 
   void IsotopeDistribution::trimLeft(double cutoff)
   {
-    for (auto iter = distribution_.begin(); iter != distribution_.end(); ++iter)
-    {
-      if (iter->getIntensity() >= cutoff)
-      {
-        distribution_.erase(distribution_.begin(), iter);
-        break;
-      }
-    }
+    // find_if returns end() when every peak is below the cutoff, which erases all of them;
+    // breaking out of a loop that only erases on a hit kept the whole distribution instead.
+    auto first = std::find_if(distribution_.begin(), distribution_.end(),
+                              [cutoff](const Peak1D& peak) { return peak.getIntensity() >= cutoff; });
+    distribution_.erase(distribution_.begin(), first);
   }
 
   double IsotopeDistribution::averageMass() const

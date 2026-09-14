@@ -236,7 +236,7 @@ set(format_executables_list
   MSstatsFile_test
   MascotGenericFile_test
   MascotXMLFile_test
-  #MSDataWritingConsumer_test
+  MSDataWritingConsumer_test
   MRMFeaturePickerFile_test
   MsInspectFile_test
   MzDataFile_test

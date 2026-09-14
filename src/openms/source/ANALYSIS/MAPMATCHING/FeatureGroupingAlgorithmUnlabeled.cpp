@@ -70,6 +70,8 @@ namespace OpenMS
     out.swap(input[0]);
     // copy back the input maps (they have been deleted while swapping)
     out.getColumnHeaders() = input[0].getColumnHeaders();
+    // and the caller's meta values, which swap() now exchanges as well
+    static_cast<MetaInfoInterface&>(out) = static_cast<const MetaInfoInterface&>(input[0]);
 
     postprocess_(maps, out);
   }

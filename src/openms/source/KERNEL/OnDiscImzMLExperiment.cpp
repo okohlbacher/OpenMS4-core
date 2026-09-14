@@ -235,15 +235,11 @@ void OnDiscImzMLExperiment::open(const std::string& imzml_path, const std::strin
   // reads). Coordinate-grid problems surface here; only peak decode stays lazy.
   pimpl_->buildGeometry_();
 
-  pimpl_->ibd_path_ = ibd_path_override.empty() ? pimpl_->meta_.ibd_file_path : ibd_path_override;
-  if (pimpl_->ibd_path_.empty())
-  {
-    std::string lower = imzml_path;
-    StringUtils::toLower(lower);
-    pimpl_->ibd_path_ = StringUtils::hasSuffix(lower, ".imzml")
-                          ? imzml_path.substr(0, imzml_path.size() - 6) + ".ibd"
-                          : imzml_path + ".ibd";
-  }
+  // loadSpectraIndex() resolves the companion (the override, else ImzMLFile::inferIbdPath_)
+  // and records it on the meta before parsing, so this is by construction the file the index
+  // was built against. Re-deriving the name here would be a second copy of that rule, free
+  // to drift from the one the index actually used.
+  pimpl_->ibd_path_ = pimpl_->meta_.ibd_file_path;
 
   pimpl_->ibd_ = fopen(pimpl_->ibd_path_.c_str(), "rb");
   if (!pimpl_->ibd_)

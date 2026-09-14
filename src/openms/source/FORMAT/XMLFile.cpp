@@ -139,13 +139,16 @@ private:
 
 
       // peak ahead into the file: is it bzip2 or gzip compressed?
+      // the buffer is zero-filled and only the bytes actually read are taken over,
+      // so a file shorter than the two magic bytes cannot feed indeterminate data
+      // into the comparison below
       std::string bz;
       {
         std::ifstream file(filename.c_str());
-        char tmp_bz[3];
+        char tmp_bz[3] = {'\0', '\0', '\0'};
         file.read(tmp_bz, 2);
-        tmp_bz[2] = '\0';
-        bz =std::string(tmp_bz);
+        const std::streamsize read = file.gcount();
+        bz =std::string(tmp_bz, read > 0 ? static_cast<size_t>(read) : size_t(0));
       }
 
       unique_ptr<xercesc::InputSource> source;
@@ -157,7 +160,10 @@ private:
       g2 |= 1 << 1;
       g2 |= 1 << 0;
       //g2 = static_cast<char>(0x8b); // can make troubles if it is casted to 0x7F which is the biggest number signed char can save
-      if ((bz[0] == 'B' && bz[1] == 'Z') || (bz[0] == g1 && bz[1] == g2) || (bz[0] == 'P' && bz[1] == 'K'))
+      // a file with fewer than two bytes cannot carry any of the magic prefixes, and
+      // indexing bz[1] on a shorter string would be out of bounds
+      if (bz.size() == 2 &&
+          ((bz[0] == 'B' && bz[1] == 'Z') || (bz[0] == g1 && bz[1] == g2) || (bz[0] == 'P' && bz[1] == 'K')))
       {
         source.reset(new CompressedInputSource(sm.convert(filename).c_str(), bz));
       }

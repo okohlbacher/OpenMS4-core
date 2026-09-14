@@ -93,8 +93,14 @@ public:
       @brief Store an @c MSExperiment in @c sqMass format.
 
       Writes the spectra, chromatograms and experimental metadata of
-      @p map to @p filename, creating the file (and the required SQLite
-      tables) if necessary. The current @ref SqMassConfig is applied.
+      @p map to a new database at @p filename with the required SQLite
+      tables. The current @ref SqMassConfig is applied.
+
+      @warning An existing file at @p filename is deleted before writing
+               starts; its content is neither appended to nor kept. The
+               file is not replaced atomically: if writing fails, the old
+               file is already gone and a partially written database may
+               remain.
 
       The sqMass @c RUN::ID column is taken from
       @c MSExperiment::getSqlRunID; populate it via

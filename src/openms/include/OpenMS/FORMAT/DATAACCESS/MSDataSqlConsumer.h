@@ -12,6 +12,8 @@
 
 #include <OpenMS/KERNEL/MSExperiment.h>
 
+#include <memory>
+
 namespace OpenMS
 {
 
@@ -45,19 +47,27 @@ namespace OpenMS
 
         Opens the SQLite file and writes the tables.
 
-        @param[in] sql_filename The filename of the SQLite database
+        @param[in] sql_filename The filename of the SQLite database (an existing file is replaced)
         @param[in] run_id Unique identifier which links the sqMass and OSW file
-        @param[in] buffer_size How large the internal buffer size should be (defaults to 500 spectra / chromatograms)
+        @param[in] buffer_size How large the internal buffer size should be (defaults to 500 spectra / chromatograms); 0 writes every record immediately
         @param[in] full_meta Whether to write the full meta-data in the SQLite header
         @param[in] lossy_compression Whether to use lossy compression (numpress)
         @param[in] linear_mass_acc Desired mass accuracy for RT or m/z space (absolute value)
+
+        @throws Exception::IllegalArgument if @p buffer_size is negative (checked before the file is touched)
       */
       MSDataSqlConsumer(const std::string& sql_filename, UInt64 run_id, int buffer_size = 500, bool full_meta = true, bool lossy_compression=false, double linear_mass_acc=1e-4);
 
+      /// The consumer owns its database handler, so it cannot be copied
+      MSDataSqlConsumer(const MSDataSqlConsumer&) = delete;
+      /// The consumer owns its database handler, so it cannot be copied
+      MSDataSqlConsumer& operator=(const MSDataSqlConsumer&) = delete;
+
       /**
         @brief Destructor
-  
-        Flushes the data for good.
+
+        Calls finalize(). A destructor cannot report an error, so a failure
+        to write is only logged here; call finalize() first to handle it.
       */
       ~MSDataSqlConsumer() override;
 
@@ -69,9 +79,34 @@ namespace OpenMS
       */
       void flush();
 
-      /// Add/insert a RUN entry into the sqMass file (ID and filename)
+      /**
+        @brief Flush all buffered data and write the run-level information
+
+        Writes the RUN entry for the current run id (with the full meta-data
+        snapshot if requested), unless addRun() has already registered a run.
+        Calling it again only flushes data consumed since.
+
+        @throws Exception::BaseException if writing to the database fails
+      */
+      void finalize();
+
+      /**
+        @brief Add/insert a RUN entry into the sqMass file (ID and filename)
+
+        Buffered records are flushed first, so they keep the run id under
+        which they were consumed. The RUN entry is written immediately: with
+        @c full_meta, its meta-data snapshot only holds @p filename, and the
+        meta-data of records consumed afterwards is not stored (reading such a
+        file falls back to the columns of the SQL tables).
+      */
       void addRun(const std::string& filename, const UInt64 run_id);
-      /// Change the current run id used for subsequent chromatogram/spectrum writes
+
+      /**
+        @brief Change the current run id used for subsequent chromatogram/spectrum writes
+
+        Buffered records are flushed first, so they keep the run id under
+        which they were consumed.
+      */
       void setRunId(const UInt64 run_id);
 
       /**
@@ -86,12 +121,17 @@ namespace OpenMS
 
       void setExpectedSize(Size /* expectedSpectra */, Size /* expectedChromatograms */) override;
 
-      void setExperimentalSettings(const ExperimentalSettings& /* exp */) override;
+      /**
+        @brief Set the experimental settings stored with the full meta-data
+
+        Only used if the consumer was constructed with @c full_meta.
+      */
+      void setExperimentalSettings(const ExperimentalSettings& exp) override;
 
     protected:
 
       std::string filename_;
-      OpenMS::Internal::MzMLSqliteHandler * handler_;
+      std::unique_ptr<OpenMS::Internal::MzMLSqliteHandler> handler_;
 
       size_t flush_after_;
       bool full_meta_;

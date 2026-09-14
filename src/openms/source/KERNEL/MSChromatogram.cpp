@@ -474,10 +474,15 @@ MSChromatogram& MSChromatogram::selectUnchecked(const std::vector<Size>& indices
 // This helper function is based on the cstd::set_union implementation. It is different in that it has a separate concept of "close enough to merge"
 // This is defined as having retention times of within 1/1000 seconds
 // Note: We assume that RTs are distinct in each of the two Chromatograms but may be the same between Chromatograms.
-OpenMS::MSChromatogram::Iterator setSumSimilarUnion(OpenMS::MSChromatogram::Iterator first1,
-                    OpenMS::MSChromatogram::Iterator last1,
-                    OpenMS::MSChromatogram::Iterator first2,
-                    OpenMS::MSChromatogram::Iterator last2,
+// 'static': the helper is a detail of mergePeaks() in this translation unit; external linkage at
+// global namespace scope would export ::setSumSimilarUnion from the library and make any equally
+// named global function elsewhere in the program an undiagnosed ODR violation.
+// The two input ranges are const: both are only read, which is what lets mergePeaks() accept a
+// 'const MSChromatogram&'.
+static OpenMS::MSChromatogram::Iterator setSumSimilarUnion(OpenMS::MSChromatogram::ConstIterator first1,
+                    OpenMS::MSChromatogram::ConstIterator last1,
+                    OpenMS::MSChromatogram::ConstIterator first2,
+                    OpenMS::MSChromatogram::ConstIterator last2,
                     OpenMS::MSChromatogram::Iterator result)
 {
   while (true)
@@ -490,7 +495,7 @@ OpenMS::MSChromatogram::Iterator setSumSimilarUnion(OpenMS::MSChromatogram::Iter
     {
       return std::copy(first1,last1,result);
     }
-    auto smaller_RT = [](OpenMS::MSChromatogram::Iterator a, OpenMS::MSChromatogram::Iterator b)->bool
+    auto smaller_RT = [](OpenMS::MSChromatogram::ConstIterator a, OpenMS::MSChromatogram::ConstIterator b)->bool
     {
       return round(a->getRT() * 1000.0) < round(b->getRT() * 1000.0);
     };
@@ -517,6 +522,10 @@ OpenMS::MSChromatogram::Iterator setSumSimilarUnion(OpenMS::MSChromatogram::Iter
 void MSChromatogram::updateRanges()
 {
   #ifdef OPENMS_ASSERTIONS
+    // An empty dimension reads as 0 below, which is indistinguishable from a computed extremum of 0.
+    // Remember the emptiness separately so that the very first (necessary) call on a chromatogram
+    // without a cached range is not reported as redundant.
+    const bool had_ranges = !RangeRT::isEmpty() && !RangeIntensity::isEmpty();
     double rt_min = RangeRT::isEmpty() ? 0 : getMinRT();
     double rt_max = RangeRT::isEmpty() ? 0 : getMaxRT();
     double int_min = RangeIntensity::isEmpty() ? 0 : getMinIntensity();
@@ -537,7 +546,7 @@ void MSChromatogram::updateRanges()
     double int_max_new = RangeIntensity::isEmpty() ? 0 : getMaxIntensity();
 
     // check if all are equal and no update range was necessary
-    if (rt_min_new == rt_min && rt_max_new == rt_max
+    if (had_ranges && rt_min_new == rt_min && rt_max_new == rt_max
       && int_min_new == int_min && int_max_new == int_max)
     {
       OPENMS_LOG_WARN << "Update ranges was called but ranges were already up-to-date" << std::endl;
@@ -545,12 +554,24 @@ void MSChromatogram::updateRanges()
   #endif
 }
 
-void MSChromatogram::mergePeaks(MSChromatogram& other, bool add_meta)
+void MSChromatogram::mergePeaks(const MSChromatogram& other, bool add_meta)
 {
   vector<ChromatogramPeak> temp;
   temp.resize(size() + other.size());
   auto new_end = setSumSimilarUnion(begin(), end(), other.begin(), other.end(), temp.begin());
   ContainerType::assign(temp.begin(), new_end);
+
+  // The peak-parallel data arrays describe the pre-merge peaks and cannot be carried over: keeping
+  // them would leave a size mismatch that the chromatogram's own checkDataArraySizes_() rejects, so
+  // the next sortByPosition()/sortByIntensity()/sort()/select() would throw. Drop them, as clear() does.
+  float_data_arrays_.clear();
+  string_data_arrays_.clear();
+  integer_data_arrays_.clear();
+
+  // The inherited range cache was computed for this chromatogram alone and is now too narrow (it
+  // knows neither other's RTs nor the summed intensities). Recompute instead of leaving stale
+  // values that look current -- unlike select(), a merge can only ever lose data this way.
+  updateRanges();
 
   if (add_meta)
   {

@@ -12,6 +12,7 @@
 
 #include <OpenMS/OPENSWATHALGO/DATAACCESS/DataStructures.h>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -49,10 +50,19 @@ public:
     /// Return a pointer to a spectrum at the given id
     virtual SpectrumPtr getSpectrumById(int id) = 0;
 
-    /// Return pointer to a spectrum at the given id, the spectrum will be filtered by drift time
+    /**
+      @brief Return pointer to a spectrum at the given id, the spectrum will be filtered by drift time
+
+      @throws std::invalid_argument if the spectrum has no drift time array (see filterByDrift)
+    */
     SpectrumPtr getSpectrumById(int id, double drift_start, double drift_end );
 
-    /// Return a vector of ids of spectra that are within RT +/- deltaRT
+    /**
+      @brief Return a vector of ids of spectra that are within RT +/- deltaRT
+
+      With @p deltaRT = 0 the first id is that of the first spectrum at or after
+      @p RT, even if its RT differs from @p RT; getMultipleSpectra relies on this.
+    */
     virtual std::vector<std::size_t> getSpectraByRT(double RT, double deltaRT) const = 0;
     /// Returns the number of spectra available
     virtual size_t getNrSpectra() const = 0;
@@ -66,36 +76,69 @@ public:
     /// Returns the native id of the chromatogram at the given id
     virtual std::string getChromatogramNativeID(int id) const = 0;
 
-    /* @brief Fetches a spectrumSequence (multiple spectra pointers) closest to the given RT
-     * @p RT = target RT
-     * @p nr_spectra_to_fetch = # spectra around target RT to fetch (length of the spectrum sequence)
+    /**
+      @brief Fetches a spectrumSequence (multiple spectra pointers) closest to the given RT
+
+      The sequence starts with the spectrum closest to @p RT, followed by up to
+      @p nr_spectra_to_fetch / 2 (integer division) neighbours on each side, alternating
+      left and right (closest, closest - 1, closest + 1, closest - 2, ...) and skipping
+      neighbours outside the map. It is not sorted by RT. An odd @p nr_spectra_to_fetch
+      therefore yields at most that many spectra, an even one at most
+      @p nr_spectra_to_fetch + 1, and any value below 2 yields only the closest spectrum.
+      The sequence is empty if no spectrum lies at or after @p RT.
+
+      @param[in] RT target RT
+      @param[in] nr_spectra_to_fetch width of the window of spectra around the target RT (see above)
     */
     SpectrumSequence getMultipleSpectra(double RT, int nr_spectra_to_fetch);
 
-    /* @brief Fetches a spectrumSequence (multiple spectra pointers) closest to the given RT. Filters all spectra by specified @p drift_start and @p drift_end
-     * @p RT = target RT
-     * @p nr_spectra_to_fetch = # spectra around target RT to fetch (length of the spectrum sequence)
+    /**
+      @brief Fetches a spectrumSequence (multiple spectra pointers) closest to the given RT. Filters all spectra by specified @p drift_start and @p drift_end
+
+      Selects the same spectra as getMultipleSpectra(double, int).
+
+      @param[in] RT target RT
+      @param[in] nr_spectra_to_fetch width of the window of spectra around the target RT
+      @param[in] drift_start lower drift time bound
+      @param[in] drift_end upper drift time bound
+      @throws std::invalid_argument if a selected spectrum has no drift time array (see filterByDrift)
     */
     SpectrumSequence getMultipleSpectra(double RT, int nr_spectra_to_fetch, double drift_start, double drift_end);
 
-    /// filters a spectrum by drift time, spectrum pointer returned is a copy
+    /**
+      @brief filters a spectrum by drift time, spectrum pointer returned is a copy
+
+      @throws std::invalid_argument if @p input lacks an m/z, intensity or drift time
+              array, or if these arrays differ in length
+    */
     static SpectrumPtr filterByDrift(const SpectrumPtr& input, double drift_start, double drift_end)
     {
       // NOTE: this function is very inefficient because filtering unsorted array
-      //OPENMS_PRECONDITION(drift_start <= 0, "Cannot filter by drift time if drift_start is not set");
-      //OPENMS_PRECONDITION(drift_end - drift_start < 0, "Cannot filter by drift time if range is empty");
-      //OPENMS_PRECONDITION(input->getDriftTimeArray() != nullptr, "Cannot filter by drift time if no drift time is available.");
+      if (input == nullptr)
+      {
+        throw std::invalid_argument("Cannot filter a missing spectrum by drift time.");
+      }
 
-      //if (input->getDriftTimeArray() == nullptr)
-      //{
-        //throw Exception::NullPointer(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION);
-      //}
-
-      OpenSwath::SpectrumPtr output(new OpenSwath::Spectrum);
-
+      // The loop below walks the intensity and drift time arrays in step with the
+      // m/z array. Spectra without ion mobility (e.g. from sqMass files) have no
+      // drift time array at all, and a shorter array would be read past its end.
       OpenSwath::BinaryDataArrayPtr mz_arr = input->getMZArray();
       OpenSwath::BinaryDataArrayPtr int_arr = input->getIntensityArray();
+      if (mz_arr == nullptr || int_arr == nullptr)
+      {
+        throw std::invalid_argument("Cannot filter by drift time: the spectrum has no m/z or intensity array.");
+      }
       OpenSwath::BinaryDataArrayPtr im_arr = input->getDriftTimeArray();
+      if (im_arr == nullptr)
+      {
+        throw std::invalid_argument("Cannot filter by drift time: the spectrum has no drift time array.");
+      }
+      if (int_arr->data.size() != mz_arr->data.size() || im_arr->data.size() != mz_arr->data.size())
+      {
+        throw std::invalid_argument("Cannot filter by drift time: the m/z, intensity and drift time arrays differ in length.");
+      }
+
+      OpenSwath::SpectrumPtr output(new OpenSwath::Spectrum);
 
       auto mz_it = mz_arr->data.cbegin();
       auto int_it = int_arr->data.cbegin();

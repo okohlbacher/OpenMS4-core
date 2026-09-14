@@ -223,8 +223,8 @@ private:
     }
     else
     {
-      x_.resize(data.size());
-      y_.resize(data.size());
+      x_.reserve(data.size()); // reserve, not resize: the loop below appends
+      y_.reserve(data.size());
       for (const std::pair<double,double>& pair : data)
       {
         x_.push_back(pair.first);

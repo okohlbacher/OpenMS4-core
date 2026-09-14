@@ -15,6 +15,9 @@
 #include <OpenMS/FORMAT/PeakTypeEstimator.h>
 #include <OpenMS/IONMOBILITY/IMDataArrayUtils.h>
 
+#include <cmath>
+#include <limits>
+
 namespace OpenMS
 {
   void MSSpectrum::checkDataArraySizes_() const
@@ -380,12 +383,28 @@ namespace OpenMS
     return (max_intensity_it - this->begin());
   }
 
+  namespace
+  {
+    /// An ion-mobility array describes the peaks one to one. A shorter array made the sort read past
+    /// its end; a longer, sorted one passed isSortedByIM() and let callers such as
+    /// IMDataConverter::reshapeIMFrameToMany index peaks that do not exist.
+    void requireIMArrayMatchesPeaks_(const Size im_size, const Size peak_count)
+    {
+      if (im_size != peak_count)
+      {
+        throw Exception::Precondition(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+          "Ion mobility array has " + StringUtils::toStr(im_size) + " entries for " + StringUtils::toStr(peak_count) + " peaks.");
+      }
+    }
+  }
+
   void MSSpectrum::sortByIonMobility()
   {
     // can throw if IM float data array is missing
     const auto [im_data_index, im_unit] = getIMData();
     // Capture IM array by Ref, because .getIMData() is expensive to call for every peak!
     const auto& im_data = getFloatDataArrays()[im_data_index];
+    requireIMArrayMatchesPeaks_(im_data.size(), size());
 
     // check if data is sorted by IM... if not, sort
     if (! std::is_sorted(im_data.begin(), im_data.end()))
@@ -398,12 +417,37 @@ namespace OpenMS
   {
     if (chunks.empty()) return;
 
-    if (chunks.size() == 1 && chunks[0].is_sorted)
+    // Only a chunk list which tiles [0, size()) describes the whole peak list. Anything else (a
+    // gap, an overlap, a reversed run, or a list which stops short of the last peak) would leave
+    // the peaks outside the merged span where they are - and the two branches below would not even
+    // leave the same ones behind - so such a list is rejected instead of silently half-sorting.
+    if (chunks.front().start != 0 || chunks.back().end != this->size())
+    {
+      throw Exception::Precondition(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+                                    "presorted chunks cover [" + StringUtils::toStr(chunks.front().start) + ", " +
+                                    StringUtils::toStr(chunks.back().end) + ") instead of the whole spectrum ([0, " +
+                                    StringUtils::toStr(this->size()) + "))");
+    }
+    for (Size i = 0; i < chunks.size(); ++i)
+    {
+      if (chunks[i].end < chunks[i].start || (i > 0 && chunks[i].start != chunks[i - 1].end))
+      {
+        throw Exception::Precondition(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+                                      "presorted chunk " + StringUtils::toStr(i) + " ([" + StringUtils::toStr(chunks[i].start) +
+                                      ", " + StringUtils::toStr(chunks[i].end) + ")) does not continue the previous chunk");
+      }
+    }
+
+    // A single chunk now spans the whole spectrum, so its claim can be taken as the answer - but
+    // only after verifying it: an untrue claim would otherwise report success on unsorted peaks.
+    if (chunks.size() == 1 && chunks[0].is_sorted && isSorted())
     {
       return;
     }
     if (float_data_arrays_.empty() && string_data_arrays_.empty() && integer_data_arrays_.empty())
     {
+      // nothing to permute alongside the peaks; since the chunks tile the whole peak list, sorting
+      // it as a whole yields the same (stable) order as the chunk-wise merge below
       std::stable_sort(ContainerType::begin(), ContainerType::end(), PeakType::PositionLess());
     }
     else
@@ -413,12 +457,17 @@ namespace OpenMS
 
       auto comparePos = [this] (Size a, Size b) { return this->ContainerType::operator[](a).getPos() < this->ContainerType::operator[](b).getPos(); };
 
-      // sort all chunks, that haven't been sorted yet
+      // sort all chunks, that haven't been sorted yet. A chunk which merely *claims* to be sorted
+      // is verified as well (one linear scan, cheaper than the merge it feeds): std::inplace_merge
+      // below requires sorted inputs and cannot detect a false claim - it would just permute the
+      // peaks and their data arrays into an order no later check can recognize as wrong.
       for (Size i = 0; i < chunks.size(); ++i)
       {
-        if (!chunks[i].is_sorted)
+        const auto chunk_begin = select_indices.begin() + chunks[i].start;
+        const auto chunk_end = select_indices.begin() + chunks[i].end;
+        if (!chunks[i].is_sorted || !std::is_sorted(chunk_begin, chunk_end, comparePos))
         {
-          std::stable_sort(select_indices.begin() + chunks[i].start, select_indices.begin() + chunks[i].end, comparePos);
+          std::stable_sort(chunk_begin, chunk_end, comparePos);
         }
       }
 
@@ -507,6 +556,7 @@ namespace OpenMS
   {
     auto [im_data_index, D] = getIMData(); // may throw
     const auto& im_data = getFloatDataArrays()[im_data_index];
+    requireIMArrayMatchesPeaks_(im_data.size(), size());
     // check if data is sorted by IM
     return std::is_sorted(im_data.begin(), im_data.end());
   }
@@ -892,6 +942,41 @@ namespace OpenMS
     auto [im_data_index, im_unit] = getIMData();
     const auto& im_data = getFloatDataArrays()[im_data_index];
 
+    // Verify IM data array size matches peak count.
+    // Checked before the buffer is written to, so that a rejected call leaves the caller's image
+    // (which may still be on screen) as it was instead of blanking it.
+    if (!this->empty() && im_data.size() != this->size())
+    {
+      throw Exception::Precondition(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+        "IM data array size (" + StringUtils::toStr(im_data.size()) +
+        ") does not match spectrum size (" + StringUtils::toStr(this->size()) + ")");
+    }
+
+    // The caller allocated im_bins * mz_bins floats. If that size wraps around, the buffer we
+    // clear is smaller than the pixel indices computed from the unwrapped bin counts below, i.e.
+    // we would write past the end of the caller's buffer. The bound also keeps both bin counts,
+    // and therefore every bin index, far inside the Int64 range used below.
+    if (im_bins > std::numeric_limits<Size>::max() / sizeof(float) / mz_bins)
+    {
+      throw Exception::InvalidValue(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+        "Number of pixels (im_bins * mz_bins) exceeds the addressable range",
+        StringUtils::toStr(im_bins) + " * " + StringUtils::toStr(mz_bins));
+    }
+
+    // Precompute bin sizes for mapping coordinates to pixel indices
+    const double im_range = max_im - min_im;
+    const double mz_range = max_mz - min_mz;
+    const double im_scale = static_cast<double>(im_bins) / im_range;
+    const double mz_scale = static_cast<double>(mz_bins) / mz_range;
+
+    // An infinite bound (inf * 0 below), or a range so narrow that bins/range overflows, makes the
+    // scaled coordinates non-finite, and casting those to Int64 is undefined behaviour. Rejected
+    // here, before the caller's buffer is touched.
+    if (!std::isfinite(im_range) || !std::isfinite(mz_range) || !std::isfinite(im_scale) || !std::isfinite(mz_scale))
+    {
+      throw Exception::InvalidRange(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION);
+    }
+
     const Size total_pixels = im_bins * mz_bins;
 
     // Zero-initialize the output buffer
@@ -903,20 +988,6 @@ namespace OpenMS
       return;
     }
 
-    // Verify IM data array size matches peak count
-    if (im_data.size() != this->size())
-    {
-      throw Exception::Precondition(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
-        "IM data array size (" + StringUtils::toStr(im_data.size()) +
-        ") does not match spectrum size (" + StringUtils::toStr(this->size()) + ")");
-    }
-
-    // Precompute bin sizes for mapping coordinates to pixel indices
-    const double im_range = max_im - min_im;
-    const double mz_range = max_mz - min_mz;
-    const double im_scale = static_cast<double>(im_bins) / im_range;
-    const double mz_scale = static_cast<double>(mz_bins) / mz_range;
-
     const Int64 im_bins_minus_one = static_cast<Int64>(im_bins) - 1;
     const Int64 mz_bins_minus_one = static_cast<Int64>(mz_bins) - 1;
 
@@ -926,6 +997,14 @@ namespace OpenMS
     {
       const double mz = (*this)[peak_idx].getMZ();
       const double im = im_data[peak_idx];
+
+      // Drop non-finite coordinates: every comparison below is false for NaN, so such a peak
+      // would survive the range filter and then be cast to Int64, which is undefined behaviour
+      // and yields an arbitrary (possibly negative) pixel index.
+      if (!std::isfinite(mz) || !std::isfinite(im))
+      {
+        continue;
+      }
 
       // Skip peaks outside the requested ranges
       if (mz < min_mz || mz > max_mz || im < min_im || im > max_im)
@@ -937,14 +1016,24 @@ namespace OpenMS
       Int64 mz_bin = static_cast<Int64>((mz - min_mz) * mz_scale);
       Int64 im_bin = static_cast<Int64>((im - min_im) * im_scale);
 
-      // Clamp to valid range: values exactly at max should go in last bin
+      // Clamp to valid range: values exactly at max should go in last bin.
+      // The lower clamp keeps the index inside the caller's buffer no matter what the cast
+      // produced, rather than relying on the filter above for that.
       if (mz_bin > mz_bins_minus_one)
       {
         mz_bin = mz_bins_minus_one;
       }
+      else if (mz_bin < 0)
+      {
+        mz_bin = 0;
+      }
       if (im_bin > im_bins_minus_one)
       {
         im_bin = im_bins_minus_one;
+      }
+      else if (im_bin < 0)
+      {
+        im_bin = 0;
       }
 
       // Row-major order: mz_bin * im_bins + im_bin

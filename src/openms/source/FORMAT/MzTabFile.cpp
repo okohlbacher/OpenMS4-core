@@ -680,29 +680,32 @@ namespace OpenMS
         mz_tab_metadata.study_variable[n].description = p;
         count_study_variable_description = std::max((Size)n, count_study_variable_description);
       }
-      else if (StringUtils::hasPrefix(meta_key, "colunit") && meta_key_fields[1] == "protein")
+      else if (meta_key == "colunit" && meta_key_fields.size() == 2)
       {
-        Int n = (Size)extractBracketIndex(meta_key_fields[0], "colunit[");
+        // the column-unit keys carry no index (colunit-protein, colunit-peptide,
+        // colunit-PSM, colunit-small_molecule), so there is nothing to extract from the key
+        // and the definition is appended - reading an index out of the key threw on every
+        // such line, and the section vectors are never resized to hold one
+        std::string section_key = meta_key_fields[1];
+        StringUtils::toLower(section_key); // the PSM key is written in upper case
         const std::string& s = cells[2];
-        mz_tab_metadata.colunit_protein[n] = s;
-      }
-      else if (StringUtils::hasPrefix(meta_key, "colunit") && meta_key_fields[1] == "peptide")
-      {
-        Int n = (Size)extractBracketIndex(meta_key_fields[0], "colunit[");
-        const std::string& s = cells[2];
-        mz_tab_metadata.colunit_peptide[n] = s;
-      }
-      else if (StringUtils::hasPrefix(meta_key, "colunit") && meta_key_fields[1] == "psm")
-      {
-        Int n = (Size)extractBracketIndex(meta_key_fields[0], "colunit[");
-        const std::string& s = cells[2];
-        mz_tab_metadata.colunit_psm[n] = s;
-      }
-      else if (StringUtils::hasPrefix(meta_key, "colunit") && meta_key_fields[1] == "small_molecule")
-      {
-        Int n = (Size)extractBracketIndex(meta_key_fields[0], "colunit[");
-        const std::string& s = cells[2];
-        mz_tab_metadata.colunit_small_molecule[n] = s;
+
+        if (section_key == "protein")
+        {
+          mz_tab_metadata.colunit_protein.push_back(s);
+        }
+        else if (section_key == "peptide")
+        {
+          mz_tab_metadata.colunit_peptide.push_back(s);
+        }
+        else if (section_key == "psm")
+        {
+          mz_tab_metadata.colunit_psm.push_back(s);
+        }
+        else if (section_key == "small_molecule")
+        {
+          mz_tab_metadata.colunit_small_molecule.push_back(s);
+        }
       }
     }
 
@@ -1011,7 +1014,12 @@ namespace OpenMS
       for (map<std::string, Size>::const_iterator it = protein_custom_opt_columns.begin(); it != protein_custom_opt_columns.end(); ++it)
       {
         MzTabString s;
-        s.fromCellString(cells[it->second]);
+        // opt_ columns come last and load() trims each line, so a row whose trailing cells are
+        // empty is shorter than its header: those cells stay null instead of reading past the end
+        if (it->second < cells.size())
+        {
+          s.fromCellString(cells[it->second]);
+        }
         MzTabOptionalColumnEntry e(it->first, s);
         row.opt_.push_back(e);
       }
@@ -1188,7 +1196,12 @@ namespace OpenMS
       for (map<std::string, Size>::const_iterator it = peptide_custom_opt_columns.begin(); it != peptide_custom_opt_columns.end(); ++it)
       {
         MzTabString s;
-        s.fromCellString(cells[it->second]);
+        // opt_ columns come last and load() trims each line, so a row whose trailing cells are
+        // empty is shorter than its header: those cells stay null instead of reading past the end
+        if (it->second < cells.size())
+        {
+          s.fromCellString(cells[it->second]);
+        }
         MzTabOptionalColumnEntry e(it->first, s);
         row.opt_.push_back(e);
       }
@@ -1284,8 +1297,9 @@ namespace OpenMS
         {
           psm_end_index = i;
         }
-        else if (cells[i] == "opt_")
-        {
+        else if (StringUtils::hasPrefix(cells[i], "opt_"))
+        { // an optional column is named "opt_<context>_<name>", so it is recognised by its
+          // prefix - as in the protein, peptide and small molecule sections
           psm_custom_opt_columns[cells[i]] = i;
         }
       }
@@ -1335,7 +1349,12 @@ namespace OpenMS
       for (map<std::string, Size>::const_iterator it = psm_custom_opt_columns.begin(); it != psm_custom_opt_columns.end(); ++it)
       {
         MzTabString s;
-        s.fromCellString(cells[it->second]);
+        // opt_ columns come last and load() trims each line, so a row whose trailing cells are
+        // empty is shorter than its header: those cells stay null instead of reading past the end
+        if (it->second < cells.size())
+        {
+          s.fromCellString(cells[it->second]);
+        }
         MzTabOptionalColumnEntry e(it->first, s);
         row.opt_.push_back(e);
       }
@@ -1533,7 +1552,12 @@ namespace OpenMS
       for (map<std::string, Size>::const_iterator it = smallmolecule_custom_opt_columns.begin(); it != smallmolecule_custom_opt_columns.end(); ++it)
       {
         MzTabString s;
-        s.fromCellString(cells[it->second]);
+        // opt_ columns come last and load() trims each line, so a row whose trailing cells are
+        // empty is shorter than its header: those cells stay null instead of reading past the end
+        if (it->second < cells.size())
+        {
+          s.fromCellString(cells[it->second]);
+        }
         MzTabOptionalColumnEntry e(it->first, s);
         row.opt_.push_back(e);
       }
@@ -1981,28 +2005,28 @@ namespace OpenMS
   // colunit-protein
   for (Size i = 0; i != md.colunit_protein.size(); ++i)
   {
-    std::string s =std::string("MTD\tcolunit-protein") + md.colunit_protein[i];
+    std::string s =std::string("MTD\tcolunit-protein\t") + md.colunit_protein[i];
     sl.push_back(s);
   }
 
   // colunit-peptide
   for (Size i = 0; i != md.colunit_peptide.size(); ++i)
   {
-    std::string s =std::string("MTD\tcolunit-peptide") + md.colunit_peptide[i];
+    std::string s =std::string("MTD\tcolunit-peptide\t") + md.colunit_peptide[i];
     sl.push_back(s);
   }
 
   // colunit-PSM
   for (Size i = 0; i != md.colunit_psm.size(); ++i)
   {
-    std::string s =std::string("MTD\tcolunit-PSM") + md.colunit_psm[i];
+    std::string s =std::string("MTD\tcolunit-PSM\t") + md.colunit_psm[i];
     sl.push_back(s);
   }
 
   // colunit-small_molecule
   for (Size i = 0; i != md.colunit_small_molecule.size(); ++i)
   {
-    std::string s =std::string("MTD\tcolunit-small_molecule") + md.colunit_small_molecule[i];
+    std::string s =std::string("MTD\tcolunit-small_molecule\t") + md.colunit_small_molecule[i];
     sl.push_back(s);
   }
   }
@@ -2014,8 +2038,6 @@ namespace OpenMS
       const MzTabMetaData& meta, 
       size_t& n_columns) const
   {
-    Size n_search_engine_scores = reference_row.search_engine_score_ms_run.size();
-
     StringList header;
     header.push_back("PRH");
     header.push_back("accession");
@@ -2031,15 +2053,15 @@ namespace OpenMS
       header.push_back("best_search_engine_score[" + StringUtils::toStr(i + 1) + "]");
     }
 
-    if (n_search_engine_scores != 0)
+    // the row writes these cells score-major (outer map: score type, inner map: ms_run) and
+    // keyed by the run indices actually stored, so the header is generated from the same
+    // nesting and the same keys - otherwise a header cell names a different run than the
+    // value below it
+    for (std::map<Size, std::map<Size, MzTabDouble> >::const_iterator search_it = reference_row.search_engine_score_ms_run.begin(); search_it != reference_row.search_engine_score_ms_run.end(); ++search_it)
     {
-      // get number of runs for the first search score type (should be the same for every score)
-      for (Size i = 0; i != reference_row.search_engine_score_ms_run.begin()->second.size(); ++i)
+      for (std::map<Size, MzTabDouble>::const_iterator run_it = search_it->second.begin(); run_it != search_it->second.end(); ++run_it)
       {
-        for (std::map<Size, std::map<Size, MzTabDouble> >::const_iterator search_it = reference_row.search_engine_score_ms_run.begin(); search_it != reference_row.search_engine_score_ms_run.end(); ++search_it)
-        {
-          header.push_back(std::string("search_engine_score[" + StringUtils::toStr(search_it->first) + "]_ms_run[") + StringUtils::toStr(i + 1) + "]");
-        }
+        header.push_back(std::string("search_engine_score[" + StringUtils::toStr(search_it->first) + "]_ms_run[") + StringUtils::toStr(run_it->first) + "]");
       }
     }
 
@@ -2225,11 +2247,13 @@ namespace OpenMS
       header.push_back("best_search_engine_score[" + StringUtils::toStr(i + 1) + "]");
     }
 
-    for (Size i = 0; i != search_ms_runs; ++i)
+    // score-major, like the matching row: the row walks search_engine_score_ms_run with the
+    // score type as the outer and the ms_run as the inner key
+    for (Size i = 0; i != n_search_engine_scores; ++i)
     {
-      for (Size j = 0; j != n_search_engine_scores; ++j)
+      for (Size j = 0; j != search_ms_runs; ++j)
       {
-        header.push_back(std::string("search_engine_score[" + StringUtils::toStr(j + 1) + "]_ms_run[") + StringUtils::toStr(i + 1) + "]");
+        header.push_back(std::string("search_engine_score[" + StringUtils::toStr(i + 1) + "]_ms_run[") + StringUtils::toStr(j + 1) + "]");
       }
     }
 
@@ -2463,11 +2487,13 @@ namespace OpenMS
       header.push_back("best_search_engine_score[" + StringUtils::toStr(i + 1) + "]");
     }
 
-    for (Size i = 0; i != ms_runs; ++i)
+    // score-major, like the matching row: the row walks search_engine_score_ms_run with the
+    // score type as the outer and the ms_run as the inner key
+    for (Size i = 0; i != n_search_engine_scores; ++i)
     {
-      for (Size j = 0; j != n_search_engine_scores; ++j)
+      for (Size j = 0; j != ms_runs; ++j)
       {
-        header.push_back(std::string("search_engine_score[" + StringUtils::toStr(j + 1) + "]_ms_run[") + StringUtils::toStr(i + 1) + "]");
+        header.push_back(std::string("search_engine_score[" + StringUtils::toStr(i + 1) + "]_ms_run[") + StringUtils::toStr(j + 1) + "]");
       }
     }
 
@@ -2576,11 +2602,13 @@ namespace OpenMS
       header.push_back("best_search_engine_score[" + StringUtils::toStr(i + 1) + "]");
     }
 
-    for (Size i = 0; i != search_ms_runs; ++i)
+    // score-major, like the matching row: the row walks search_engine_score_ms_run with the
+    // score type as the outer and the ms_run as the inner key
+    for (Size i = 0; i != n_search_engine_scores; ++i)
     {
-      for (Size j = 0; j != n_search_engine_scores; ++j)
+      for (Size j = 0; j != search_ms_runs; ++j)
       {
-        header.push_back(std::string("search_engine_score[" + StringUtils::toStr(j + 1) + "]_ms_run[") + StringUtils::toStr(i + 1) + "]");
+        header.push_back(std::string("search_engine_score[" + StringUtils::toStr(i + 1) + "]_ms_run[") + StringUtils::toStr(j + 1) + "]");
       }
     }
 
@@ -2703,11 +2731,13 @@ namespace OpenMS
       header.push_back("best_search_engine_score[" + StringUtils::toStr(i + 1) + "]");
     }
 
-    for (Size i = 0; i != search_ms_runs; ++i)
+    // score-major, like the matching row: the row walks search_engine_score_ms_run with the
+    // score type as the outer and the ms_run as the inner key
+    for (Size i = 0; i != n_search_engine_scores; ++i)
     {
-      for (Size j = 0; j != n_search_engine_scores; ++j)
+      for (Size j = 0; j != search_ms_runs; ++j)
       {
-        header.push_back(std::string("search_engine_score[" + StringUtils::toStr(j + 1) + "]_ms_run[") + StringUtils::toStr(i + 1) + "]");
+        header.push_back(std::string("search_engine_score[" + StringUtils::toStr(i + 1) + "]_ms_run[") + StringUtils::toStr(j + 1) + "]");
       }
     }
 

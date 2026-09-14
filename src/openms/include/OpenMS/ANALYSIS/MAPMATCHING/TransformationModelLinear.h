@@ -21,8 +21,8 @@ namespace OpenMS
 
     The model can be inferred from data or specified using explicit parameters. 
     If data is given, a least squares fit is used to find the model parameters (slope and intercept). 
-    Depending on parameter @p symmetric_regression, a normal regression (@e y on @e x) or
-    symmetric regression (@f$ y - x @f$ on @f$ y + x @f$) is performed.
+    The fit is an ordinary regression of @e y on @e x. The parameter
+    @p symmetric_regression is accepted for compatibility but currently has no effect.
 
     Without data, the model can be specified by giving the parameters @p slope, @p intercept, 
     @p x_weight, @p y_weight explicitly.
@@ -66,7 +66,7 @@ protected:
     double slope_, intercept_;
     /// Was the model estimated from data?
     bool data_given_;
-    /// Use symmetric regression?
+    /// Compatibility parameter; not used by the fit.
     bool symmetric_;
   };
 } // namespace

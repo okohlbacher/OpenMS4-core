@@ -38,6 +38,7 @@ namespace OpenMS
       @param[in] width  Number of columns.
       @param[in] height Number of rows.
     */
+    /// @throws Exception::InvalidValue if width x height exceeds 2^31 pixels
     IonImage(UInt width, UInt height);
 
     /**
@@ -45,6 +46,7 @@ namespace OpenMS
       @param[in] width  Number of columns.
       @param[in] height Number of rows.
     */
+    /// @throws Exception::InvalidValue if width x height exceeds 2^31 pixels
     void resize(UInt width, UInt height);
 
     /// @brief Image width.

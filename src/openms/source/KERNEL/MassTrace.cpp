@@ -60,8 +60,14 @@ namespace OpenMS
 
     double MassTrace::computeSmoothedPeakArea() const
     {
-      // sum all smoothed intensities in MassTrace which are non-negative
+      // trapezoidal area under the smoothed intensities; intervals whose right intensity is
+      // not positive are skipped. Every intensity here is a smoothed one -- taking the right
+      // and the carried intensity from the raw peaks made this the raw area instead.
       double peak_area(0.0);
+      if (smoothed_intensities_.empty())
+      {
+        return peak_area;
+      }
 
       double int_before = smoothed_intensities_[0];
       double rt_before = trace_peaks_.begin()->getRT();
@@ -70,9 +76,9 @@ namespace OpenMS
         if (smoothed_intensities_[i] > 0.0)
         {
           double rt_diff = trace_peaks_[i].getRT() - rt_before;
-          peak_area += (int_before + trace_peaks_[i].getIntensity())/2 * rt_diff;
+          peak_area += (int_before + smoothed_intensities_[i])/2 * rt_diff;
         }
-        int_before = trace_peaks_[i].getIntensity();
+        int_before = smoothed_intensities_[i];
         rt_before = trace_peaks_[i].getRT();
       }
       return peak_area;

@@ -454,7 +454,7 @@ START_SECTION(bool operator!=(const ResidueModification& modification) const)
   TEST_EQUAL(mod1 != mod2, false)
 END_SECTION
 
-const ResidueModification* combined_mod;
+const ResidueModification* combined_mod = nullptr;
 
 START_SECTION(static const ResidueModification* combineMods(const ResidueModification* base,
 	const std::set<const ResidueModification*>& addons,
@@ -491,6 +491,7 @@ END_SECTION
 START_SECTION(std::string toString() const)
 	const ResidueModification* base = mod_DB->getModification("Phospho (S)");
 	TEST_EQUAL(base->toString(), "S(Phospho)")
+  ABORT_IF(combined_mod == nullptr)
   TEST_EQUAL(combined_mod->toString(), "S[+80.963365999999994]")
 
 END_SECTION

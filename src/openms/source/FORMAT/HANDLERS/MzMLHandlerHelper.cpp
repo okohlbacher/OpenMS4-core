@@ -94,7 +94,8 @@ namespace OpenMS::Internal
       os << "\n";
       // NOTE: indexList is required, so we need to write one 
       // NOTE: the spectra and chromatogram ids are user-supplied, so better XML-escape them!
-      os << "<indexList count=\"" << indexlists << "\">\n";
+      // count is the number of index elements that follow, and that includes the dummy index below
+      os << "<indexList count=\"" << (indexlists == 0 ? 1 : indexlists) << "\">\n";
       if (!spectra_offsets.empty())
       {
         os << "\t<index name=\"spectrum\">\n";
@@ -183,6 +184,15 @@ namespace OpenMS::Internal
           // Next, ensure that we only look at the float array even if the
           // mzML tags say 32 bit data (I am looking at you, proteowizard)
           bindata.precision = BinaryData::PRE_64;
+
+          // As in the other branches, the declared length (arrayLength/defaultArrayLength from the file)
+          // must not outlive decoding: the handlers size and copy supplemental arrays by it.
+          if (bindata.size != bindata.floats_64.size())
+          {
+            MzMLHandlerHelper::warning(0,std::string("Float binary data array '") + bindata.meta.getName() +
+                "' has length " + bindata.floats_64.size() + ", but should have length " + bindata.size + ".");
+            bindata.size = bindata.floats_64.size();
+          }
         }
         else if (bindata.precision == BinaryData::PRE_64)
         {

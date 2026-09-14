@@ -483,7 +483,7 @@ namespace OpenMS::Internal
             {
               ModificationsDB::getInstance()->searchModifications(mods, uni_mod_id, "", ResidueModification::N_TERM);
             }
-            else if (loc == (Int)actual_peptide_.size())
+            else if (loc == (Int)actual_peptide_.size() + 1) // mzIdentML C-terminus; 'size' is the last residue
             {
               ModificationsDB::getInstance()->searchModifications(mods, uni_mod_id, "", ResidueModification::C_TERM);
             }
@@ -1363,7 +1363,9 @@ namespace OpenMS::Internal
             const ResidueModification* c_term_mod = hit.getSequence().getCTerminalModification();
             if (c_term_mod != nullptr)
             {
-              p += "\t\t<Modification location=\"" + StringUtils::toStr(hit.getSequence().size()) + "\">\n";
+              // mzIdentML puts the C-terminus at (peptide length + 1); location == length is the last
+              // residue, where the reader (MzIdentMLDOMHandler) would attach the modification instead.
+              p += "\t\t<Modification location=\"" + StringUtils::toStr(hit.getSequence().size() + 1) + "\">\n";
               std::string acc = c_term_mod->getUniModAccession();
               p += "\t\t\t<cvParam accession=\"UNIMOD:" + StringUtils::suffix(acc, ':');
               p += "\" name=\"" + c_term_mod->getId();
@@ -1758,7 +1760,8 @@ namespace OpenMS::Internal
         const ResidueModification* c_term_mod = peptide_sequence.getCTerminalModification();
         if (c_term_mod != nullptr)
         {
-          p += "\t\t<Modification location=\"" + StringUtils::toStr(peptide_sequence.size()) + "\">\n";
+          // mzIdentML puts the C-terminus at (peptide length + 1), not on the last residue (see writePeptideHit)
+          p += "\t\t<Modification location=\"" + StringUtils::toStr(peptide_sequence.size() + 1) + "\">\n";
           std::string acc = c_term_mod->getUniModAccession();
           bool unimod = true;
           if (!acc.empty())
@@ -1936,7 +1939,9 @@ namespace OpenMS::Internal
             }
             else if (hit.metaValueExists(Constants::UserParam::OPENPEPXL_XL_TERM_SPEC_BETA) && hit.getMetaValue(Constants::UserParam::OPENPEPXL_XL_TERM_SPEC_BETA) == "C_TERM")
             {
-              p += "\t\t<Modification location=\"" + StringUtils::toStr(peptide_sequence.size() + 2);
+              // C-terminus is (peptide length + 1), as for the alpha peptide above (i + 2 with i = last residue index);
+              // length + 2 lies outside the peptide, so the reader could not place the acceptor site on load.
+              p += "\t\t<Modification location=\"" + StringUtils::toStr(peptide_sequence.size() + 1);
             }
             else
             {

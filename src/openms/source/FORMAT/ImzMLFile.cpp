@@ -74,17 +74,13 @@ namespace
     return s;
   }
 
-  // imzML integrity check: the .ibd must begin with the 16-byte UUID declared in
-  // the .imzML XML (IMS:1000080). A mismatch means the .imzML and .ibd do not
-  // belong together (or the .ibd is truncated/corrupt) — reject loudly instead of
-  // silently decoding garbage offsets. If the XML carries no (or an unparsable)
-  // UUID we can only warn, since some non-conformant writers omit it.
   // Advisory imzML integrity check: the .ibd should begin with the 16-byte UUID declared
   // in the .imzML XML (IMS:1000080). A mismatch usually means the .imzML and .ibd do not
   // belong together. This is reported as a loud WARNING rather than a hard error so that
   // legacy / non-conformant datasets (e.g. an .ibd that stores array data from offset 0
   // with no UUID prefix) still load; callers who require strict conformance can inspect
-  // the warning log.
+  // the warning log. A missing or unparsable UUID, an unopenable .ibd and an .ibd shorter
+  // than 16 bytes are warned about the same way: nothing here ever rejects a dataset.
   void verifyIbdUuid_(const std::string& ibd_path, const std::string& xml_uuid, const std::string& imzml_path)
   {
     unsigned char expected[16];
@@ -272,6 +268,17 @@ void ImzMLFile::buildImagingGeometry(const MSExperiment& exp, MSImagingGeometry&
       continue;
     }
 
+    // off-plane pixels are skipped before the coordinate check, as the index overload does
+    Int z_imz = 1;
+    if (spec.metaValueExists("imzml:z"))
+    {
+      z_imz = spec.getMetaValue("imzml:z");
+    }
+    if (z_imz != 1)
+    {
+      continue;
+    }
+
     const Int x_imz = spec.getMetaValue("imzml:x");
     const Int y_imz = spec.getMetaValue("imzml:y");
     if (x_imz < 1 || y_imz < 1)
@@ -281,16 +288,6 @@ void ImzMLFile::buildImagingGeometry(const MSExperiment& exp, MSImagingGeometry&
       OPENMS_LOG_WARN << "imzML: pixel coordinates must be >= 1; skipping spectrum " << i
                       << " at (" << OpenMS::StringConversions::toString(x_imz) << ","
                       << OpenMS::StringConversions::toString(y_imz) << ")." << std::endl;
-      continue;
-    }
-
-    Int z_imz = 1;
-    if (spec.metaValueExists("imzml:z"))
-    {
-      z_imz = spec.getMetaValue("imzml:z");
-    }
-    if (z_imz != 1)
-    {
       continue;
     }
 
@@ -364,7 +361,10 @@ void ImzMLFile::buildImagingGeometry(const MSExperiment& exp, MSImagingGeometry&
   {
     const double px = static_cast<double>(exp.getMetaValue("imzml:pixel_size_x"));
     const double py = static_cast<double>(exp.getMetaValue("imzml:pixel_size_y"));
-    geom.setPixelSize(px, py, "micrometer");
+    if (px > 0 && py > 0) // as the index overload: setPixelSize validates nothing
+    {
+      geom.setPixelSize(px, py, "micrometer");
+    }
   }
 }
 

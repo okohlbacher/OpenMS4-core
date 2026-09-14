@@ -284,6 +284,14 @@ START_SECTION((static std::string path(const std::string &file)))
   TEST_EQUAL(File::path("/path/only/"), "/path/only");
 END_SECTION
 
+START_SECTION(static std::string localPath(const std::string& file))
+  TEST_EQUAL(File::localPath("file:///home/data/run.mzML"), "/home/data/run.mzML") // POSIX root survives
+  TEST_EQUAL(File::localPath("file:///C:/data/run.mzML"), "C:/data/run.mzML")     // URI slash before a drive
+  TEST_EQUAL(File::localPath("file://C:/data/run.mzML"), "C:/data/run.mzML")
+  TEST_EQUAL(File::localPath("/home/data/run.mzML"), "/home/data/run.mzML")      // no scheme: unchanged
+  TEST_EQUAL(File::localPath(""), "")
+END_SECTION
+
 START_SECTION((static std::string basename(const std::string &file)))
   TEST_EQUAL(File::basename("/source/config/bla/bluff.h"), "bluff.h");
   TEST_EQUAL(File::basename("filename_only.h"), "filename_only.h");

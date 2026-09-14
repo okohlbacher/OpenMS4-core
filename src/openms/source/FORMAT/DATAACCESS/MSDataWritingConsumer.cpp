@@ -10,11 +10,34 @@
 #include <OpenMS/FORMAT/VALIDATORS/MzMLValidator.h>
 // TODO move getVersion to Handler
 #include <OpenMS/FORMAT/MzMLFile.h>
+#include <OpenMS/CONCEPT/Helpers.h>
+#include <OpenMS/CONCEPT/LogStream.h>
 
 #include <utility>
 
 namespace OpenMS
 {
+  namespace
+  {
+    // Later records cannot add array-processing declarations to an already written header.
+    template <typename Record>
+    bool clearArrayProcessing(Record& record)
+    {
+      bool removed = false;
+      auto clear = [&](auto& arrays)
+      {
+        for (auto& array : arrays)
+        {
+          removed |= !array.getDataProcessing().empty();
+          array.getDataProcessing().clear();
+        }
+      };
+      clear(record.getFloatDataArrays());
+      clear(record.getIntegerDataArrays());
+      clear(record.getStringDataArrays());
+      return removed;
+    }
+  }
 
   MSDataWritingConsumer::MSDataWritingConsumer(const std::string& filename) :
     Internal::MzMLHandler(MapType(), filename, MzMLFile().getVersion(), ProgressLogger()),
@@ -81,7 +104,38 @@ namespace OpenMS
       //header
       //--------------------------------------------------------------------
       Internal::MzMLHandler::writeHeader_(ofs_, dummy, dps_, *validator_);
+      // declared by the header as dp_sp_0, the default of the spectrumList
+      first_spectrum_data_processing_ = scpy.getDataProcessing();
       started_writing_ = true;
+    }
+    else
+    {
+      // The header was written from the first spectrum alone, but writeSpectrum_ refers to a
+      // later spectrum's own source file as "sf_sp_<index>", to the processing of its float data
+      // arrays as "dp_sp_<index>_bi_<m>" and to a history other than the declared one as
+      // "dp_sp_<index>": ids the header never declared, so the file carried dangling references
+      // (and read back without that history). Write the spectrum with what the header declares.
+      bool lost_information = false;
+      const SpectrumType& const_scpy = scpy;
+      if (!dps_.empty() && const_scpy.getDataProcessing() != dps_[0])
+      {
+        // an equal history held in other objects is the declared one; only a different one is lost
+        lost_information = !OpenMS::Helpers::cmpPtrContainer(const_scpy.getDataProcessing(), dps_[0]);
+        scpy.setDataProcessing(first_spectrum_data_processing_);
+      }
+      if (scpy.getSourceFile() != SourceFile())
+      {
+        scpy.setSourceFile(SourceFile());
+        lost_information = true;
+      }
+      lost_information |= clearArrayProcessing(scpy);
+      if (lost_information && !warned_undeclared_references_)
+      {
+        OPENMS_LOG_WARN << "Warning: '" << file_ << "': a spectrum carries a source file or data processing that the mzML header "
+                        << "(written from the first spectrum) does not declare. Such spectra are written without their own source file "
+                        << "and with the first spectrum's data processing; use MzMLFile::store to keep them." << std::endl;
+        warned_undeclared_references_ = true;
+      }
     }
     if (!writing_spectra_)
     {
@@ -128,6 +182,12 @@ namespace OpenMS
       //--------------------------------------------------------------------
       Internal::MzMLHandler::writeHeader_(ofs_, dummy, dps_, *validator_);
       started_writing_ = true;
+    }
+    else if (clearArrayProcessing(ccpy) && !warned_undeclared_references_)
+    {
+      OPENMS_LOG_WARN << "Warning: '" << file_ << "': chromatogram array data processing is not declared in the mzML header; "
+                      << "writing arrays without that history. Use MzMLFile::store to retain it.\n";
+      warned_undeclared_references_ = true;
     }
     if (!writing_chromatograms_)
     {

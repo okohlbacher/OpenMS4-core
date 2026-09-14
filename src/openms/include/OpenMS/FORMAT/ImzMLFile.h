@@ -222,7 +222,9 @@ namespace OpenMS
       Writes external binary arrays (float32 or float64 via @p PeakFileOptions) with a
       16-byte UUID header in the @c .ibd file linked to IMS:1000080 in the XML. Continuous mode is selected when
       @p imzml:imaging_mode is @c continuous or all spectra share an identical
-      m/z axis; otherwise processed mode is used.
+      m/z axis; otherwise processed mode is used. When no spectrum holds any peak (e.g. a
+      metadata-only store via @p PeakFileOptions::setMetadataOnly) the declared mode is kept,
+      since both layouts are then identical on disk.
 
       Each spectrum must carry @p imzml:x and @p imzml:y MetaValues (1-based imzML
       pixel coordinates). Dataset imaging metadata (@p imzml:scan_pattern,
@@ -232,6 +234,11 @@ namespace OpenMS
 
       Spectra sharing a pixel coordinate are written out as-is with a warning, matching
       what @p load accepts for the same dataset.
+
+      The @c .ibd is written before the @c .imzML. If the store fails after this call has
+      created the @c .ibd, that file is removed again, so a failed store never leaves a
+      truncated @c .ibd that could pass for the companion of an older @c .imzML. (An earlier
+      @c .ibd at the same path is overwritten as soon as the write starts and is not restored.)
 
       @param[in] filename Path to the output @c .imzML file.
       @param[in] exp      Experiment with spectra and optional imzML MetaValues.

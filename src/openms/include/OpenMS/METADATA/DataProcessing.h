@@ -109,6 +109,8 @@ public:
     void setProcessingActions(const std::set<ProcessingAction>& actions);
 
     /// returns the time of completion of the processing
+    /// @note mzML records this value to the minute, so a round trip through that format
+    ///       drops the seconds.
     const DateTime& getCompletionTime() const;
     /// sets the time of completion taking a DateTime object
     void setCompletionTime(const DateTime& completion_time);

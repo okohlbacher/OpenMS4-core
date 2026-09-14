@@ -80,6 +80,11 @@ public:
       FeatureHandleMutable_.  On the other hand, it is perfectly safe to apply
       FeatureHandle::setRT(), FeatureHandle::setMZ(),
       FeatureHandle::setIntensity(), FeatureHandle::setCharge(), etc..
+
+      @note The handle itself must not be a const object - only the access path to it may be const,
+      as it is for the elements of a (non-const) ConsensusFeature, which std::set exposes through
+      const iterators only.  Writing through the result of asMutable() on a genuinely const
+      FeatureHandle is undefined behaviour.
     */
     FeatureHandleMutable_& asMutable() const;
     //@}
@@ -147,8 +152,11 @@ private:
 
   inline FeatureHandle::FeatureHandleMutable_& FeatureHandle::asMutable() const
   {
-    // the const cast is to remove constness, but note that FeatureHandleMutable_ lacks some mutators
-    // TODO use const_cast
+    // the const_cast is the whole point of this method: std::set (used by ConsensusFeature) hands
+    // out const iterators only, although the handles it stores are not const themselves.  The
+    // static_cast to FeatureHandleMutable_ hides setMapIndex and setUniqueId, which change the
+    // ordering key; clearUniqueId, ensureUniqueId and swap stay reachable, so this makes breaking
+    // the set's order harder, not impossible.
     return static_cast<FeatureHandleMutable_&>(const_cast<FeatureHandle&>(*this));
   }
 

@@ -25,9 +25,6 @@ namespace OpenMS
       The results as well as the initial guess are specified using the struct
           GumbelDistributionFitResult.
 
-      The formula with the fitted parameters can be transformed into a
-      gnuplot formula using getGnuplotFormula() after fitting.
-
           @ingroup Math
       */
     class OPENMS_DLLAPI GumbelDistributionFitter
@@ -35,7 +32,7 @@ namespace OpenMS
 public:
 
       /// struct to represent the parameters of a gumbel distribution
-      struct GumbelDistributionFitResult
+      struct OPENMS_DLLAPI GumbelDistributionFitResult
       {
         GumbelDistributionFitResult(double local_a = 1.0, double local_b = 2.0) :
           a(local_a),
@@ -48,6 +45,7 @@ public:
         /// scale parameter b
         double b;
 
+        /// Gumbel density (1 / b) * z * exp(-z) with z = exp((a - x) / b)
         double eval(double x) const;
         double log_eval_no_normalize(double x) const ;
       };
@@ -68,17 +66,6 @@ public:
           @exception Exception::UnableToFit is thrown if fitting cannot be performed
       */
       GumbelDistributionFitResult fit(std::vector<DPosition<2> > & points) const;
-
-      /**
-          @brief Fits a gumbel distribution to the given data x values. Fills a
-          weighted histogram first and generates y values.
-
-          @param[in] x Input x values
-          @param[in] w Input weights
-
-          @exception Exception::UnableToFit is thrown if fitting cannot be performed
-      */
-      GumbelDistributionFitResult fitWeighted(const std::vector<double> & x, const std::vector<double> & w);
 
 protected:
 

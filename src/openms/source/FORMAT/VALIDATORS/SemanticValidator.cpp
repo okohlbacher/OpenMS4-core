@@ -96,6 +96,12 @@ namespace OpenMS::Internal
       //initialize
       errors_.clear();
       warnings_.clear();
+      // the parser state has to be reset as well: a validate() that threw in the
+      // middle of a document leaves its open tags and fulfilled-rule counters behind
+      // (the inherited XMLHandler::reset() is empty), so the next document would be
+      // checked below a stale path prefix and its own rules would never match
+      open_tags_.clear();
+      fulfilled_.clear();
 
       //parse
       file_ = filename;
@@ -144,7 +150,11 @@ namespace OpenMS::Internal
       std::string path = getPath_() + "/" + cv_tag_ + "/@" + accession_att_;
 
       //look up rules and fulfilled rules/terms
-      vector<CVMappingRule>& rules = rules_[path];
+      // the lookup must not insert: operator[] added an empty entry for every element
+      // path without a rule, so the mapping index grew with every document validated
+      const vector<CVMappingRule> no_rules;
+      const auto rules_it = rules_.find(path);
+      const vector<CVMappingRule>& rules = (rules_it != rules_.end()) ? rules_it->second : no_rules;
       std::map<std::string, std::map<std::string, UInt> >& fulfilled = fulfilled_[path]; //(rule ID => term ID => term count)
 
       //check how often each term appeared
@@ -274,7 +284,10 @@ namespace OpenMS::Internal
       //Also store fulfilled rule term counts - this count is used to check of the MUST/MAY and AND/OR/XOR is fulfilled
       bool allowed = false;
       bool rule_found = false;
-      vector<CVMappingRule>& rules = rules_[path];
+      // lookup without insertion, for the reason given in onEndElement()
+      const vector<CVMappingRule> no_rules;
+      const auto rules_it = rules_.find(path);
+      const vector<CVMappingRule>& rules = (rules_it != rules_.end()) ? rules_it->second : no_rules;
       for (Size r = 0; r < rules.size(); ++r) //go thru all rules
       {
         rule_found = true;
@@ -326,12 +339,13 @@ namespace OpenMS::Internal
               if (!term.units.contains(parsed_term.unit_accession))
               {
                 // last chance, a child term of the units was used
-                set<std::string> child_terms;
-
                 bool found_unit(false);
+                // the descendants being walked are those of the allowed units, so the
+                // supplied *unit* is what has to be found among them; comparing the
+                // measured term instead rejected every legal child unit
                 auto lambda = [&parsed_term, &found_unit] (const std::string& child)
                 {
-                  if (child == parsed_term.accession)
+                  if (child == parsed_term.unit_accession)
                   {
                     found_unit = true;
                     return true;
@@ -501,6 +515,10 @@ namespace OpenMS::Internal
           }
           else if (type == ControlledVocabulary::CVTerm::XRefType::XSD_DATE)
           {
+            // XSD_DATE is assigned to every term whose value type contains "xsd:date", and every
+            // shipped vocabulary term that gets it is an xsd:dateTime (e.g. MS:1000747 'completion
+            // time'). A date without a time is therefore not a valid value here; DateTime::set()
+            // enforces exactly that.
             try
             {
               DateTime tmp;
@@ -535,7 +553,12 @@ namespace OpenMS::Internal
       //check if the term is allowed in this element
       //and if there is a mapping rule for this element
       //Also store fulfilled rule term counts - this count is used to check of the MUST/MAY and AND/OR/XOR is fulfilled
-      const vector<CVMappingRule>& rules = rules_.at(path);
+      const auto entry = rules_.find(path);
+      if (entry == rules_.end())
+      {
+        return false; // no mapping rule for this element: not located, rather than std::out_of_range
+      }
+      const vector<CVMappingRule>& rules = entry->second;
       for (Size r = 0; r < rules.size(); ++r) //go thru all rules
       {
         for (Size t = 0; t < rules[r].getCVTerms().size(); ++t) //go thru all terms

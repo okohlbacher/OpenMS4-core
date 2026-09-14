@@ -11,6 +11,7 @@
 #include <OpenMS/SYSTEM/File.h>
 #include <OpenMS/CONCEPT/LogStream.h>
 #include <OpenMS/DATASTRUCTURES/ListUtils.h>
+#include <numeric>
 #include <tuple>
 
 using namespace std;
@@ -144,7 +145,10 @@ void MSstatsFile::constructFile_(const std::string& retention_time_summarization
     {
       // First, we collect all retention times and intensities
       set<MSstatsFile::Coordinate> retention_times{};
-      set<MSstatsFile::Intensity> intensities{};
+      // Repeats are resolved by retention time only. Features at distinct retention times that happen
+      // to share an intensity value are separate measurements, so a set would undercount them in
+      // "sum" and "mean".
+      vector<MSstatsFile::Intensity> intensities{};
       for (const auto &p : line.second)
       {
         if (retention_times.contains(get<1>(p)))
@@ -156,7 +160,7 @@ void MSstatsFile::constructFile_(const std::string& retention_time_summarization
         else
         {
           retention_times.insert(get<1>(p));
-          intensities.insert(get<0>(p));
+          intensities.push_back(get<0>(p));
         }
       }
       peptideseq_precursor_charge_run.emplace(line.first.sequence(), line.first.precursor_charge(), line.first.run());
@@ -186,11 +190,12 @@ void MSstatsFile::constructFile_(const std::string& retention_time_summarization
         }
         else if (retention_time_summarization_method == "mean")
         {
-          intensity = meanIntensity_(intensities);
+          intensity = std::accumulate(intensities.begin(), intensities.end(), MSstatsFile::Intensity(0))
+                      / static_cast<MSstatsFile::Intensity>(intensities.size());
         }
         else if (retention_time_summarization_method == "sum")
         {
-          intensity = sumIntensity_(intensities);
+          intensity = std::accumulate(intensities.begin(), intensities.end(), MSstatsFile::Intensity(0));
         }
         //common prefix items, aggregated intensity, "unique ID (file of first spectrum in the set of 'same')"
         //@todo we could collect all spectrum references contributing to this intensity instead
@@ -233,6 +238,16 @@ void MSstatsFile::storeLFQ(const std::string& filename,
   map< pair< std::string, unsigned >, unsigned> path_label_to_sample = design.getPathLabelToSampleMapping(true);
   map< pair< std::string, unsigned >, unsigned> path_label_to_fraction = design.getPathLabelToFractionMapping(true);
   map< pair< std::string, unsigned >, unsigned> path_label_to_fractiongroup = design.getPathLabelToFractionGroupMapping(true);
+
+  // constructFile_ aggregates only with these methods. Any other name fell through all of its
+  // branches and wrote every intensity as 0 into an otherwise valid-looking file, so refuse it here.
+  const std::vector<std::string> rt_summarization_methods = ListUtils::create<std::string>("manual,max,min,mean,sum");
+  if (!ListUtils::contains(rt_summarization_methods, retention_time_summarization_method))
+  {
+    throw Exception::IllegalArgument(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+      "Unknown retention time summarization method '" + retention_time_summarization_method
+      + "'. Valid methods are: " + ListUtils::concatenate(rt_summarization_methods, ", ") + ".");
+  }
 
   // The Retention Time is additionally written to the output as soon as the user wants to resolve multiple peptides manually
   const bool rt_summarization_manual(retention_time_summarization_method == "manual");
@@ -437,14 +452,25 @@ void MSstatsFile::storeLFQ(const std::string& filename,
           const unsigned label(aggregatedInfo.consensus_feature_labels[i][j]);
 
           const pair< std::string, unsigned> tpl1 = make_pair(current_filename, label);
-          const unsigned sample_idx = path_label_to_sample[tpl1];
-          const unsigned fraction = path_label_to_fraction[tpl1];
+          // operator[] would insert 0 for a (file, label) pair the design does not declare and report the
+          // intensity under sample row 0, fraction 0 and run 0 without any notice. The filename subset
+          // check above cannot exclude that, because it ignores the label.
+          const auto sample_it = path_label_to_sample.find(tpl1);
+          if (sample_it == path_label_to_sample.end())
+          {
+            throw Exception::MissingInformation(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+              "The experimental design has no entry for file '" + current_filename + "' with label "
+              + StringUtils::toStr(label) + ".");
+          }
+          const unsigned sample_idx = sample_it->second;
+          // the remaining mappings are built from the same design rows, so they hold the same keys
+          const unsigned fraction = path_label_to_fraction.at(tpl1);
 
           const pair< std::string, unsigned> tpl2 = make_pair(current_filename, fraction);
 
           // Resolve run
-          const unsigned run = run_map[tpl2];  // MSstats run according to the file table
-          const unsigned openms_fractiongroup = path_label_to_fractiongroup[tpl1];
+          const unsigned run = run_map.at(tpl2);  // MSstats run according to the file table
+          const unsigned openms_fractiongroup = path_label_to_fractiongroup.at(tpl1);
           msstats_run_to_openms_fractiongroup[run] = openms_fractiongroup;
 
           // Assemble MSstats line
@@ -698,11 +724,20 @@ void MSstatsFile::storeISO(const std::string& filename,
           const unsigned channel(AggregatedInfo.consensus_feature_labels[i][j] + 1);
 
           const pair< std::string, unsigned> tpl1 = make_pair(current_filename, channel);
-          const unsigned sample = path_label_to_sample[tpl1];
-          const unsigned fraction = path_label_to_fraction[tpl1];
+          // As in storeLFQ: a channel the design does not declare for this file must not fall back to
+          // sample row 0 through operator[]; that would mix its intensities into another sample.
+          const auto sample_it = path_label_to_sample.find(tpl1);
+          if (sample_it == path_label_to_sample.end())
+          {
+            throw Exception::MissingInformation(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+              "The experimental design has no entry for file '" + current_filename + "' with label "
+              + StringUtils::toStr(channel) + ".");
+          }
+          const unsigned sample = sample_it->second;
+          const unsigned fraction = path_label_to_fraction.at(tpl1);
 
           // Resolve techrepmixture, run
-          const unsigned openms_fractiongroup = path_label_to_fractiongroup[tpl1];
+          const unsigned openms_fractiongroup = path_label_to_fractiongroup.at(tpl1);
           std::string techrepmixture =std::string(sampleSection.getFactorValue(sample, mixture)) + "_" + StringUtils::toStr(openms_fractiongroup);
           std::string run = techrepmixture + "_" + StringUtils::toStr(fraction);
 

@@ -20,6 +20,7 @@
 #include <OpenMS/CONCEPT/LogStream.h>
 #include <OpenMS/KERNEL/MSSpectrum.h>
 
+#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -2670,6 +2671,40 @@ START_SECTION(ProForma::getMonoWeight - multi-chain cross-link)
 }
 END_SECTION
 
+START_SECTION((regression: modifications inside ranges and ambiguous candidates))
+{
+  const auto ranged = ProForma::parse("(M[UNIMOD:35]A)[Formula:C]");
+  TEST_REAL_SIMILAR(ProForma::getMonoWeight(ranged), AASequence::fromString("M(Oxidation)A").getMonoWeight() + 12.0)
+  // Candidate residues are isobaric, but their modifications are not.
+  const auto ambiguous = ProForma::parse("(?I[+10]L)");
+  TEST_EQUAL(ProForma::canCalculateMass(ambiguous), false)
+  TEST_EQUAL(ProForma::tryGetMonoWeight(ambiguous).has_value(), false)
+  const auto unresolved = ProForma::parse("(?I[UnknownMod999]L)");
+  TEST_EQUAL(ProForma::canCalculateMass(unresolved), false)
+  TEST_EQUAL(ProForma::tryGetMonoWeight(ProForma::parse("PEP(?)TIDE")).has_value(), false)
+}
+END_SECTION
+
+START_SECTION((regression: conversion preserves annotations and residue positions))
+{
+  TEST_EQUAL(ProForma::toAASequence(ProForma::parse("M[INFO:note]")), AASequence::fromString("M"))
+  TEST_EXCEPTION(Exception::ConversionError, ProForma::toAASequence(ProForma::parse("[#XL1]-PEPTIDE")))
+  // An empty region must not shift the following modification to another residue.
+  TEST_EQUAL(ProForma::toAASequence(ProForma::parse("(?)M[UNIMOD:35]"), ConversionPolicy::BEST_EFFORT),
+             AASequence::fromString("M(Oxidation)"))
+}
+END_SECTION
+
+START_SECTION((regression: cross-link mass does not depend on endpoint order))
+{
+  const auto label_first = ProForma::parseIon("K[#XL1]//K[+138.06807961#XL1]");
+  const auto chemistry_first = ProForma::parseIon("K[+138.06807961#XL1]//K[#XL1]");
+  const double expected = 2.0 * AASequence::fromString("K").getMonoWeight() + 138.06807961;
+  TEST_REAL_SIMILAR(ProForma::getMonoWeight(label_first), expected)
+  TEST_REAL_SIMILAR(ProForma::getMonoWeight(chemistry_first), expected)
+}
+END_SECTION
+
 START_SECTION(ProForma::getMZ - with charge state)
 {
   PeptidoformIon ion = ProForma::parseIon("PEPTIDE/2");
@@ -3131,6 +3166,40 @@ START_SECTION(ProForma::generateSpectrum - fails for unsupported cases)
   TEST_EQUAL(ProForma::canGenerateSpectrum(pfi), false)
   auto issues2 = ProForma::getSpectrumGenerationIssues(pfi);
   TEST_EQUAL(issues2.empty(), false)
+}
+END_SECTION
+
+START_SECTION((regression: cross-linked spectra reject unrepresentable chemistry))
+{
+  for (const std::string input : {
+         "PEPK[#XL1]IDE//ANOK[#XL1]THER",
+         "(M[UNIMOD:35]A)[+1]K[+138.068#XL1]//PEPK[#XL1]IDE",
+         "M[UnknownMod999]AK[+138.068#XL1]//PEPK[#XL1]IDE"})
+  {
+    const auto ion = ProForma::parseIon(input);
+    TEST_EQUAL(ProForma::canGenerateSpectrum(ion), false)
+    TEST_EQUAL(ProForma::getSpectrumGenerationIssues(ion).empty(), false)
+    TEST_EXCEPTION(Exception::ConversionError, ProForma::generateSpectrum(ion))
+  }
+
+  // Localised non-linker modifications remain representable on both chains.
+  const auto modified = ProForma::parseIon("M[UNIMOD:35]AK[+138.068#XL1]//PEPK[#XL1]IDE/2");
+  TEST_EQUAL(ProForma::canGenerateSpectrum(modified), true)
+  TEST_EQUAL(ProForma::generateSpectrum(modified).empty(), false)
+  const auto precursor = ProForma::generateSpectrum(modified, 2, 2, "M");
+  ABORT_IF(precursor.getStringDataArrays().empty())
+  ABORT_IF(precursor.getStringDataArrays()[0].size() != precursor.size())
+  Size intact = 0;
+  for (Size i = 0; i < precursor.size(); ++i)
+  {
+    if (precursor.getStringDataArrays()[0][i] == "[M+H]")
+    {
+      // Both APIs must resolve the rounded linker delta to the same chemistry.
+      TEST_EQUAL(std::abs(precursor[i].getMZ() - ProForma::getMZ(modified)) < 1e-8, true)
+      ++intact;
+    }
+  }
+  TEST_EQUAL(intact, 2)
 }
 END_SECTION
 

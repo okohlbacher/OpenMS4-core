@@ -422,4 +422,27 @@ delete ptr;
 
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
+START_SECTION(([EXTRA] empty MGF blocks do not consume the following spectrum))
+  std::string filename;
+  NEW_TMP_FILE(filename)
+  {
+    std::ofstream output(filename);
+    output << "BEGIN IONS\nPEPMASS=500 25\nCHARGE=3+\nRTINSECONDS=42\nSEQ=FIRST\nEND IONS\n"
+              "BEGIN IONS\nPEPMASS=600\n100 200\nEND IONS\n";
+  }
+  PeakMap spectra;
+  MascotGenericFile().load(filename, spectra);
+  TEST_EQUAL(spectra.size(), 2)
+  ABORT_IF(spectra.size() != 2)
+  TEST_TRUE(spectra[0].empty())
+  TEST_EQUAL(spectra[0].getRT(), 42)
+  TEST_TRUE(spectra[0].metaValueExists("SEQ"))
+  TEST_EQUAL(spectra[1].size(), 1)
+  TEST_EQUAL(spectra[1].getPrecursors()[0].getMZ(), 600)
+  TEST_EQUAL(spectra[1].getPrecursors()[0].getIntensity(), 0)
+  TEST_EQUAL(spectra[1].getPrecursors()[0].getCharge(), 0)
+  TEST_EQUAL(spectra[1].getRT(), -1)
+  TEST_FALSE(spectra[1].metaValueExists("SEQ"))
+END_SECTION
+
 END_TEST

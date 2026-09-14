@@ -47,8 +47,7 @@ END_SECTION																					\
 
 GOOD_TYPEDEF(PeakSpectrum)
 GOOD_TYPEDEF(PeakMap)
-GOOD_TYPEDEF(PeakSpectrum)
-GOOD_TYPEDEF(PeakMap)
+GOOD_TYPEDEF(Chromatogram)
 
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////

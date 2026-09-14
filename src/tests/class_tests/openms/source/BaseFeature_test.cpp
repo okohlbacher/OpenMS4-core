@@ -425,11 +425,15 @@ START_SECTION((sortPeptideIdentifications()))
     hit.setScore(0.9);
     ids[1].getHits().push_back(hit); // different to first hit
 
-    //ids[2] is empty.
+    // An identification loaded from featureXML can have metadata but no hits.
+    ids[2].setIdentifier("hitless");
+    ids[2].setScoreType("score");
+    ids[2].setHigherScoreBetter(false);
 
     tmp.sortPeptideIdentifications();
     TEST_EQUAL(ids[0].getHits()[0].getScore(), 0.9);
-    TEST_EQUAL(ids[2].empty(), true);
+    TEST_TRUE(ids[2].getHits().empty());
+    TEST_EQUAL(ids[2].getIdentifier(), "hitless");
 END_SECTION
 
 /////////////////////////////////////////////////////////////

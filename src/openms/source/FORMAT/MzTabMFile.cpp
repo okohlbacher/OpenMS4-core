@@ -225,9 +225,11 @@ namespace OpenMS
       std::string name = "MTD\tassay[" + StringUtils::toStr(assay.first) + "]\t" + amd.name.toCellString(); // mandatory
       sl.push_back(name);
 
+      // these are the assay's own custom parameters, indexed by the assay number, so they
+      // belong under assay[n] - under ms_run[n] they would describe an unrelated run
       for (const auto& custom : amd.custom)
       {
-        std::string s = "MTD\tms_run[" + StringUtils::toStr(assay.first) + "]-custom[" + StringUtils::toStr(custom.first) + "]\t" + custom.second.toCellString();
+        std::string s = "MTD\tassay[" + StringUtils::toStr(assay.first) + "]-custom[" + StringUtils::toStr(custom.first) + "]\t" + custom.second.toCellString();
         sl.push_back(s);
       }
 
@@ -350,15 +352,17 @@ namespace OpenMS
       sl.push_back(s);
     }
 
+    // feature and evidence units refer to the columns of their own sections; written under
+    // the small molecule key they would be read as units of small molecule columns
     for (const auto& csmf : md.colunit_small_molecule_feature)
     {
-      std::string s = "MTD\tcolunit_small_molecule\t" + csmf.toCellString();
+      std::string s = "MTD\tcolunit_small_molecule_feature\t" + csmf.toCellString();
       sl.push_back(s);
     }
 
     for (const auto& csme : md.colunit_small_molecule_evidence)
     {
-      std::string s = "MTD\tcolunit_small_molecule\t" + csme.toCellString();
+      std::string s = "MTD\tcolunit_small_molecule_evidence\t" + csme.toCellString();
       sl.push_back(s);
     }
   }

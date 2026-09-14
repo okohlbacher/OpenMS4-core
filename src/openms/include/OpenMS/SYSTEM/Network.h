@@ -35,7 +35,9 @@ namespace OpenMS
         - if the resulting basename is empty, @c "download" is used as a fallback.
       If a file with the same name already exists in @p download_folder, the suffixes
       @c ".0", @c ".1", @c ".2", ... are tried in order until an unused name is found —
-      existing files are never overwritten.
+      existing files are never overwritten. Each name is claimed by exclusive creation, so this
+      also holds for concurrent downloads into the same folder; after 10000 taken suffixes the
+      download fails.
 
       An empty @p download_folder is treated as @c "./" (the current working directory).
       No trailing-slash normalisation is performed on the directory string.

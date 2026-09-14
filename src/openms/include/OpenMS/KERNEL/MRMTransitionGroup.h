@@ -287,13 +287,21 @@ public:
     /// @name Helper functions
     //@{
 
-    /// Check whether internal state is consistent, e.g. same number of chromatograms and transitions are present (no runtime overhead in release mode)
+    /// Check whether internal state is consistent, e.g. same number of chromatograms and transitions are present
     inline bool isInternallyConsistent() const
     {
-      OPENMS_PRECONDITION(transitions_.size() == chromatograms_.size(), "Same number of transitions as chromatograms are required")
-      OPENMS_PRECONDITION(transition_map_.size() == chromatogram_map_.size(), "Same number of transitions as chromatograms mappings are required")
-      OPENMS_PRECONDITION(isMappingConsistent_(), "Mapping needs to be consistent")
-      return true;
+      // the conditions are evaluated (not only asserted): callers such as
+      // MRMFeatureFinderScoring reject unusable input on the return value, and
+      // OPENMS_PRECONDITION expands to nothing outside a Debug build
+      if (transitions_.size() != chromatograms_.size())
+      {
+        return false;
+      }
+      if (transition_map_.size() != chromatogram_map_.size())
+      {
+        return false;
+      }
+      return isMappingConsistent_();
     }
 
     /// Ensure that chromatogram native ids match their keys in the map
@@ -318,11 +326,14 @@ public:
 
     void getLibraryIntensity(std::vector<double> & result) const
     {
+      // clamp only what we appended: entries the caller already had in the vector
+      // do not belong to this transition group and must not be modified
+      const Size appended_from = result.size();
       for (typename TransitionsType::const_iterator it = transitions_.begin(); it != transitions_.end(); ++it)
       {
         result.push_back(it->getLibraryIntensity());
       }
-      for (Size i = 0; i < result.size(); i++)
+      for (Size i = appended_from; i < result.size(); i++)
       {
         // the library intensity should never be below zero
         if (result[i] < 0.0)
@@ -352,10 +363,17 @@ public:
         }
       }
 
-      for (const auto& pc : precursor_chromatograms_)
+      // add precursor chromatograms if present, under the key they are stored with:
+      // re-keying them by nativeID drops the caller's key and makes two chromatograms
+      // with equal nativeIDs (e.g. both unset) collide in the new group
+      std::vector<std::string> pc_keys(precursor_chromatograms_.size());
+      for (const auto& pc_entry : precursor_chromatogram_map_)
       {
-        // add precursor chromatograms if present
-        transition_group_subset.addPrecursorChromatogram(pc, pc.getNativeID());
+        pc_keys.at(pc_entry.second) = pc_entry.first;
+      }
+      for (Size i = 0; i < precursor_chromatograms_.size(); i++)
+      {
+        transition_group_subset.addPrecursorChromatogram(precursor_chromatograms_[i], pc_keys[i]);
       }
 
       for (const auto& tgf : mrm_features_)
@@ -393,6 +411,12 @@ public:
       {
         if (std::find(tr_ids.begin(), tr_ids.end(), tr_it->getNativeID()) != tr_ids.end())
         {
+          // report a selected transition without chromatogram with its native ID, instead of
+          // letting map::at() escape as a bare std::out_of_range without file, line or function
+          if (!this->hasChromatogram(tr_it->getNativeID()))
+          {
+            throw Exception::ElementNotFound(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, tr_it->getNativeID());
+          }
           transition_group_subset.addTransition(*tr_it, tr_it->getNativeID());
           transition_group_subset.addChromatogram(chromatograms_[chromatogram_map_.at(tr_it->getNativeID())], tr_it->getNativeID());
         }

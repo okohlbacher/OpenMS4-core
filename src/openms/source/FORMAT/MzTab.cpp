@@ -128,25 +128,61 @@ namespace OpenMS
     }
     else
     {
-      if (!StringUtils::hasSubstring(lower, "-")) // no positions? simply use s as mod identifier
+      std::string ss = s;
+      StringUtils::trim(ss);
+
+      // A cell reads "<positions>-<identifier>", but the identifier may itself carry a
+      // signed mass (e.g. "8-CHEMMOD:-18.010565") and a position parameter may contain a
+      // hyphen, so splitting on every '-' would reject valid cells. The separator is the
+      // first '-' outside of parameter brackets and quotes; anything else there means the
+      // cell carries no position list at all.
+      std::string::size_type sep_pos = std::string::npos;
+      bool in_param_bracket = false;
+      bool in_quotes = false;
+      for (std::string::size_type pos = 0; pos != ss.size(); ++pos)
       {
-        mod_identifier_.fromCellString(StringUtils::trimmed(s));
+        const char c = ss[pos];
+        if (c == '\"')
+        {
+          in_quotes = !in_quotes;
+        }
+        else if (in_quotes)
+        {
+          continue;
+        }
+        else if (c == '[')
+        {
+          in_param_bracket = true;
+        }
+        else if (c == ']')
+        {
+          in_param_bracket = false;
+        }
+        else if (!in_param_bracket)
+        {
+          if (c == '-')
+          {
+            sep_pos = pos;
+            break;
+          }
+
+          if (!(c >= '0' && c <= '9') && c != '|' && c != ' ')
+          {
+            break;
+          }
+        }
+      }
+
+      if (sep_pos == std::string::npos) // no positions? simply use s as mod identifier
+      {
+        mod_identifier_.fromCellString(ss);
       }
       else
       {
-        std::string ss = s;
-        StringUtils::trim(ss);
-        std::vector<std::string> fields;
-        StringUtils::split(ss, "-", fields);
-
-        if (fields.size() != 2)
-        {
-          throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,std::string("Can't convert to MzTabModification from '") + s);
-        }
-        mod_identifier_.fromCellString(StringUtils::trim(fields[1]));
+        mod_identifier_.fromCellString(StringUtils::trimmed(ss.substr(sep_pos + 1)));
 
         std::vector<std::string> position_fields;
-        StringUtils::split(fields[0], "|", position_fields);
+        StringUtils::split(ss.substr(0, sep_pos), "|", position_fields);
 
         for (Size i = 0; i != position_fields.size(); ++i)
         {
@@ -259,8 +295,10 @@ namespace OpenMS
             continue;
           }
 
-          // comma in param bracket
-          if (ss[pos] == ',' && !in_quotes && in_param_bracket)
+          // comma inside a parameter, or inside quoted text within it: a quoted name or
+          // value may contain a comma of its own, and that comma must not end up
+          // separating two modification entries once the cell is split below
+          if (ss[pos] == ',' && (in_param_bracket || in_quotes))
           {
             ss[pos] = ((char)007); // use ASCII bell as temporary separator
             continue;

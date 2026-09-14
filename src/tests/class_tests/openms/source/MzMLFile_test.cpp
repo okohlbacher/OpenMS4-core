@@ -1310,11 +1310,16 @@ START_SECTION((void testSkipChromatograms()))
   PeakMap pm;
   file.load(OPENMS_GET_TEST_DATA_PATH("MzMLFile_1.mzML"), pm);
   TEST_EQUAL(pm.getChromatograms().size(), 0)
+  // skipping chromatograms must leave the spectra and the file description alone
+  TEST_NOT_EQUAL(pm.size(), 0)
+  TEST_NOT_EQUAL(pm.getExperimentalSettings().getSourceFiles().size(), 0)
 
   opts.setSkipChromatograms(false);
   file.setOptions(opts);
-  file.load(OPENMS_GET_TEST_DATA_PATH("MzMLFile_1.mzML"), pm);
-  TEST_NOT_EQUAL(pm.getChromatograms().size(), 0)
+  PeakMap full;
+  file.load(OPENMS_GET_TEST_DATA_PATH("MzMLFile_1.mzML"), full);
+  TEST_NOT_EQUAL(full.getChromatograms().size(), 0)
+  TEST_EQUAL(pm.size(), full.size())
 }
 END_SECTION
 
@@ -1511,6 +1516,37 @@ START_SECTION((Thermo metadata survives mzML serialization, sorting, and reloadi
   TEST_REAL_SIMILAR(edited[1].getPrecursors()[0].getIsolationWindowLowerOffset(), 1.25)
   TEST_REAL_SIMILAR(edited[1].getPrecursors()[0].getIntensity(), 0)
   TEST_EQUAL(edited[1].getPrecursors()[0].getMetaValue("peak intensity unit accession"), "MS:1000131")
+}
+END_SECTION
+
+START_SECTION(([EXTRA] chromatogram precursors keep supplemental activation))
+{
+  MSChromatogram chrom;
+  chrom.setNativeID("SRM SIC 500.5,250.5");
+  chrom.push_back(ChromatogramPeak(10.0, 100.0));
+  Precursor precursor;
+  precursor.setMZ(500.5);
+  precursor.getActivationMethods().insert(Precursor::ActivationMethod::ETD);
+  precursor.getActivationMethods().insert(Precursor::ActivationMethod::EThcD);
+  precursor.setMetaValue("supplemental beam-type collision-induced dissociation", "");
+  precursor.setMetaValue("supplemental collision energy", 25.0);
+  chrom.setPrecursor(precursor);
+  PeakMap exp;
+  exp.addChromatogram(chrom);
+
+  MzMLFile file;
+  std::string buffer;
+  file.storeBuffer(buffer, exp);
+  TEST_TRUE(StringUtils::hasSubstring(buffer, "MS:1002678"))
+  TEST_TRUE(StringUtils::hasSubstring(buffer, "MS:1002680"))
+
+  PeakMap loaded;
+  file.loadBuffer(buffer, loaded);
+  ABORT_IF(loaded.getNrChromatograms() != 1)
+  const Precursor& reloaded = loaded.getChromatograms()[0].getPrecursor();
+  TEST_TRUE(reloaded.metaValueExists("supplemental beam-type collision-induced dissociation"))
+  TEST_TRUE(reloaded.metaValueExists("supplemental collision energy"))
+  TEST_EQUAL(reloaded.getActivationMethods().count(Precursor::ActivationMethod::EThcD), 1)
 }
 END_SECTION
 

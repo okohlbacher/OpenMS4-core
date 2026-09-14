@@ -514,8 +514,9 @@ protected:
 
   /**
     @brief Predicate that determines if an MSn spectrum was generated with a collision energy in the given range.
-    @note This applies only to CID and HCD spectra. For spectra that do not have a collision energy, the predicate will return true.
-    @note This predicate will return always true for spectra with getMSLevel() = 1.
+    @note This applies only to CID and HCD spectra. For spectra that do not have a collision energy, the predicate will return false.
+    @note This predicate will always return false for spectra with getMSLevel() = 1, and @p reverse does not invert that early return.
+          Both early returns keep such spectra in place when the predicate is used with remove_if().
 
     @ingroup RangeUtils
   */
@@ -553,7 +554,7 @@ public:
         }
       }
 
-      // we accept all spectra that have no collision energy value
+      // spectra without a collision energy never match, so remove_if() keeps them
       if (!hasCollisionEnergy) return false;
 
       if (reverse_) return !isIn;
@@ -567,7 +568,8 @@ private:
 
   /**
     @brief Predicate that determines if the width of the isolation window of an MSn spectrum is in the given range.
-    @note This predicate will return always true for spectra with getMSLevel() = 1.
+    @note This predicate will always return false for spectra with getMSLevel() = 1, and @p reverse does not invert that early return,
+          i.e. MS1 spectra are kept when the predicate is used with remove_if().
 
     @ingroup RangeUtils
   */
@@ -612,7 +614,8 @@ private:
 
     /**
     @brief Predicate that determines if the isolation window covers ANY of the given m/z values.
-    @note This predicate will return always true for spectra with getMSLevel() = 1.
+    @note This predicate will always return false for spectra with getMSLevel() = 1, and @p reverse does not invert that early return,
+          i.e. MS1 spectra are kept when the predicate is used with remove_if().
 
     @ingroup RangeUtils
   */

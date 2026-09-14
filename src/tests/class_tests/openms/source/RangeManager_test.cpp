@@ -323,7 +323,7 @@ START_SECTION(bool operator==(const RangeBase& rhs) const)
 END_SECTION
 
 
-RM* ptr;
+RM* ptr = nullptr;
 RM* nullPointer = nullptr;
 START_SECTION((RangeMType()))
   ptr = new RM();

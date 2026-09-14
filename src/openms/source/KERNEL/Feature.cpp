@@ -90,7 +90,7 @@ namespace OpenMS
     convex_hulls_ = hulls;
   }
 
-  ConvexHull2D& Feature::getConvexHull() const
+  const ConvexHull2D& Feature::getConvexHull() const
   {
     //recalculate convex hull if necessary
     if (convex_hulls_modified_)
@@ -206,13 +206,42 @@ namespace OpenMS
     subordinates_ = rhs;
   }
 
+  namespace
+  {
+    /// dry run over one feature and its subordinates; translate() throws for an unmapped reference
+    void verifyIDReferences_(const Feature& feature, const IdentificationData::RefTranslator& trans)
+    {
+      if (feature.hasPrimaryID())
+      {
+        trans.translate(feature.getPrimaryID());
+      }
+      for (const auto& match : feature.getIDMatches())
+      {
+        trans.translate(match);
+      }
+      for (const Feature& sub : feature.getSubordinates())
+      {
+        verifyIDReferences_(sub, trans);
+      }
+    }
+
+    /// apply pass; only run once verifyIDReferences_() has accepted the whole tree
+    void applyIDReferences_(Feature& feature, const IdentificationData::RefTranslator& trans)
+    {
+      feature.updateIDReferences(trans); // update the feature itself (via BaseFeature method)
+      for (Feature& sub : feature.getSubordinates()) // recursively update subordinate features
+      {
+        applyIDReferences_(sub, trans);
+      }
+    }
+  }
+
   void Feature::updateAllIDReferences(const IdentificationData::RefTranslator& trans)
   {
-    updateIDReferences(trans); // update the feature itself (via BaseFeature method)
-    for (Feature& sub : subordinates_) // recursively update subordinate features
-    {
-      sub.updateAllIDReferences(trans);
-    }
+    // the whole tree is checked before the first reference is replaced: translating while descending
+    // would leave a half-translated tree behind for a caller that catches the exception
+    verifyIDReferences_(*this, trans);
+    applyIDReferences_(*this, trans);
   }
 
 }

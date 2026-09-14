@@ -29,7 +29,7 @@ using namespace std;
 typedef BaseFeature::QualityType QualityType;
 
 ///constructor and destructor test
-DataFilters* ptr;
+DataFilters* ptr = nullptr;
 DataFilters* nullPointer = nullptr;
 START_SECTION((DataFilters()))
 	ptr = new DataFilters();
@@ -583,5 +583,29 @@ END_SECTION
 
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
+
+START_SECTION(([EXTRA] numeric metadata filters reject lists))
+  DataFilters numeric_filters;
+  DataFilters::DataFilter numeric_filter;
+  numeric_filter.fromString("Meta::number = 0");
+  Feature feature;
+  ConsensusFeature consensus;
+  feature.setMetaValue("number", 0); // register the key before constructing its filter
+  numeric_filters.add(numeric_filter);
+  for (const auto& value : {DataValue(IntList{0}), DataValue(DoubleList{0.0}), DataValue(StringList{"0"})})
+  {
+    feature.setMetaValue("number", value);
+    consensus.setMetaValue("number", value);
+    TEST_FALSE(numeric_filters.passes(feature))
+    TEST_FALSE(numeric_filters.passes(consensus))
+  }
+  for (const auto& value : {DataValue(0), DataValue(0.0)})
+  {
+    feature.setMetaValue("number", value);
+    consensus.setMetaValue("number", value);
+    TEST_TRUE(numeric_filters.passes(feature))
+    TEST_TRUE(numeric_filters.passes(consensus))
+  }
+END_SECTION
 
 END_TEST

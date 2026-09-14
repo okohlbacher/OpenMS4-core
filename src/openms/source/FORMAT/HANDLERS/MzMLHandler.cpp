@@ -100,6 +100,19 @@ namespace OpenMS::Internal
         StringUtils::substitute(result, "\t", "&#9;");
         return result;
       }
+
+      /**
+        @brief Capacity to pre-allocate for a list from the @c count attribute of the file being read
+
+        The attribute is only a hint and comes from the input: a negative value would convert to SIZE_MAX
+        (std::length_error instead of a parse error) and a huge one would allocate before a single child
+        has been read. So at most @p limit entries are reserved; the container grows beyond that as the
+        children actually arrive.
+      */
+      Size capacityHint_(Int count, Size limit)
+      {
+        return count <= 0 ? 0 : std::min(static_cast<Size>(count), limit);
+      }
     }
 
 
@@ -145,9 +158,10 @@ namespace OpenMS::Internal
       options_ = opt;
       spectrum_data_.reserve(options_.getMaxDataPoolSize());
 
-      // Reserve memory for chromatogram data based on the maximum data pool size if chromatograms are to be skipped.
-      skip_chromatogram_ = options_.getSkipChromatograms();
-      if (!skip_chromatogram_)
+      // skip_chromatogram_ means "inside a chromatogram that is being skipped" and the generic
+      // start-element guard honours it, so setting it from the option here suppressed the file
+      // description and every spectrum as well; the <chromatogram> start tag sets it instead.
+      if (!options_.getSkipChromatograms())
       {
         chromatogram_data_.reserve(options_.getMaxDataPoolSize());
       }
@@ -631,14 +645,25 @@ namespace OpenMS::Internal
       //decode all base64 arrays
       MzMLHandlerHelper::decodeBase64Arrays(input_data, options_.getSkipXMLChecks());
 
-      for (auto& array : input_data)
+      // A chromatogram has a single intensity role, and the writer emits the peak intensities under the
+      // role stored in "mzml intensity array". So a physical array (pressure, flow, detector signal) is
+      // promoted only when there is no canonical intensity array, and only the first one: the selector
+      // then describes the values that become the peaks, and every other array keeps its own name and
+      // units as a supplemental data array instead of being discarded as a second "intensity array".
+      const bool has_intensity_array = std::any_of(input_data.begin(), input_data.end(),
+        [](const MzMLHandlerHelper::BinaryData& array) { return array.meta.getName() == "intensity array"; });
+      if (!has_intensity_array)
       {
         const std::map<std::string, std::string> types = {{"pressure array", "pressure"}, {"flow rate array", "flow"}, {"detector signal", "nonstandard"}};
-        const auto it = types.find(array.meta.getName());
-        if (it != types.end())
+        for (auto& array : input_data)
         {
-          inp_chromatogram.setMetaValue("mzml intensity array", it->second);
-          array.meta.setName("intensity array");
+          const auto it = types.find(array.meta.getName());
+          if (it != types.end())
+          {
+            inp_chromatogram.setMetaValue("mzml intensity array", it->second);
+            array.meta.setName("intensity array");
+            break;
+          }
         }
       }
 
@@ -926,7 +951,11 @@ namespace OpenMS::Internal
       }
       else if (tag == "chromatogram")
       {
-        if (load_detail_ == XMLHandler::LD_COUNTS_WITHOPTIONS)
+        if (options_.getSkipChromatograms())
+        {
+          skip_chromatogram_ = true; // skip this chrom, until endElement(chromatogram)
+        }
+        else if (load_detail_ == XMLHandler::LD_COUNTS_WITHOPTIONS)
         { //, but we only want to count
           skip_chromatogram_ = true; // skip the remaining chrom, until endElement(chromatogram)
           ++chromatogram_count_;
@@ -974,7 +1003,7 @@ namespace OpenMS::Internal
         }
         else
         {
-          exp_->reserveSpaceSpectra(scan_count_total_);
+          exp_->reserveSpaceSpectra(capacityHint_(scan_count_total_, 1 << 16));
         }
       }
       else if (tag == "chromatogramList")
@@ -1009,12 +1038,13 @@ namespace OpenMS::Internal
         }
         else
         {
-          exp_->reserveSpaceChromatograms(chrom_count_total_);
+          exp_->reserveSpaceChromatograms(capacityHint_(chrom_count_total_, 1 << 16));
         }
       }
       else if (tag == "binaryDataArrayList" /* && in_spectrum_list_*/)
       {
-        bin_data_.reserve(attributeAsInt_(attributes, s_count));
+        // small limit: the vector moves into each buffered record together with its capacity
+        bin_data_.reserve(capacityHint_(attributeAsInt_(attributes, s_count), 16));
       }
       else if (tag == "binaryDataArray" /* && in_spectrum_list_*/)
       {
@@ -1395,6 +1425,14 @@ namespace OpenMS::Internal
 
       if (equal_(qname, s_spectrum))
       {
+        // Only the scan-start-time cvParam counts and skips a spectrum in count-only mode, so
+        // one without that term used to take the ordinary path: it was not counted, and its
+        // peak arrays were decoded -- and could throw -- although no data was asked for.
+        if (!skip_spectrum_ && load_detail_ == XMLHandler::LD_COUNTS_WITHOPTIONS && !rt_set_)
+        {
+          skip_spectrum_ = true;
+          ++scan_count_;
+        }
         if (!skip_spectrum_)
         {
           // catch errors stemming from confusion about elution time and scan time
@@ -1470,10 +1508,7 @@ namespace OpenMS::Internal
         {
           case XMLHandler::LD_ALLDATA:
           case XMLHandler::LD_COUNTS_WITHOPTIONS:
-            if (!options_.getSkipChromatograms())
-            {
-              skip_chromatogram_ = false;  // don't skip the next chrom
-            }
+            skip_chromatogram_ = false;  // stop skipping; the next <chromatogram> decides again
             break;
           case XMLHandler::LD_RAWCOUNTS:
             skip_chromatogram_ = true; // we always skip chroms; we only need the outer <spectrumList/chromatogramList count=...>
@@ -2126,6 +2161,21 @@ namespace OpenMS::Internal
           else if (accession == "MS:1000598") //electron transfer dissociation
           {
             chromatogram_.getPrecursor().getActivationMethods().insert(Precursor::ActivationMethod::ETD);
+          }
+          else if (accession == "MS:1002679" || accession == "MS:1002678" || accession == "MS:1002680")
+          {
+            // the supplemental activation terms that writePrecursor_ emits for spectra and
+            // chromatograms alike; without this branch a chromatogram precursor lost them, and the
+            // combined method they imply, on reload (see the spectrum branch above)
+            chromatogram_.getPrecursor().setMetaValue(cv_.getTerm(accession).name, termValue);
+            if (accession == "MS:1002679")
+            {
+              chromatogram_.getPrecursor().getActivationMethods().insert(Precursor::ActivationMethod::ETciD);
+            }
+            else if (accession == "MS:1002678")
+            {
+              chromatogram_.getPrecursor().getActivationMethods().insert(Precursor::ActivationMethod::EThcD);
+            }
           }
           else if (accession == "MS:1003182") //electron transfer and collision-induced dissociation
           {
@@ -3762,7 +3812,7 @@ namespace OpenMS::Internal
 
     void MzMLHandler::writeSoftware_(std::ostream& os, const std::string& id, const Software& software, const Internal::MzMLValidator& validator)
     {
-      os << "\t\t<software id=\"" << id << "\" version=\"" << software.getVersion() << "\" >\n";
+      os << "\t\t<software id=\"" << id << "\" version=\"" << writeXMLAttribute_(software.getVersion()) << "\" >\n";
       ControlledVocabulary::CVTerm so_term = getChildWithName_("MS:1000531", software.getName());
       if (so_term.id.empty())
       {
@@ -3784,21 +3834,21 @@ namespace OpenMS::Internal
       {
         os << "\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000799\" name=\"custom unreleased software tool\" value=\"" << writeXMLAttribute_(software.getName()) << "\" />\n";
       }
-      writeUserParam_(os, software, 3, "/mzML/Software/cvParam/@accession", validator);
+      writeUserParam_(os, software, 3, "/mzML/softwareList/software/cvParam/@accession", validator);
       os << "\t\t</software>\n";
     }
 
     void MzMLHandler::writeSourceFile_(std::ostream& os, const std::string& id, const SourceFile& source_file, const Internal::MzMLValidator& validator)
     {
       os << "\t\t\t<sourceFile id=\"" << id << "\" name=\"" << writeXMLAttribute_(source_file.getNameOfFile()) << "\" location=\"" << writeXMLAttribute_(source_file.getPathToFile()) << "\">\n";
-      //checksum
+      //checksum (caller-supplied text, so it is escaped like any other attribute value)
       if (source_file.getChecksumType() == SourceFile::ChecksumType::SHA1)
       {
-        os << "\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000569\" name=\"SHA-1\" value=\"" << source_file.getChecksum() << "\" />\n";
+        os << "\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000569\" name=\"SHA-1\" value=\"" << writeXMLAttribute_(source_file.getChecksum()) << "\" />\n";
       }
       else if (source_file.getChecksumType() == SourceFile::ChecksumType::MD5)
       {
-        os << "\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000568\" name=\"MD5\" value=\"" << source_file.getChecksum() << "\" />\n";
+        os << "\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000568\" name=\"MD5\" value=\"" << writeXMLAttribute_(source_file.getChecksum()) << "\" />\n";
       }
       else //FORCED
       {
@@ -3845,9 +3895,13 @@ namespace OpenMS::Internal
         os << "\t\t\t</processingMethod>\n";
       }
 
-      bool written = false;
       for (Size i = 0; i < dps.size(); ++i)
       {
+        // per method: the fallback action below depends on this method alone
+        bool written = false;
+        // order stays 0 for every method (CPP-026, open). The mzML schema orders consecutive steps
+        // by it, but the TOPP reference mzML files expect 0 for every step; writing the index
+        // belongs with a coordinated update of those references.
         //data processing action
         os << "\t\t\t<processingMethod order=\"0\" softwareRef=\"so_" << id << "_pm_" << i << "\">\n";
         if (dps[i]->getProcessingActions().count(DataProcessing::DATA_PROCESSING) == 1)
@@ -5088,18 +5142,35 @@ namespace OpenMS::Internal
         }
       }
 
-      // count binary data array software
-      Size num_bi_software(0);
-
-      for (Size s = 0; s < exp.size(); ++s)
+      // Give every supplemental array its own processing ID. Array types and
+      // chromatograms must not alias the spectrum float-array IDs.
+      std::vector<std::pair<std::string, std::vector<ConstDataProcessingPtr>>> array_processing;
+      Size num_bi_software = 0;
+      auto collect_arrays = [&](const auto& arrays, const std::string& prefix)
       {
-        for (Size m = 0; m < exp[s].getFloatDataArrays().size(); ++m)
+        for (Size m = 0; m < arrays.size(); ++m)
         {
-          for (Size i = 0; i < exp[s].getFloatDataArrays()[m].getDataProcessing().size(); ++i)
+          const auto history = arrays[m].getDataProcessing();
+          if (!history.empty())
           {
-            ++num_bi_software;
+            array_processing.emplace_back(prefix + std::to_string(m), history);
+            num_bi_software += history.size();
           }
         }
+      };
+      auto collect_record = [&](const auto& record, const std::string& prefix)
+      {
+        collect_arrays(record.getFloatDataArrays(), prefix + "_bi_");
+        collect_arrays(record.getIntegerDataArrays(), prefix + "_int_");
+        collect_arrays(record.getStringDataArrays(), prefix + "_str_");
+      };
+      for (Size s = 0; s < exp.size(); ++s)
+      {
+        collect_record(exp[s], "dp_sp_" + std::to_string(s));
+      }
+      for (Size c = 0; c < exp.getChromatograms().size(); ++c)
+      {
+        collect_record(exp.getChromatograms()[c], "dp_ch_" + std::to_string(c));
       }
 
       os << "\t<softwareList count=\"" << num_software + num_bi_software + exp.getInstrumentConfigurations().size() << "\">\n";
@@ -5124,16 +5195,11 @@ namespace OpenMS::Internal
         }
       }
 
-      //write data processing (for each binary data array)
-      for (Size s = 0; s < exp.size(); ++s)
+      for (const auto& [id, history] : array_processing)
       {
-        for (Size m = 0; m < exp[s].getFloatDataArrays().size(); ++m)
+        for (Size i = 0; i < history.size(); ++i)
         {
-          for (Size i = 0; i < exp[s].getFloatDataArrays()[m].getDataProcessing().size(); ++i)
-          {
-            writeSoftware_(os,std::string("so_dp_sp_") + s + "_bi_" + m + "_pm_" + i,
-                exp[s].getFloatDataArrays()[m].getDataProcessing()[i]->getSoftware(), validator);
-          }
+          writeSoftware_(os, "so_" + id + "_pm_" + std::to_string(i), history[i]->getSoftware(), validator);
         }
       }
       os << "\t</softwareList>\n";
@@ -5157,15 +5223,7 @@ namespace OpenMS::Internal
       // data processing
       //--------------------------------------------------------------------------------------------
 
-      // count number of float data array dps
-      Size num_bi_dps(0);
-      for (Size s = 0; s < exp.size(); ++s)
-      {
-        for (Size m = 0; m < exp[s].getFloatDataArrays().size(); ++m)
-        {
-          ++num_bi_dps;
-        }
-      }
+      const Size num_bi_dps = array_processing.size();
 
       os << "\t<dataProcessingList count=\"" << (std::max)((Size)1, dps.size() + num_bi_dps) << "\">\n";
 
@@ -5181,20 +5239,9 @@ namespace OpenMS::Internal
         writeDataProcessing_(os,std::string("dp_sp_") + s, dps[s], validator);
       }
 
-      //for each binary data array
-      for (Size s = 0; s < exp.size(); ++s)
+      for (const auto& [id, history] : array_processing)
       {
-        for (Size m = 0; m < exp[s].getFloatDataArrays().size(); ++m)
-        {
-          // if a DataArray has dataProcessing information, write it, otherwise we assume it has the
-          // same processing as the rest of the spectra and use the implicit referencing of mzML
-          // to the first entry (which is a dummy if none exists; see above)
-          if (!exp[s].getFloatDataArrays()[m].getDataProcessing().empty())
-          {
-            writeDataProcessing_(os,std::string("dp_sp_") + s + "_bi_" + m,
-              exp[s].getFloatDataArrays()[m].getDataProcessing(), validator);
-          }
-        }
+        writeDataProcessing_(os, id, history, validator);
       }
 
       os << "\t</dataProcessingList>\n";
@@ -5223,7 +5270,7 @@ namespace OpenMS::Internal
       //run attributes
       if (!exp.getFractionIdentifier().empty())
       {
-        os << "\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000858\" name=\"fraction identifier\" value=\"" << exp.getFractionIdentifier() << "\" />\n";
+        os << "\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000858\" name=\"fraction identifier\" value=\"" << writeXMLAttribute_(exp.getFractionIdentifier()) << "\" />\n";
       }
 
       writeUserParam_(os, exp, 2, "/mzML/run/cvParam/@accession", validator, {"mzml_start_time_stamp"});
@@ -5391,13 +5438,52 @@ namespace OpenMS::Internal
       //--------------------------------------------------------------------------------------------
       //scan
       //--------------------------------------------------------------------------------------------
+      // RT and the spectrum's ion mobility belong to the first scan. The synthetic scan written when
+      // there is no acquisition information shares this, otherwise its mobility would be lost.
+      const auto write_first_scan_rt_and_mobility = [&]()
+      {
+        os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000016\" name=\"scan start time\" value=\"" << spec.getRT()
+           << "\" unitAccession=\"UO:0000010\" unitName=\"second\" unitCvRef=\"UO\" />\n";
+
+        if (spec.getDriftTimeUnit() == DriftTimeUnit::FAIMS_COMPENSATION_VOLTAGE)
+        {
+          os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1001581\" name=\"FAIMS compensation voltage\" value=\"" << spec.getDriftTime()
+              << "\" unitAccession=\"UO:0000218\" unitName=\"volt\" unitCvRef=\"UO\" />\n";
+        }
+        else if (spec.getDriftTime() != IMTypes::DRIFTTIME_NOT_SET)// if drift time was never set, don't report it
+        {
+          if (spec.getDriftTimeUnit() == DriftTimeUnit::MILLISECOND)
+          {
+            os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1002476\" name=\"ion mobility drift time\" value=\"" << spec.getDriftTime()
+               << "\" unitAccession=\"UO:0000028\" unitName=\"millisecond\" unitCvRef=\"UO\" />\n";
+          }
+          else if (spec.getDriftTimeUnit() == DriftTimeUnit::VSSC)
+          {
+            os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1002815\" name=\"inverse reduced ion mobility\" value=\"" << spec.getDriftTime()
+               << "\" unitAccession=\"MS:1002814\" unitName=\"volt-second per square centimeter\" unitCvRef=\"MS\" />\n";
+          }
+          else if (spec.getDriftTimeUnit() == DriftTimeUnit::CCS)
+          {
+            os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1002954\" name=\"collisional cross sectional area\" value=\"" << spec.getDriftTime()
+               << "\" unitAccession=\"UO:0000324\" unitName=\"square angstrom\" unitCvRef=\"UO\" />\n";
+          }
+          else
+          {
+            // assume milliseconds, but warn
+            warning(STORE,std::string("Spectrum drift time unit not set, assume milliseconds"));
+            os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1002476\" name=\"ion mobility drift time\" value=\"" << spec.getDriftTime()
+               << "\" unitAccession=\"UO:0000028\" unitName=\"millisecond\" unitCvRef=\"UO\" />\n";
+          }
+        }
+      };
+
       for (Size j = 0; j < spec.getAcquisitionInfo().size(); ++j)
       {
         const Acquisition& ac = spec.getAcquisitionInfo()[j];
         os << "\t\t\t\t\t<scan "; // TODO
         if (!ac.getIdentifier().empty())
         {
-          os << "externalSpectrumID=\"" << ac.getIdentifier() << "\"";
+          os << "externalSpectrumID=\"" << writeXMLAttribute_(ac.getIdentifier()) << "\"";
         }
         if (ac.metaValueExists("instrument_configuration_ref"))
         {
@@ -5406,39 +5492,7 @@ namespace OpenMS::Internal
         os << ">\n";
         if (j == 0)
         {
-          os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000016\" name=\"scan start time\" value=\"" << spec.getRT()
-             << "\" unitAccession=\"UO:0000010\" unitName=\"second\" unitCvRef=\"UO\" />\n";
-
-          if (spec.getDriftTimeUnit() == DriftTimeUnit::FAIMS_COMPENSATION_VOLTAGE)
-          {
-            os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1001581\" name=\"FAIMS compensation voltage\" value=\"" << spec.getDriftTime()
-                << "\" unitAccession=\"UO:0000218\" unitName=\"volt\" unitCvRef=\"UO\" />\n";
-          }
-          else if (spec.getDriftTime() != IMTypes::DRIFTTIME_NOT_SET)// if drift time was never set, don't report it
-          {
-            if (spec.getDriftTimeUnit() == DriftTimeUnit::MILLISECOND)
-            {
-              os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1002476\" name=\"ion mobility drift time\" value=\"" << spec.getDriftTime()
-                 << "\" unitAccession=\"UO:0000028\" unitName=\"millisecond\" unitCvRef=\"UO\" />\n";
-            }
-            else if (spec.getDriftTimeUnit() == DriftTimeUnit::VSSC)
-            {
-              os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1002815\" name=\"inverse reduced ion mobility\" value=\"" << spec.getDriftTime()
-                 << "\" unitAccession=\"MS:1002814\" unitName=\"volt-second per square centimeter\" unitCvRef=\"MS\" />\n";
-            }
-            else if (spec.getDriftTimeUnit() == DriftTimeUnit::CCS)
-            {
-              os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1002954\" name=\"collisional cross sectional area\" value=\"" << spec.getDriftTime()
-                 << "\" unitAccession=\"UO:0000324\" unitName=\"square angstrom\" unitCvRef=\"UO\" />\n";
-            }
-            else
-            {
-              // assume milliseconds, but warn
-              warning(STORE,std::string("Spectrum drift time unit not set, assume milliseconds"));
-              os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1002476\" name=\"ion mobility drift time\" value=\"" << spec.getDriftTime()
-                 << "\" unitAccession=\"UO:0000028\" unitName=\"millisecond\" unitCvRef=\"UO\" />\n";
-            }
-          }
+          write_first_scan_rt_and_mobility();
         }
         writeUserParam_(os, ac, 6, "/mzML/run/spectrumList/spectrum/scanList/scan/cvParam/@accession", validator, {"instrument_configuration_ref"});
 
@@ -5470,7 +5524,7 @@ namespace OpenMS::Internal
       if (spec.getAcquisitionInfo().empty())
       {
         os << "\t\t\t\t\t<scan>\n";
-        os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000016\" name=\"scan start time\" value=\"" << spec.getRT() << "\" unitAccession=\"UO:0000010\" unitName=\"second\" unitCvRef=\"UO\" />\n";
+        write_first_scan_rt_and_mobility();
 
         if (spec.getInstrumentSettings().getZoomScan())
         {
@@ -5564,7 +5618,7 @@ namespace OpenMS::Internal
           std::string data_processing_ref_string ;
           if (!array.getDataProcessing().empty())
           {
-            data_processing_ref_string =std::string("dataProcessingRef=\"dp_sp_") + s + "_bi_" + m + "\"";
+            data_processing_ref_string =std::string("dataProcessingRef=\"dp_sp_") + s + "_int_" + m + "\"";
           }
           os << "\t\t\t\t\t<binaryDataArray arrayLength=\"" << array.size() << "\" encodedLength=\"" << encoded_string.size() << "\" " << data_processing_ref_string << ">\n";
           os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000522\" name=\"64-bit integer\" />\n";
@@ -5576,7 +5630,7 @@ namespace OpenMS::Internal
           }
           else
           {
-            os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000786\" name=\"non-standard data array\" value=\"" << array.getName() << "\" />\n";
+            os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000786\" name=\"non-standard data array\" value=\"" << writeXMLAttribute_(array.getName()) << "\" />\n";
           }
           writeUserParam_(os, array, 6, "/mzML/run/spectrumList/spectrum/binaryDataArrayList/binaryDataArray/cvParam/@accession", validator);
           os << "\t\t\t\t\t\t<binary>" << encoded_string << "</binary>\n";
@@ -5594,12 +5648,12 @@ namespace OpenMS::Internal
           std::string data_processing_ref_string ;
           if (!array.getDataProcessing().empty())
           {
-            data_processing_ref_string =std::string("dataProcessingRef=\"dp_sp_") + s + "_bi_" + m + "\"";
+            data_processing_ref_string =std::string("dataProcessingRef=\"dp_sp_") + s + "_str_" + m + "\"";
           }
           os << "\t\t\t\t\t<binaryDataArray arrayLength=\"" << array.size() << "\" encodedLength=\"" << encoded_string.size() << "\" " << data_processing_ref_string << ">\n";
           os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1001479\" name=\"null-terminated ASCII string\" />\n";
           os << "\t\t\t\t\t\t" << compression_term << "\n";
-          os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000786\" name=\"non-standard data array\" value=\"" << array.getName() << "\" />\n";
+          os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000786\" name=\"non-standard data array\" value=\"" << writeXMLAttribute_(array.getName()) << "\" />\n";
           writeUserParam_(os, array, 6, "/mzML/run/spectrumList/spectrum/binaryDataArrayList/binaryDataArray/cvParam/@accession", validator);
           os << "\t\t\t\t\t\t<binary>" << encoded_string << "</binary>\n";
           os << "\t\t\t\t\t</binaryDataArray>\n";
@@ -5792,7 +5846,7 @@ namespace OpenMS::Internal
         else
         {
           cv_term_type = "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000786\" name=\"non-standard data array\" value=\"" +
-            array.getName() + "\"" + unit_cv_term + " />\n";
+            writeXMLAttribute_(array.getName()) + "\"" + unit_cv_term + " />\n";
         }
 
         compression_term = MzMLHandlerHelper::getCompressionTerm_(pf_options_, pf_options_.getNumpressConfigurationFloatDataArray(), "\t\t\t\t\t\t", true);
@@ -5803,7 +5857,8 @@ namespace OpenMS::Internal
       std::string data_processing_ref_string ;
       if (!array.getDataProcessing().empty())
       {
-        data_processing_ref_string =std::string("dataProcessingRef=\"dp_sp_") + spec_chrom_idx + "_bi_" + array_idx + "\"";
+        data_processing_ref_string = std::string("dataProcessingRef=\"") + (isSpectrum ? "dp_sp_" : "dp_ch_") +
+                                     std::to_string(spec_chrom_idx) + "_bi_" + std::to_string(array_idx) + "\"";
       }
 
       // Try numpress encoding (if it is enabled) and fall back to regular encoding if it fails
@@ -5962,7 +6017,7 @@ namespace OpenMS::Internal
         std::string data_processing_ref_string ;
         if (!array.getDataProcessing().empty())
         {
-          data_processing_ref_string =std::string("dataProcessingRef=\"dp_sp_") + c + "_bi_" + m + "\"";
+          data_processing_ref_string =std::string("dataProcessingRef=\"dp_ch_") + c + "_int_" + m + "\"";
         }
         os << "\t\t\t\t\t<binaryDataArray arrayLength=\"" << array.size() << "\" encodedLength=\"" << encoded_string.size() << "\" " << data_processing_ref_string << ">\n";
         os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000522\" name=\"64-bit integer\" />\n";
@@ -5974,7 +6029,7 @@ namespace OpenMS::Internal
         }
         else
         {
-          os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000786\" name=\"non-standard data array\" value=\"" << array.getName() << "\" />\n";
+          os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000786\" name=\"non-standard data array\" value=\"" << writeXMLAttribute_(array.getName()) << "\" />\n";
         }
         writeUserParam_(os, array, 6, "/mzML/run/chromatogramList/chromatogram/binaryDataArrayList/binaryDataArray/cvParam/@accession", validator);
         os << "\t\t\t\t\t\t<binary>" << encoded_string << "</binary>\n";
@@ -5994,12 +6049,12 @@ namespace OpenMS::Internal
         std::string data_processing_ref_string ;
         if (!array.getDataProcessing().empty())
         {
-          data_processing_ref_string =std::string("dataProcessingRef=\"dp_sp_") + c + "_bi_" + m + "\"";
+          data_processing_ref_string =std::string("dataProcessingRef=\"dp_ch_") + c + "_str_" + m + "\"";
         }
         os << "\t\t\t\t\t<binaryDataArray arrayLength=\"" << array.size() << "\" encodedLength=\"" << encoded_string.size() << "\" " << data_processing_ref_string << ">\n";
         os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1001479\" name=\"null-terminated ASCII string\" />\n";
         os << "\t\t\t\t\t\t" << compression_term << "\n";
-        os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000786\" name=\"non-standard data array\" value=\"" << array.getName() << "\" />\n";
+        os << "\t\t\t\t\t\t<cvParam cvRef=\"MS\" accession=\"MS:1000786\" name=\"non-standard data array\" value=\"" << writeXMLAttribute_(array.getName()) << "\" />\n";
         writeUserParam_(os, array, 6, "/mzML/run/chromatogramList/chromatogram/binaryDataArrayList/binaryDataArray/cvParam/@accession", validator);
         os << "\t\t\t\t\t\t<binary>" << encoded_string << "</binary>\n";
         os << "\t\t\t\t\t</binaryDataArray>\n";

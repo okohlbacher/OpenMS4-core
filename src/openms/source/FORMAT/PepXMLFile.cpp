@@ -20,6 +20,7 @@
 #include <OpenMS/CHEMISTRY/ProteaseDB.h>
 #include <OpenMS/SYSTEM/File.h>
 
+#include <algorithm>
 #include <fstream>
 
 using namespace std;
@@ -932,8 +933,12 @@ namespace OpenMS
     // assume only one scan, i.e. ignore "end_scan":
     // "start and end_scan" are 1-based. "index" is 0-based
     scannr_ = attributeAsInt_(attributes, "start_scan");
-    Size endscan = attributeAsInt_(attributes, "start_scan");
-    if (scannr_ != endscan)
+    // Compare against the real end_scan so merged spectrum queries are reported.
+    // Read optionally: the value only feeds this diagnostic, so a file lacking
+    // it must not become unreadable.
+    Int endscan = static_cast<Int>(scannr_);
+    optionalAttributeAsInt_(endscan, attributes, "end_scan");
+    if (static_cast<Int>(scannr_) != endscan)
     {
       error(LOAD, "endscan not equal to startscan. Merged spectrum queries not supported. Parsing start scan nr. only.");
     }
@@ -1747,8 +1752,10 @@ namespace OpenMS
               warning(LOAD,"Modification '" + StringUtils::toStr(modification_mass) + "' of residue " + std::string(origin) + " at position "
               + StringUtils::toStr(modification_position) + " in '" + current_sequence_ + "' not registered in pepXML header nor uniquely defined in DB." +
               " Using " + mods[0]->getFullId());
-              current_modifications_.emplace_back(mods[0], modification_position - 1);
             }
+            // A unique DB match is the best possible resolution; only ambiguity warrants
+            // the warning above. Dropping it would silently lose the modification.
+            current_modifications_.emplace_back(mods[0], modification_position - 1);
           }
           else
           {
@@ -2123,6 +2130,19 @@ namespace OpenMS
       // Now apply implicit fixed modifications at positions where there is no modification yet.
       for (const auto& mod : fixed_modifications_)
       {
+        const auto specificity = mod.getRegisteredMod()->getTermSpecificity();
+        const auto& evidences = peptide_hit_.getPeptideEvidences();
+        // pepXML uses '-' for either protein boundary; this reader preserves that
+        // spelling as well as accepting OpenMS's directional boundary markers.
+        if ((specificity == ResidueModification::PROTEIN_N_TERM &&
+             !std::any_of(evidences.begin(), evidences.end(), [](const PeptideEvidence& evidence)
+             { return evidence.getAABefore() == PeptideEvidence::N_TERMINAL_AA || evidence.getAABefore() == '-'; })) ||
+            (specificity == ResidueModification::PROTEIN_C_TERM &&
+             !std::any_of(evidences.begin(), evidences.end(), [](const PeptideEvidence& evidence)
+             { return evidence.getAAAfter() == PeptideEvidence::C_TERMINAL_AA || evidence.getAAAfter() == '-'; })))
+        {
+          continue;
+        }
         if (mod.getRegisteredMod()->getTermSpecificity() == ResidueModification::N_TERM ||
             mod.getRegisteredMod()->getTermSpecificity() == ResidueModification::PROTEIN_N_TERM)
         {
@@ -2131,8 +2151,10 @@ namespace OpenMS
             temp_aa_sequence.setNTerminalModification(mod.getRegisteredMod());
           }
         }
+        // PROTEIN_C_TERM belongs here (mirroring the N-terminal branch); otherwise such a
+        // fixed mod falls through to the internal-residue loop and is misapplied or lost.
         else if (mod.getRegisteredMod()->getTermSpecificity() == ResidueModification::C_TERM ||
-            mod.getRegisteredMod()->getTermSpecificity() == ResidueModification::PROTEIN_N_TERM)
+            mod.getRegisteredMod()->getTermSpecificity() == ResidueModification::PROTEIN_C_TERM)
         {
           if (!temp_aa_sequence.hasCTerminalModification())
           {
@@ -2141,7 +2163,7 @@ namespace OpenMS
           else
           {
             warning(LOAD, "Trying to add a fixed C-term modification from the search_summary to an already"
-                          " annotated and modified N-terminus of " + current_sequence_
+                          " annotated and modified C-terminus of " + current_sequence_
                           + " ... skipping.");
           }
         }

@@ -11,9 +11,10 @@
 #include <OpenMS/test_config.h>
 ///////////////////////////
 
-#include <OpenMS/FORMAT/MzDataFile.h>
 #include <OpenMS/FORMAT/FileHandler.h>
+#include <OpenMS/FORMAT/MzDataFile.h>
 #include <OpenMS/KERNEL/MSExperiment.h>
+#include <fstream>
 
 using namespace OpenMS;
 using namespace std;
@@ -848,8 +849,53 @@ END_SECTION
 
 START_SECTION(bool isSemanticallyValid(const std::string& filename, StringList& errors, StringList& warnings))
 {
-  //This is not officially supported - the mapping file was hand-crafted by Marc Sturm
+  // This is not officially supported - the mapping file was hand-crafted by Marc Sturm
   NOT_TESTABLE
+}
+END_SECTION
+
+START_SECTION((regression: incomplete binary arrays and MSn scan modes))
+{
+  MzDataFile file;
+  const std::string mz = "<mzArrayBinary><data precision=\"32\" endian=\"little\" length=\"2\">AADwQgAA+kI=</data></mzArrayBinary>";
+  const std::string intensity = "<intenArrayBinary><data precision=\"32\" endian=\"little\" length=\"1\">AADIQg==</data></intenArrayBinary>";
+  auto load = [&](const std::string& arrays, const std::string& mode) {
+    std::string input;
+    NEW_TMP_FILE(input)
+    std::ofstream(input) << "<?xml version=\"1.0\"?><mzData version=\"1.05\" accessionNumber=\"test\">"
+                            "<spectrumList count=\"1\"><spectrum id=\"1\"><spectrumDesc><spectrumSettings>"
+                            "<spectrumInstrument msLevel=\"2\"><cvParam cvLabel=\"psi\" accession=\"PSI:1000036\" name=\"ScanMode\" value=\""
+                         << mode << "\"/></spectrumInstrument></spectrumSettings></spectrumDesc>" << arrays << "</spectrum></spectrumList></mzData>";
+    PeakMap result;
+    file.load(input, result);
+    // These deliberately incomplete reader fixtures are not writer-schema tests.
+    File::remove(input);
+    return result;
+  };
+  const auto missing = load(mz, "unknown");
+  TEST_EQUAL(missing.size(), 1)
+  ABORT_IF(missing.size() != 1)
+  TEST_EQUAL(missing[0].size(), 0)
+  TEST_EQUAL(missing[0].getInstrumentSettings().getScanMode(), InstrumentSettings::ScanMode::MSNSPECTRUM)
+
+  const auto short_intensity = load(mz + intensity, "EnhancedMultiplyChargedScan");
+  TEST_EQUAL(short_intensity.size(), 1)
+  ABORT_IF(short_intensity.size() != 1)
+  TEST_EQUAL(short_intensity[0].size(), 1)
+  ABORT_IF(short_intensity[0].size() != 1)
+  TEST_REAL_SIMILAR(short_intensity[0][0].getMZ(), 120.0)
+  TEST_REAL_SIMILAR(short_intensity[0][0].getIntensity(), 100.0)
+  TEST_EQUAL(short_intensity[0].getInstrumentSettings().getScanMode(), InstrumentSettings::ScanMode::EMC)
+
+  const auto unpaired = load(mz + "<intenArrayBinary/>", "TimeDelayedFragmentationScan");
+  TEST_EQUAL(unpaired.size(), 1)
+  ABORT_IF(unpaired.size() != 1)
+  TEST_EQUAL(unpaired[0].size(), 0)
+  TEST_EQUAL(unpaired[0].getInstrumentSettings().getScanMode(), InstrumentSettings::ScanMode::TDF)
+  const auto absorption = load(mz + intensity, "PhotodiodeArrayDetector");
+  TEST_EQUAL(absorption.size(), 1)
+  ABORT_IF(absorption.size() != 1)
+  TEST_EQUAL(absorption[0].getInstrumentSettings().getScanMode(), InstrumentSettings::ScanMode::ABSORPTION)
 }
 END_SECTION
 

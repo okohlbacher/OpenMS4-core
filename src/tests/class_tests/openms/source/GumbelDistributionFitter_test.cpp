@@ -181,6 +181,15 @@ END_SECTION
 
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
+START_SECTION((double GumbelDistributionFitResult::eval(double x) const))
+{
+  GumbelDistributionFitter::GumbelDistributionFitResult r(2.0, 0.5);
+  TEST_REAL_SIMILAR(r.eval(2.0), std::exp(-1.0) / 0.5)  // z = 1 at the location
+  TEST_REAL_SIMILAR(r.eval(3.0), 0.236409903186)
+  TEST_REAL_SIMILAR(r.eval(3.0), std::exp(r.log_eval_no_normalize(3.0)))
+}
+END_SECTION
+
 END_TEST
 
 

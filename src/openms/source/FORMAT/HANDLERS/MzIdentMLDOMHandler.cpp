@@ -2466,19 +2466,19 @@ namespace OpenMS::Internal
           DOMElement* element_sib = dynamic_cast<xercesc::DOMElement*>(current_sib);
           if (XMLString::equals(element_sib->getTagName(), CONST_XMLCH("PeptideSequence")))
           {
-            DOMNode* tn = element_sib->getFirstChild();
-            if (tn->getNodeType() == DOMNode::TEXT_NODE)
-            {
-              DOMText* data = dynamic_cast<DOMText*>(tn);
-              const XMLCh* val = data->getWholeText();
-              as = StringManager::convert(val);
-            }
-            else
-            {
-              throw std::runtime_error("ERROR : Non Text Node");
-            }
+            // An empty <PeptideSequence/> has no child node, so getFirstChild() would be null here;
+            // getTextContent() yields "" for it (and skips comments), as for <Seq> in parseDBSequenceElements_.
+            as = StringManager::convert(element_sib->getTextContent());
           }
         }
+      }
+      // Trim before substitutions: their 'location' counts residues, which surrounding whitespace would shift.
+      StringUtils::trim(as);
+      // An empty or missing sequence cannot carry substitutions or modifications; reject it so the caller
+      // reports the Peptide as unreadable instead of indexing into an empty string.
+      if (as.empty())
+      {
+        throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "PeptideSequence", "Peptide has no amino acid sequence.");
       }
       //2. Substitutions
       for (XMLSize_t c = 0; c < node_count; ++c)
@@ -2493,11 +2493,25 @@ namespace OpenMS::Internal
 
             std::string location = StringManager::convert(element_sib->getAttribute(CONST_XMLCH("location")));
             char originalResidue = StringManager::convert(element_sib->getAttribute(CONST_XMLCH("originalResidue")))[0];
-            char replacementResidue = StringManager::convert(element_sib->getAttribute(CONST_XMLCH("replacementResidue")))[0];
+            const std::string replacement = StringManager::convert(element_sib->getAttribute(CONST_XMLCH("replacementResidue")));
+            // a missing replacementResidue would otherwise put a NUL character into the sequence
+            if (replacement.empty())
+            {
+              throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "SubstitutionModification", "Missing 'replacementResidue' attribute.");
+            }
+            char replacementResidue = replacement[0];
 
             if (!location.empty())
             {
-              as[StringUtils::toInt32(location) - 1] = replacementResidue;
+              // 'location' is a 1-based residue position from the file: 0 or anything past the sequence
+              // end would index outside the string (location - 1 wraps around for 0).
+              const Int pos = StringUtils::toInt32(location);
+              if (pos < 1 || static_cast<Size>(pos) > as.size())
+              {
+                throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, location,
+                  "SubstitutionModification 'location' is outside of PeptideSequence '" + as + "'.");
+              }
+              as[static_cast<Size>(pos) - 1] = replacementResidue;
             }
             else if (StringUtils::hasSubstring(as, originalResidue)) //no location - every occurrence will be replaced
             {
@@ -2511,7 +2525,6 @@ namespace OpenMS::Internal
         }
       }
       //3. Modifications
-      StringUtils::trim(as);
       AASequence aas = AASequence::fromString(as);
       for (XMLSize_t c = 0; c < node_count; ++c)
       {

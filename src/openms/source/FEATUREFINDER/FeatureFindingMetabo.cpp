@@ -756,12 +756,22 @@ namespace OpenMS
   }
 
 
+  namespace
+  {
+    /// Intensity share of a hypothesis. A map whose traces all carry zero intensity has no
+    /// normalisation, and dividing by it published NaN scores instead of a zero signal.
+    double intensityShare_(const double intensity, const double total_intensity)
+    {
+      return total_intensity > 0.0 ? intensity / total_intensity : 0.0;
+    }
+  }
+
   void FeatureFindingMetabo::findLocalFeatures_(const std::vector<const MassTrace*>& candidates, const double total_intensity, std::vector<FeatureHypothesis>& output_hypotheses) const
   {
     // single Mass trace hypothesis
     FeatureHypothesis tmp_hypo;
     tmp_hypo.addMassTrace(*candidates[0]);
-    tmp_hypo.setScore((candidates[0]->getIntensity(use_smoothed_intensities_)) / total_intensity);
+    tmp_hypo.setScore(intensityShare_(candidates[0]->getIntensity(use_smoothed_intensities_), total_intensity));
 
 #ifdef _OPENMP
 #pragma omp critical (OPENMS_FFMetabo_output_hypos)
@@ -775,7 +785,7 @@ namespace OpenMS
     {
       FeatureHypothesis fh_tmp;
       fh_tmp.addMassTrace(*candidates[0]);
-      fh_tmp.setScore((candidates[0]->getIntensity(use_smoothed_intensities_)) / total_intensity);
+      fh_tmp.setScore(intensityShare_(candidates[0]->getIntensity(use_smoothed_intensities_), total_intensity));
 
       // double mono_iso_rt(candidates[0]->getCentroidRT());
       // double mono_iso_mz(candidates[0]->getCentroidMZ());
@@ -840,7 +850,7 @@ namespace OpenMS
         if (best_so_far > 0.0)
         {
           fh_tmp.addMassTrace(*candidates[best_idx]);
-          double weighted_score(((candidates[best_idx]->getIntensity(use_smoothed_intensities_)) * best_so_far) / total_intensity);
+          double weighted_score(intensityShare_((candidates[best_idx]->getIntensity(use_smoothed_intensities_)) * best_so_far, total_intensity));
 
           fh_tmp.setScore(fh_tmp.getScore() + weighted_score);
           fh_tmp.setCharge(charge);

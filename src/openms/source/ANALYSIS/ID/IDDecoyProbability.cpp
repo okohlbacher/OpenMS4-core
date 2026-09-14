@@ -190,9 +190,13 @@ namespace OpenMS
     Math::GammaDistributionFitter::GammaDistributionFitResult result_gamma = gdf.fit(rev_data);
 
 #ifdef IDDECOYPROBABILITY_DEBUG
-    cerr << gdf.getGnuplotFormula() << endl;
+    // no fitter provides a gnuplot formula, so it is assembled from the fitted parameters
+    std::stringstream gamma_formula;
+    gamma_formula << "f(x)=((" << result_gamma.b << " ** " << result_gamma.p << ") / gamma(" << result_gamma.p
+                  << ")) * x ** (" << result_gamma.p << " - 1) * exp(-" << result_gamma.b << " * x)";
+    cerr << gamma_formula.str() << endl;
     std::string rev_filename = param_.getValue("rev_filename");
-    generateDistributionImage_(rev_scores_normalized, gdf.getGnuplotFormula(), rev_filename);
+    generateDistributionImage_(rev_scores_normalized, gamma_formula.str(), rev_filename);
 #endif
 
     // generate diffs of distributions

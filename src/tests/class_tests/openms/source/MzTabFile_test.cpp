@@ -161,4 +161,40 @@ END_SECTION
 
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
+START_SECTION(([EXTRA] optional PSM columns retain trailing empty cells as null))
+  TextFile text(OPENMS_GET_TEST_DATA_PATH("MzTabFile_SILAC.mzTab"));
+  Size psm_count = 0;
+  for (auto& line : text)
+  {
+    if (StringUtils::hasPrefix(line, "PSH\t"))
+    {
+      line += "\topt_global_present\topt_global_empty";
+    }
+    else if (StringUtils::hasPrefix(line, "PSM\t"))
+    {
+      line += "\tkept\t";
+      ++psm_count;
+    }
+  }
+  TEST_NOT_EQUAL(psm_count, 0)
+  std::string filename;
+  NEW_TMP_FILE(filename)
+  text.store(filename);
+  MzTab loaded;
+  MzTabFile().load(filename, loaded);
+  TEST_EQUAL(loaded.getPSMSectionRows().size(), psm_count)
+  for (const auto& row : loaded.getPSMSectionRows())
+  {
+    bool present = false;
+    bool empty = false;
+    for (const auto& column : row.opt_)
+    {
+      if (column.first == "opt_global_present") present = column.second.toCellString() == "kept";
+      if (column.first == "opt_global_empty") empty = column.second.isNull();
+    }
+    TEST_TRUE(present)
+    TEST_TRUE(empty)
+  }
+END_SECTION
+
 END_TEST

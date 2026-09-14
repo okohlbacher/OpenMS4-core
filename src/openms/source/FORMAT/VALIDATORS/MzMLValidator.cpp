@@ -38,6 +38,18 @@ namespace OpenMS::Internal
       {
         parent_tag = open_tags_.back();
       }
+      else
+      {
+        // no open tag means this is the document element of a new file. Parameter groups
+        // belong to the document that defines them: groups kept from a file validated
+        // earlier with this object would satisfy (or extend) the rules of this one, so a
+        // dangling group reference could pass. validate() clears open_tags_ before each
+        // parse, so this also holds after a parse that aborted inside a document.
+        param_groups_.clear();
+        current_id_.clear();
+        binary_data_array_.clear();
+        binary_data_type_.clear();
+      }
       std::string path = getPath_() + "/" + cv_tag_ + "/@" + accession_att_;
       open_tags_.push_back(tag);
 

@@ -24,7 +24,7 @@ START_TEST(XTandemInfile, "$Id$")
 using namespace OpenMS;
 using namespace std;
 
-XTandemInfile* ptr;
+XTandemInfile* ptr = nullptr;
 XTandemInfile* nullPointer = nullptr;
 
 START_SECTION((XTandemInfile()))

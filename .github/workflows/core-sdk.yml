@@ -3,7 +3,7 @@ name: Core SDK
 on:
   push:
     branches: ['**']
-    # The formula is built and tested by the bottle workflow, not by this one.
+    # Formula-only updates use the bottle workflow; source changes also test a candidate formula below.
     paths-ignore: ['Formula/**', '.github/workflows/bottle.yml']
   pull_request:
   workflow_dispatch:
@@ -110,12 +110,21 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Build and test the Homebrew formula
+      - name: Build and test the exact source revision with Homebrew
         env:
           HOMEBREW_NO_AUTO_UPDATE: '1'
           HOMEBREW_NO_INSTALL_CLEANUP: '1'
         run: |
-          brew trust --formula okohlbacher/openms4-core/openms4-core
-          brew tap okohlbacher/openms4-core https://github.com/okohlbacher/OpenMS4-core
-          brew install --formula --build-from-source okohlbacher/openms4-core/openms4-core
-          brew test okohlbacher/openms4-core/openms4-core
+          revision=$(git rev-parse HEAD)
+          url="https://github.com/${GITHUB_REPOSITORY}/archive/${revision}.tar.gz"
+          archive="${RUNNER_TEMP}/core-source.tar.gz"
+          curl --fail --location --retry 3 "$url" --output "$archive"
+          brew tap-new --no-git openms-ci/core
+          python3 tools/ci/prepare_homebrew_formula.py \
+            --formula Formula/openms4-core.rb --revision "$revision" --url "$url" \
+            --archive "$archive" --output "$(brew --repo openms-ci/core)/Formula/openms4-core.rb"
+          brew trust --formula openms-ci/core/openms4-core
+          brew install --formula --build-from-source openms-ci/core/openms4-core
+          brew test openms-ci/core/openms4-core
+          python3 -c 'import json, sys; info = json.load(open(sys.argv[1])); assert info["source_revision"] == sys.argv[2] and info["source_dirty"] is False, info' \
+            "$(brew --prefix openms-ci/core/openms4-core)/lib/cmake/OpenMS/OpenMSBuildInfo.json" "$revision"

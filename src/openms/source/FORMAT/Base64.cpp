@@ -210,6 +210,42 @@ namespace OpenMS
   const char Base64::encoder_[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   const char Base64::decoder_[] = "|$$$}rstuvwxyz{$$$$$$$>?@ABCDEFGHIJKLMNOPQRSTUVW$$$$$$XYZ[\\]^_`abcdefghijklmnopq";
 
+  bool Base64::checkNumericInput_(const std::string& in)
+  {
+    // shorter input has always decoded to nothing
+    if (in.size() < 4)
+    {
+      return false;
+    }
+    if (in.size() % 4 != 0)
+    {
+      throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Malformed base64 input, length is not a multiple of 4.");
+    }
+    Size padding = 0;
+    for (const char c : in)
+    {
+      if (c == '=')
+      {
+        ++padding;
+      }
+      // decoder_ covers '+' to 'z' and marks the bytes in that range that are not Base64 with '$'
+      else if (padding != 0 || c < '+' || c > 'z' || decoder_[c - '+'] == '$')
+      {
+        throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+          padding != 0 ? "Malformed base64 input, data after padding." : "Malformed base64 input, invalid character.");
+      }
+    }
+    if (padding == in.size())
+    {
+      return false; // e.g. "====": nothing to decode
+    }
+    if (padding > 2)
+    {
+      throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Malformed base64 input, more than two padding characters.");
+    }
+    return true;
+  }
+
   void Base64::encodeStrings(const std::vector<std::string>& in, std::string& out, bool zlib_compression, bool append_null_byte)
   {
     out.clear();

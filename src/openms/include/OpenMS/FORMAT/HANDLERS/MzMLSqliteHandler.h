@@ -36,13 +36,22 @@ namespace OpenMS
         parameters of a MS experiment, to store the complete meta-data, a
         zipped representation of the mzML data structure can be written
         directly into the database (and will be retrieved when converting
-        back).
+        back). Float, integer and string data arrays are stored in neither
+        place (see setConfig).
 
         This class also supports writing data using the lossy numpress
         compression format.
 
         This class contains the internal data structures and SQL statements for
         communication with the SQLite database
+
+        @note All reading functions open the file read-only: a missing file is
+        reported as Exception::SqlOperationFailed and is not created.
+
+        @note Each of writeExperiment, writeSpectra, writeChromatograms and
+        writeRunLevelInformation writes in a single transaction: if it throws,
+        none of its rows are stored and the spectrum and chromatogram ids are
+        not advanced.
 
     */
     class OPENMS_DLLAPI MzMLSqliteHandler
@@ -113,10 +122,13 @@ public:
       /**
           @brief Set file configuration
 
-          @param[in] write_full_meta Whether to write a complete mzML meta data structure into the RUN_EXTRA field (allows complete recovery of the input file)
+          @param[in] write_full_meta Whether to write the mzML meta data structure of the experiment into the RUN_EXTRA field.
+            Reading it back recovers the experimental settings and the meta data of all spectra and chromatograms, but not
+            the complete input file: only the m/z (or retention time) and intensity arrays are stored, so float, integer and
+            string data arrays (e.g. ion mobility arrays) are lost, and lossy compression limits the precision of the peaks.
           @param[in] use_lossy_compression Whether to use lossy compression (ms numpress)
           @param[in] linear_abs_mass_acc Accepted loss in mass accuracy (absolute m/z, in Th)
-          @param[in] sql_batch_size Batch size of SQL insert statements
+          @param[in] sql_batch_size Batch size of SQL insert statements (500 unless set here)
       */
       void setConfig(bool write_full_meta, bool use_lossy_compression, double linear_abs_mass_acc, int sql_batch_size = 500) 
       {
@@ -186,6 +198,8 @@ public:
 
           @note Be careful with this function, calling this on an existing file
                 will delete the file!
+
+          @note The new file starts with spectrum and chromatogram id zero again.
       */
       void createTables();
 
@@ -216,6 +230,15 @@ public:
 protected:
 
       void createIndices_();
+
+      // The writers on an open connection. They neither begin nor end a transaction, so that
+      // writeExperiment can combine all three in one; the public functions of the same name
+      // wrap each in a transaction of its own.
+      void writeRunLevelInformation_(SqliteConnector& conn, const MSExperiment& exp, bool write_full_meta);
+
+      void writeSpectra_(SqliteConnector& conn, const std::vector<MSSpectrum>& spectra);
+
+      void writeChromatograms_(SqliteConnector& conn, const std::vector<MSChromatogram>& chroms);
       //@}
 
       std::string filename_;
@@ -225,8 +248,9 @@ protected:
        * database file. Keeping track of them allows us to append spectra and
        * chromatograms multiple times to a database.
        *
-       * However, currently they are initialized to zero when opening a new
-       * file, so appending to an existing file won't work.
+       * However, they start at zero on construction and createTables() resets
+       * them to zero for the new file, so appending to an existing file won't
+       * work. A write that fails leaves them where they were.
       */
       Int spec_id_;
       Int chrom_id_;

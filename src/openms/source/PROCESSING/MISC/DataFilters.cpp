@@ -459,7 +459,7 @@ namespace OpenMS
       }
       else             // value_is_numerical
       {
-        if (data_value.valueType() == DataValue::STRING_VALUE || data_value.valueType() == DataValue::EMPTY_VALUE)
+        if (data_value.valueType() != DataValue::INT_VALUE && data_value.valueType() != DataValue::DOUBLE_VALUE)
         {
           return false;
         }

@@ -69,7 +69,9 @@ public:
     /**
         @brief Default constructor.
 
-        Creates a range with all coordinates zero.
+        Creates an empty range, i.e. the sentinel of the base class: every minimum coordinate is the
+        largest and every maximum coordinate the smallest representable value, so isEmpty() is true.
+        Use DRange<D>::zero for a range with all coordinates zero.
     */
     DRange() :
       Base()
@@ -175,8 +177,13 @@ public:
     }
 
     /// Returns the smallest range containing this range and @p other_range
+    /// @note If both ranges are empty, the result is empty as well (and not the universal range)
     DRange united(const DRange<D>& other_range) const
     {
+      // the union of two empty sets is empty: both operands carry the inverted sentinel corners,
+      // which setMinMax() below would swap back into order, yielding the universal range
+      if (this->isEmpty() && other_range.isEmpty()) return DRange<D>::empty;
+
       PositionType united_min;
       PositionType united_max;
       DRange<D> united_range = DRange<D>::empty;
@@ -307,7 +314,8 @@ public:
      Examples (for D=1):
        addition = 0.5 extends the range by 1 in total, i.e. 0.5 left and right.
 
-     @param[in] addition Additive for each dimension (can be negative). Resulting invalid min/max are not fixed automatically!
+     @param[in] addition Additive for each dimension (can be negative). A dimension which would end up inverted (min > max)
+                         is collapsed to its center point, so the min <= max invariant always holds afterwards.
      @return A reference to self
     */
     DRange<D>& extend(typename Base::PositionType addition)

@@ -39,12 +39,22 @@ START_SECTION(~BinnedSpectrum())
 }
 END_SECTION
 
-BinnedSpectrum* bs1;
+START_SECTION((BinnedSpectrum()))
+{
+  // no bin layout: the lookup must not convert floor(mz / 0) to an index
+  BinnedSpectrum empty;
+  TEST_EQUAL(empty.getBinIntensity(100.0), 0.0f)
+  TEST_EQUAL(empty.getBinIntensity(0.0), 0.0f)
+  TEST_EQUAL(empty.getBins()->nonZeros(), 0)
+}
+END_SECTION
+
+BinnedSpectrum* bs1 = nullptr;
 DTAFile dtafile;
 PeakSpectrum s1;
 DTAFile().load(OPENMS_GET_TEST_DATA_PATH("PILISSequenceDB_DFPIANGER_1.dta"), s1);
 
-START_SECTION((BinnedSpectrum(const PeakSpectrum & ps, float size, UInt spread, float offset)))
+START_SECTION((BinnedSpectrum(const PeakSpectrum & ps, float size, bool unit_ppm, UInt spread, float offset)))
 {
   bs1 = new BinnedSpectrum(s1, 1.5, false, 2, 0.0);
   TEST_NOT_EQUAL(bs1, nullPointer)

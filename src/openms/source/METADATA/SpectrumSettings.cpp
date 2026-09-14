@@ -24,6 +24,10 @@ namespace OpenMS
   {
     return MetaInfoInterface::operator==(rhs) &&
            type_ == rhs.type_ &&
+           // the IM representation is part of the value: two settings which describe profile and
+           // centroided mobility data (or a different IM storage format) are not the same settings
+           im_type_ == rhs.im_type_ &&
+           im_peak_type_ == rhs.im_peak_type_ &&
            native_id_ == rhs.native_id_ &&
            comment_ == rhs.comment_ &&
            instrument_settings_ == rhs.instrument_settings_ &&

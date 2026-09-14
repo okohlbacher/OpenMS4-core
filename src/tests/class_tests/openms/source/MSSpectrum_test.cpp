@@ -869,7 +869,17 @@ END_SECTION
 
 START_SECTION(void isSortedByIM() const)
 {
-  NOT_TESTABLE // tested above
+  // Sorting and the sortedness shortcut must both reject a mismatched IM array.
+  for (const int delta : {-1, 1})
+  {
+    auto spectrum = getPrefilledSpec();
+    const auto [index, unit] = spectrum.getIMData();
+    auto& im = spectrum.getFloatDataArrays()[index];
+    im.resize(spectrum.size() + delta);
+    std::sort(im.begin(), im.end());
+    TEST_EXCEPTION(Exception::Precondition, spectrum.isSortedByIM())
+    TEST_EXCEPTION(Exception::Precondition, spectrum.sortByIonMobility())
+  }
 }
 END_SECTION
 

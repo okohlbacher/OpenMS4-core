@@ -15,7 +15,6 @@
 #include <OpenMS/KERNEL/MSExperiment.h>
 #include <OpenMS/FORMAT/VALIDATORS/XMLValidator.h>
 #include <OpenMS/FORMAT/VALIDATORS/MzMLValidator.h>
-#include <OpenMS/FORMAT/TextFile.h>
 #include <OpenMS/FORMAT/DATAACCESS/MSDataTransformingConsumer.h>
 #include <OpenMS/FORMAT/HANDLERS/IndexedMzMLDecoder.h>
 #include <OpenMS/SYSTEM/File.h>
@@ -54,17 +53,49 @@ namespace OpenMS
     return NOT_FOUND != IndexedMzMLDecoder().findIndexListOffset(filename);
   }
 
+  namespace
+  {
+    /// Records the qualified name of the document element and ends the parse right there,
+    /// so only the prolog and the root start tag are read
+    class RootElementHandler_ :
+      public Internal::XMLHandler
+    {
+    public:
+      explicit RootElementHandler_(const std::string& filename) :
+        Internal::XMLHandler(filename, "")
+      {
+      }
+
+      void onStartElement(const char16_t* qname, const Internal::XMLAttributes& /*attributes*/) override
+      {
+        root_name = sm_.convert(qname);
+        throw EndParsingSoftly(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION);
+      }
+
+      std::string root_name;
+    };
+  }
+
   // reimplemented in order to handle index MzML
   bool MzMLFile::isValid(const std::string& filename, std::ostream& os)
   {
-    //determine if this is indexed mzML or not
-    bool indexed = false;
-    TextFile file(filename, true, 4);
-    std::string s = StringUtils::concatenate(file);
-    if (StringUtils::hasSubstring(s, "<indexedmzML"))
+    // determine if this is indexed mzML or not from the document element itself: a legal
+    // prolog (comments, processing instructions, blank lines) can move the root start tag
+    // arbitrarily far down, so searching the first four lines for "<indexedmzML" chose the
+    // plain mzML schema for such files, which has no declaration for the indexed root
+    RootElementHandler_ root(filename);
+    try
     {
-      indexed = true;
+      parse_(filename, &root);
     }
+    catch (Exception::ParseError&)
+    {
+      // not well-formed before the root element; the schema validation below reports why
+    }
+    // the parser does not process namespaces, so a prefixed root arrives as 'prefix:name'
+    const std::string::size_type colon = root.root_name.find(':');
+    const std::string root_local_name = (colon == std::string::npos) ? root.root_name : root.root_name.substr(colon + 1);
+    bool indexed = (root_local_name == "indexedmzML");
     // find the corresponding schema
     std::string current_location;
     if (indexed)
@@ -232,9 +263,13 @@ namespace OpenMS
 
   std::map<UInt, MzMLFile::SpecInfo> MzMLFile::getCentroidInfo(const std::string& filename, const Size first_n_spectra_only)
   {
+    std::map<UInt, SpecInfo> ret;
+    if (first_n_spectra_only == 0)
+    {
+      return ret; // inspect nothing; decrementing an unsigned zero wrapped to SIZE_MAX
+    }
     bool oldoption = options_.getFillData();
     options_.setFillData(true); // we want the data as well (to allow estimation from data if metadata is missing)
-    std::map<UInt, SpecInfo> ret;
     Size first_n_spectra_only_remaining = first_n_spectra_only;
     auto f = [&ret, &first_n_spectra_only_remaining](const MSSpectrum& s)
     {
@@ -265,7 +300,15 @@ namespace OpenMS
     };
     MSDataTransformingConsumer c;
     c.setSpectraProcessingFunc(f);
-    transform(filename, &c, true, true); // no first pass
+    try
+    {
+      transform(filename, &c, true, true); // no first pass
+    }
+    catch (...)
+    {
+      options_.setFillData(oldoption); // a parse or file error must not leave the reader changed
+      throw;
+    }
 
     // restore old state
     options_.setFillData(oldoption);

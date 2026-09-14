@@ -18,6 +18,7 @@
 #include <OpenMS/FORMAT/OPTIONS/PeakFileOptions.h>
 #include <OpenMS/KERNEL/MSSpectrum.h>
 #include <OpenMS/METADATA/Instrument.h>
+#include <OpenMS/SYSTEM/File.h>
 
 #include <algorithm>
 #include <cmath>
@@ -408,6 +409,34 @@ namespace
     return "OpenMS export";
   }
 
+  /// Removes every non-empty per-peak data array whose length differs from the spectrum's peak count.
+  void dropMisalignedDataArrays_(MSExperiment& exp)
+  {
+    auto drop = [](auto& arrays, const Size peaks, const char* what)
+    {
+      for (Size i = arrays.size(); i > 0; --i)
+      {
+        const auto& array = arrays[i - 1];
+        if (array.empty() || array.size() == peaks)
+        {
+          continue;
+        }
+        OPENMS_LOG_WARN << "Skipping " << what << " '" << array.getName()
+                        << "' on imzML export: length " << array.size()
+                        << " != spectrum peak count " << peaks << "\n";
+        arrays.erase(arrays.begin() + static_cast<SignedSize>(i - 1));
+      }
+    };
+
+    for (MSSpectrum& spec : exp.getSpectra())
+    {
+      const Size peaks = spec.size();
+      drop(spec.getFloatDataArrays(), peaks, "FloatDataArray");
+      drop(spec.getIntegerDataArrays(), peaks, "IntegerDataArray");
+      drop(spec.getStringDataArrays(), peaks, "StringDataArray");
+    }
+  }
+
   void applyStoreOptions_(MSExperiment& exp, const PeakFileOptions& options)
   {
     if (options.hasMSLevels())
@@ -440,6 +469,12 @@ namespace
                        }),
         exp.getSpectra().end());
     }
+
+    // Enforce the per-peak contract on the spectra that will be stored, before anything below can
+    // reorder or trim peaks: MSSpectrum::sort() and MSSpectrum::select() refuse a mis-sized data
+    // array with Exception::Precondition, so an array this writer would merely skip would otherwise
+    // abort the whole store -- and only for those PeakFileOptions that happen to sort or filter.
+    dropMisalignedDataArrays_(exp);
 
     if (options.hasMZRange() || options.hasIntensityRange())
     {
@@ -518,7 +553,8 @@ namespace
         OPENMS_LOG_WARN << "Skipping unnamed FloatDataArray on imzML export\n";
         continue;
       }
-      // Per-peak contract: aux length must match peak count (including both empty).
+      // Per-peak contract: aux length must match peak count (including both empty). store() already
+      // enforces it in applyStoreOptions_(); kept here as the guard directly at the write.
       if (fda.size() != spec.size())
       {
         OPENMS_LOG_WARN << "Skipping FloatDataArray '" << fda.getName()
@@ -737,9 +773,15 @@ namespace
 
   bool isContinuousMode_(const MSExperiment& exp, const ImzMLMeta& meta)
   {
+    // With no peaks anywhere -- PeakFileOptions::setMetadataOnly() clears every spectrum -- there is
+    // no m/z axis left to share and the two layouts are indistinguishable on disk. Honour the
+    // declared mode instead of refusing a metadata-only store of a continuous dataset, which would
+    // otherwise be impossible while the same store of a processed dataset succeeds.
+    const bool no_peaks = std::all_of(exp.getSpectra().begin(), exp.getSpectra().end(),
+                                      [](const MSSpectrum& s) { return s.empty(); });
     if (meta.imaging_mode == "continuous")
     {
-      if (!spectraShareMz_(exp))
+      if (!no_peaks && !spectraShareMz_(exp))
       {
         throw Exception::InvalidParameter(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
                                            "continuous imzML requires all spectra to share the same m/z axis and array length");
@@ -1436,86 +1478,104 @@ void ImzMLWriter::store(const std::string& imzml_path,
   const std::string instrument_model = instrumentModelForExport_(work);
   logger.startProgress(0, work.size() + 2, "storing imzML file");
 
+  bool ibd_created = false;
+  try
   {
-    UniqueFile_ ibd(fopen(ibd_path.c_str(), "wb"));
-    if (!ibd.get())
     {
-      throw Exception::UnableToCreateFile(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, ibd_path);
-    }
-
-    unsigned char uuid_bytes[16] {};
-    ensureUuidBytes_(meta, uuid_bytes);
-    writeIbdUuidHeader_(ibd.get(), uuid_bytes, ibd_path);
-
-    ArrayCvCache cv_cache;
-    if (continuous)
-    {
-      Size ref = 0;
-      for (Size i = 0; i < work.size(); ++i)
+      UniqueFile_ ibd(fopen(ibd_path.c_str(), "wb"));
+      if (!ibd.get())
       {
-        if (!work[i].empty())
+        throw Exception::UnableToCreateFile(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, ibd_path);
+      }
+      ibd_created = true; // from here on the .ibd is ours to clean up again on failure
+
+      unsigned char uuid_bytes[16] {};
+      ensureUuidBytes_(meta, uuid_bytes);
+      writeIbdUuidHeader_(ibd.get(), uuid_bytes, ibd_path);
+
+      ArrayCvCache cv_cache;
+      if (continuous)
+      {
+        Size ref = 0;
+        for (Size i = 0; i < work.size(); ++i)
         {
-          ref = i;
-          break;
+          if (!work[i].empty())
+          {
+            ref = i;
+            break;
+          }
+        }
+        const std::vector<double> shared_mz = mzAsDouble_(work[ref]);
+        const uint64_t mz_bytes = shared_mz.size() * mz_elem_bytes;
+
+        writeMzArray_(ibd.get(), shared_mz, mz_32_bit, ibd_path);
+        uint64_t current = IBD_UUID_HEADER_BYTES + mz_bytes;
+        for (Size i = 0; i < work.size(); ++i)
+        {
+          logger.setProgress(static_cast<Size>(i + 1));
+          plans[i].share_mz = true;
+          plans[i].mz_offset = IBD_UUID_HEADER_BYTES;
+          plans[i].mz_count = shared_mz.size();
+          plans[i].mz_encoded = mz_bytes;
+          plans[i].int_offset = current;
+          plans[i].int_count = work[i].size();
+          plans[i].int_encoded = plans[i].int_count * int_elem_bytes;
+
+          const std::vector<float> intensities = intensitiesAsFloat_(work[i]);
+          writeIntArray_(ibd.get(), intensities, int_32_bit, ibd_path);
+          current += plans[i].int_encoded;
+          appendAndWriteFloatDataArrays_(ibd.get(), work[i], plans[i], current, ibd_path, cv_cache);
         }
       }
-      const std::vector<double> shared_mz = mzAsDouble_(work[ref]);
-      const uint64_t mz_bytes = shared_mz.size() * mz_elem_bytes;
-
-      writeMzArray_(ibd.get(), shared_mz, mz_32_bit, ibd_path);
-      uint64_t current = IBD_UUID_HEADER_BYTES + mz_bytes;
-      for (Size i = 0; i < work.size(); ++i)
+      else
       {
-        logger.setProgress(static_cast<Size>(i + 1));
-        plans[i].share_mz = true;
-        plans[i].mz_offset = IBD_UUID_HEADER_BYTES;
-        plans[i].mz_count = shared_mz.size();
-        plans[i].mz_encoded = mz_bytes;
-        plans[i].int_offset = current;
-        plans[i].int_count = work[i].size();
-        plans[i].int_encoded = plans[i].int_count * int_elem_bytes;
+        uint64_t offset = IBD_UUID_HEADER_BYTES;
+        for (Size i = 0; i < work.size(); ++i)
+        {
+          logger.setProgress(i + 1);
+          plans[i].mz_offset = offset;
+          plans[i].mz_count = work[i].size();
+          plans[i].mz_encoded = plans[i].mz_count * mz_elem_bytes;
+          offset += plans[i].mz_encoded;
+          plans[i].int_offset = offset;
+          plans[i].int_count = work[i].size();
+          plans[i].int_encoded = plans[i].int_count * int_elem_bytes;
+          offset += plans[i].int_encoded;
 
-        const std::vector<float> intensities = intensitiesAsFloat_(work[i]);
-        writeIntArray_(ibd.get(), intensities, int_32_bit, ibd_path);
-        current += plans[i].int_encoded;
-        appendAndWriteFloatDataArrays_(ibd.get(), work[i], plans[i], current, ibd_path, cv_cache);
+          writeMzArray_(ibd.get(), mzAsDouble_(work[i]), mz_32_bit, ibd_path);
+          const std::vector<float> intensities = intensitiesAsFloat_(work[i]);
+          writeIntArray_(ibd.get(), intensities, int_32_bit, ibd_path);
+          appendAndWriteFloatDataArrays_(ibd.get(), work[i], plans[i], offset, ibd_path, cv_cache);
+        }
       }
-    }
-    else
-    {
-      uint64_t offset = IBD_UUID_HEADER_BYTES;
-      for (Size i = 0; i < work.size(); ++i)
-      {
-        logger.setProgress(i + 1);
-        plans[i].mz_offset = offset;
-        plans[i].mz_count = work[i].size();
-        plans[i].mz_encoded = plans[i].mz_count * mz_elem_bytes;
-        offset += plans[i].mz_encoded;
-        plans[i].int_offset = offset;
-        plans[i].int_count = work[i].size();
-        plans[i].int_encoded = plans[i].int_count * int_elem_bytes;
-        offset += plans[i].int_encoded;
 
-        writeMzArray_(ibd.get(), mzAsDouble_(work[i]), mz_32_bit, ibd_path);
-        const std::vector<float> intensities = intensitiesAsFloat_(work[i]);
-        writeIntArray_(ibd.get(), intensities, int_32_bit, ibd_path);
-        appendAndWriteFloatDataArrays_(ibd.get(), work[i], plans[i], offset, ibd_path, cv_cache);
+      if (fflush(ibd.get()) != 0)
+      {
+        throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, ibd_path,
+                                    "failed to flush imzML .ibd file");
       }
     }
 
-    if (fflush(ibd.get()) != 0)
-    {
-      throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, ibd_path,
-                                  "failed to flush imzML .ibd file");
-    }
+    logger.setProgress(work.size() + 1);
+
+    const std::string ibd_md5 = md5Hex_(ibd_path);
+    const std::string ibd_sha1 = sha1Hex_(ibd_path);
+    writeImzMLXml_(imzml_path, work, meta, plans, ibd_md5, ibd_sha1, instrument_model, continuous,
+                   mz_32_bit, int_32_bit);
   }
-
-  logger.setProgress(work.size() + 1);
-
-  const std::string ibd_md5 = md5Hex_(ibd_path);
-  const std::string ibd_sha1 = sha1Hex_(ibd_path);
-  writeImzMLXml_(imzml_path, work, meta, plans, ibd_md5, ibd_sha1, instrument_model, continuous,
-                 mz_32_bit, int_32_bit);
+  catch (...)
+  {
+    // Close the progress range on every path: ProgressLogger tracks nesting by a recursion depth
+    // that a skipped endProgress() would leave raised for the rest of the process. And the .ibd is
+    // streamed before the .imzML, so a partial .ibd left here could later be mistaken for the
+    // companion of an older .imzML -- remove it, but only if this call is the one that created it.
+    logger.endProgress();
+    if (ibd_created)
+    {
+      File::remove(ibd_path);
+    }
+    throw;
+  }
   logger.endProgress();
 }
 

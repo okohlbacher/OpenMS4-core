@@ -12,6 +12,8 @@
 #include <OpenMS/FORMAT/DATAACCESS/MSChromatogramParquetConsumer.h>
 #include <OpenMS/OPENSWATHALGO/DATAACCESS/TransitionExperiment.h>
 
+#include <algorithm>
+
 namespace OpenMS
 {
 
@@ -41,50 +43,72 @@ namespace OpenMS
 
     // First pass through the file -> get the meta-data and hand it to the consumer
     // if (!skip_first_pass) transformFirstPass_(filename_in, consumer, skip_full_count);
-    consumer->setExpectedSize(sql_mass.getNrSpectra(), sql_mass.getNrChromatograms());
+    // (counted once: each count opens the file again)
+    const Size nr_spectra = sql_mass.getNrSpectra();
+    const Size nr_chromatograms = sql_mass.getNrChromatograms();
+    consumer->setExpectedSize(nr_spectra, nr_chromatograms);
     MSExperiment experimental_settings;
     sql_mass.readExperiment(experimental_settings, true);
     consumer->setExperimentalSettings(experimental_settings);
 
+    // Batches only while records remain: the former 'batch_idx <= count / batch_size' ran one more
+    // batch with an empty index list whenever the count was a multiple of the batch size, zero
+    // included. readSpectra/readChromatograms require a non-empty list, and without the
+    // precondition check an empty one selected all records and then threw on the size mismatch.
+    const Size batch_size = 500;
     {
-      int batch_size = 500;
       std::vector<int> indices;
-      for (size_t batch_idx = 0; batch_idx <= (sql_mass.getNrSpectra() / batch_size); batch_idx++)
+      for (Size idx_start = 0; idx_start < nr_spectra; idx_start += batch_size)
       {
-        int idx_start = static_cast<int>(batch_idx * batch_size);
-        int idx_end = static_cast<int>(std::min((batch_idx + 1) * static_cast<size_t>(batch_size), sql_mass.getNrSpectra()));
+        const Size idx_end = std::min(idx_start + batch_size, nr_spectra);
 
         indices.resize(idx_end - idx_start);
-        for (int k = 0; k < idx_end - idx_start; k++)
+        for (Size k = 0; k < indices.size(); k++)
         {
-          indices[k] = idx_start + k;
+          indices[k] = static_cast<int>(idx_start + k);
         }
         std::vector<MSSpectrum> tmp_spectra;
         sql_mass.readSpectra(tmp_spectra, indices, false);
         for (Size k = 0; k < tmp_spectra.size(); k++)
         {
+          // As for chromatograms below: the SQL tables restore only part of the spectrum settings
+          // (e.g. not the spectrum type or data processing), so take them from the full-meta record.
+          // RT, MS level and drift time belong to MSSpectrum itself and stay as read from SQL.
+          const Size idx = idx_start + k;
+          if (idx < experimental_settings.getNrSpectra() &&
+              experimental_settings.getSpectrum(idx).getNativeID() == tmp_spectra[k].getNativeID())
+          {
+            static_cast<SpectrumSettings&>(tmp_spectra[k]) = experimental_settings.getSpectrum(idx);
+          }
           consumer->consumeSpectrum(tmp_spectra[k]);
         }
       }
     }
 
     {
-      int batch_size = 500;
       std::vector<int> indices;
-      for (size_t batch_idx = 0; batch_idx <= (sql_mass.getNrChromatograms() / batch_size); batch_idx++)
+      for (Size idx_start = 0; idx_start < nr_chromatograms; idx_start += batch_size)
       {
-        int idx_start = static_cast<int>(batch_idx * batch_size);
-        int idx_end = static_cast<int>(std::min((batch_idx + 1) * static_cast<size_t>(batch_size), sql_mass.getNrChromatograms()));
+        const Size idx_end = std::min(idx_start + batch_size, nr_chromatograms);
 
         indices.resize(idx_end - idx_start);
-        for (int k = 0; k < idx_end - idx_start; k++)
+        for (Size k = 0; k < indices.size(); k++)
         {
-          indices[k] = idx_start + k;
+          indices[k] = static_cast<int>(idx_start + k);
         }
         std::vector<MSChromatogram> tmp_chroms;
         sql_mass.readChromatograms(tmp_chroms, indices, false);
         for (Size k = 0; k < tmp_chroms.size(); k++)
         {
+          // The SQL tables hold no chromatogram settings beyond precursor and product, so a
+          // chromatogram read from them lost e.g. its SRM type. load() restores the settings from
+          // the full-meta record; take them from that same record, matched by native ID.
+          const Size idx = idx_start + k;
+          if (idx < experimental_settings.getNrChromatograms() &&
+              experimental_settings.getChromatogram(idx).getNativeID() == tmp_chroms[k].getNativeID())
+          {
+            static_cast<ChromatogramSettings&>(tmp_chroms[k]) = experimental_settings.getChromatogram(idx);
+          }
           consumer->consumeChromatogram(tmp_chroms[k]);
         }
       }

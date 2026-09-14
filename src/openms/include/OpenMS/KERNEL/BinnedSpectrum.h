@@ -88,9 +88,8 @@ public:
     /// the empty SparseVector
     // static const SparseVectorType EmptySparseVector;
 
-    /// default constructor
-    // BinnedSpectrum() = delete;
-    BinnedSpectrum() {};
+    /// default constructor (no peaks and no bin layout; the bins are allocated but empty, and getBinIntensity() returns 0)
+    BinnedSpectrum();
 
     /// detailed constructor
     BinnedSpectrum(const PeakSpectrum& ps, float size, bool unit_ppm, UInt spread, float offset);
@@ -110,8 +109,8 @@ public:
     /// inequality operator
     bool operator!=(const BinnedSpectrum& rhs) const;
 
-    /// returns the bin intensity at a given m/z position 
-    float getBinIntensity(double mz);
+    /// returns the bin intensity at a given m/z position (0 for an empty bin; does not modify the bins)
+    float getBinIntensity(double mz) const;
 
     /// return the bin index of a given m/z position
     size_t getBinIndex(float mz) const;

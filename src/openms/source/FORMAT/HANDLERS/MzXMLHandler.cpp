@@ -12,6 +12,7 @@
 #include <OpenMS/INTERFACES/IMSDataConsumer.h>
 #include <OpenMS/FORMAT/Base64.h>
 
+#include <algorithm>
 #include <atomic>
 #include <stack>
 #include <xercesc/util/XMLString.hpp>
@@ -131,7 +132,8 @@ namespace OpenMS::Internal
       {
         Int count = 0;
         optionalAttributeAsInt_(count, attributes, s_count_);
-        exp_->reserve(count);
+        // scanCount is untrusted: bound the reserve so a corrupt (or negative) count cannot abort the load
+        exp_->reserve(std::min(Size(1e5), static_cast<Size>(std::max(count, 0))));
         logger_.startProgress(0, count, "loading mzXML file");
         scan_count_ = 0;
         data_processing_.clear();
@@ -197,6 +199,13 @@ namespace OpenMS::Internal
       }
       else if (tag == "precursorMz")
       {
+        // onCharacters collects the m/z text in char_rest_, which is still unused here because the schema
+        // places <precursorMz> before <peaks>. Decode a payload that a non-conforming file put first, so
+        // that the peaks are not mixed up with the m/z text.
+        if (!spectrum_data_.back().char_rest_.empty())
+        {
+          doPopulateSpectraWithData_(spectrum_data_.back());
+        }
         // add new precursor
         spectrum_data_.back().spectrum.getPrecursors().emplace_back();
         // intensity
@@ -214,7 +223,7 @@ namespace OpenMS::Internal
         {
           spectrum_data_.back().spectrum.getPrecursors().back().setCharge(charge);
         }
-        // window bounds (here only the width is stored in both fields - this is corrected when we parse the m/z position)
+        // window bounds (here only the width is stored in the lower offset - both offsets become half of it once onEndElement parses the m/z)
         double window = 0.0;
         if (optionalAttributeAsDouble_(window, attributes, s_windowwideness_))
         {
@@ -297,9 +306,15 @@ namespace OpenMS::Internal
         spectrum_data_.back().spectrum.setMSLevel(ms_level);
         spectrum_data_.back().spectrum.setRT(retention_time);
         spectrum_data_.back().spectrum.setNativeID(std::string("scan=") + attributeAsString_(attributes, s_num_));
-        //peak count == twice the scan size
-        spectrum_data_.back().peak_count_ = attributeAsInt_(attributes, s_peakscount_);
-        spectrum_data_.back().spectrum.reserve(spectrum_data_.back().peak_count_ / 2 + 1);
+        const Int peak_count = attributeAsInt_(attributes, s_peakscount_);
+        if (peak_count < 0)
+        {
+          fatalError(LOAD, std::string("Scan '") + spectrum_data_.back().spectrum.getNativeID() + "' declares peaksCount=" + peak_count + ".");
+        }
+        spectrum_data_.back().peak_count_ = peak_count;
+        // peaksCount is only checked against the decoded payload later, so it must not size an allocation
+        // directly: a corrupt count has to fail as a ParseError, not as OutOfMemory on a smaller machine.
+        spectrum_data_.back().spectrum.reserve(std::min(Size(1e5), static_cast<Size>(peak_count)));
         spectrum_data_.back().spectrum.setDataProcessing(data_processing_);
 
         //centroided, chargeDeconvoluted, deisotoped, collisionEnergy are ignored
@@ -506,6 +521,20 @@ namespace OpenMS::Internal
 
         data_processing_.back()->setMetaValue(name, value);
       }
+      else if (tag == "comment")
+      {
+        // onCharacters appends each chunk of the comment text, so every <comment> starts from an empty
+        // text (a later comment still replaces an earlier one)
+        std::string& parent_tag = *(open_tags_.end() - 2);
+        if (parent_tag == "msInstrument")
+        {
+          exp_->getInstrument().removeMetaValue("#comment");
+        }
+        else if (parent_tag == "scan")
+        {
+          spectrum_data_.back().spectrum.setComment("");
+        }
+      }
 
       //std::cout << " -- !Start -- " << "\n";
     }
@@ -518,6 +547,7 @@ namespace OpenMS::Internal
 
       static const char16_t* s_mzxml = u"mzXML";
       static const char16_t* s_scan = u"scan";
+      static const char16_t* s_precursormz = u"precursorMz";
 
       open_tags_.pop_back();
 
@@ -539,6 +569,35 @@ namespace OpenMS::Internal
         if (nesting_level_ == 0 && spectrum_data_.size() >= options_.getMaxDataPoolSize())
         {
           populateSpectraWithData_();
+        }
+      }
+      else if (equal_(qname, s_precursormz))
+      {
+        // The parser may deliver the element text in several onCharacters calls (e.g. split by a comment or
+        // CDATA section), so the m/z is parsed and the window halved only once the whole text is collected.
+        if (!skip_spectrum_ && !spectrum_data_.empty() && !spectrum_data_.back().char_rest_.empty()
+            && !spectrum_data_.back().spectrum.getPrecursors().empty())
+        {
+          double mz_pos = asDouble_(spectrum_data_.back().char_rest_);
+          spectrum_data_.back().char_rest_.clear();
+          Precursor& precursor = spectrum_data_.back().spectrum.getPrecursors().back();
+          //precursor m/z
+          precursor.setMZ(mz_pos);
+          //update window bounds - center them around the m/z pos
+          double window_width = precursor.getIsolationWindowLowerOffset();
+          if (window_width != 0.0)
+          {
+            precursor.setIsolationWindowLowerOffset(0.5 * window_width);
+            precursor.setIsolationWindowUpperOffset(0.5 * window_width);
+          }
+          // Check if precursor m/z is within specified range
+          if (options_.hasPrecursorMZRange() &&
+              !options_.getPrecursorMZRange().encloses(DPosition<1>(mz_pos)))
+          {
+            skip_spectrum_ = true;
+            // Remove the spectrum that was already added to spectrum_data_
+            spectrum_data_.pop_back();
+          }
         }
       }
       //std::cout << " -- End -- " << "\n";
@@ -566,25 +625,8 @@ namespace OpenMS::Internal
       }
       else if (open_tags_.back() == "precursorMz")
       {
-        std::string transcoded_chars = sm_.convert(chars);
-        double mz_pos = asDouble_(transcoded_chars);
-        //precursor m/z
-        spectrum_data_.back().spectrum.getPrecursors().back().setMZ(mz_pos);
-        //update window bounds - center them around the m/z pos
-        double window_width = spectrum_data_.back().spectrum.getPrecursors().back().getIsolationWindowLowerOffset();
-        if (window_width != 0.0)
-        {
-          spectrum_data_.back().spectrum.getPrecursors().back().setIsolationWindowLowerOffset(0.5 * window_width);
-          spectrum_data_.back().spectrum.getPrecursors().back().setIsolationWindowUpperOffset(0.5 * window_width);
-        }
-        // Check if precursor m/z is within specified range
-        if (options_.hasPrecursorMZRange() &&
-            !options_.getPrecursorMZRange().encloses(DPosition<1>(mz_pos)))
-        {
-          skip_spectrum_ = true;
-          // Remove the spectrum that was already added to spectrum_data_
-          spectrum_data_.pop_back();
-        }
+        //chars may be split to several chunks => concatenate them, the m/z is parsed in onEndElement
+        spectrum_data_.back().char_rest_ += sm_.convert(chars);
       }
       else if (open_tags_.back() == "comment")
       {
@@ -592,9 +634,11 @@ namespace OpenMS::Internal
         std::string parent_tag = *(open_tags_.end() - 2);
         //std::cout << "- Comment of parent " << parent_tag << "\n";
 
+        //chars may be split to several chunks => append them (onStartElement starts each comment empty)
         if (parent_tag == "msInstrument")
         {
-          exp_->getInstrument().setMetaValue("#comment", transcoded_chars);
+          Instrument& instrument = exp_->getInstrument();
+          instrument.setMetaValue("#comment", instrument.getMetaValue("#comment").toString() + transcoded_chars);
         }
         else if (parent_tag == "dataProcessing")
         {
@@ -602,7 +646,8 @@ namespace OpenMS::Internal
         }
         else if (parent_tag == "scan")
         {
-          spectrum_data_.back().spectrum.setComment(transcoded_chars);
+          SpectrumType& spectrum = spectrum_data_.back().spectrum;
+          spectrum.setComment(spectrum.getComment() + transcoded_chars);
         }
         else if (!StringUtils::trim(transcoded_chars).empty())
         {
@@ -1159,6 +1204,20 @@ namespace OpenMS::Internal
       //this should not be necessary, but line breaks inside the base64 data are unfortunately no exception
       StringUtils::removeWhitespaces(spectrum_data.char_rest_);
 
+      // peaksCount is read from the file, so the decoded length must be checked at runtime before the
+      // loops below index the values: an assert is compiled out of release builds, which then read past
+      // a payload that is shorter than declared.
+      const Size expected_values = 2 * static_cast<Size>(spectrum_data.peak_count_);
+      auto checkDecodedValues = [&](const Size decoded_values)
+      {
+        if (decoded_values != expected_values)
+        {
+          fatalError(LOAD, std::string("The peaks of scan '") + spectrum_data.spectrum.getNativeID() + "' decode to "
+                           + decoded_values + " values, but peaksCount=" + spectrum_data.peak_count_ + " requires "
+                           + expected_values + ".");
+        }
+      };
+
       if (spectrum_data.precision_ == "64")
       {
         std::vector<double> data;
@@ -1172,9 +1231,9 @@ namespace OpenMS::Internal
         }
         spectrum_data.char_rest_ = "";
         PeakType peak;
-        assert(data.size() == 2 * spectrum_data.peak_count_);
+        checkDecodedValues(data.size());
         //push_back the peaks into the container
-        for (Size n = 0; n < (2 * spectrum_data.peak_count_); n += 2)
+        for (Size n = 0; n < data.size(); n += 2)
         {
           // check if peak in in the specified m/z  and intensity range
           if ((!options_.hasMZRange() || options_.getMZRange().encloses(DPosition<1>(data[n])))
@@ -1199,9 +1258,9 @@ namespace OpenMS::Internal
         }
         spectrum_data.char_rest_ = "";
         PeakType peak;
-        assert(data.size() == 2 * spectrum_data.peak_count_);
+        checkDecodedValues(data.size());
         //push_back the peaks into the container
-        for (Size n = 0; n < (2 * spectrum_data.peak_count_); n += 2)
+        for (Size n = 0; n < data.size(); n += 2)
         {
           if ((!options_.hasMZRange() || options_.getMZRange().encloses(DPosition<1>(data[n])))
              && (!options_.hasIntensityRange() || options_.getIntensityRange().encloses(DPosition<1>(data[n + 1]))))

@@ -12,6 +12,7 @@
 
 ///////////////////////////
 #include <OpenMS/FORMAT/PepXMLFile.h>
+#include <fstream>
 #include <OpenMS/FORMAT/IdXMLFile.h> //ONLY used for checking if pepxml transformation produced a reusable id file
 ///////////////////////////
 
@@ -502,5 +503,48 @@ END_SECTION
 /////////////////////////////////////////////////////////////
 /// check the temporary files written above against their XML schema (types without a validator are skipped)
 VALIDATE_TMP_FILES
+
+START_SECTION(([EXTRA] fixed protein-terminal modifications require terminal evidence))
+  std::string filename;
+  NEW_TMP_FILE(filename)
+  {
+    std::ofstream output(filename);
+    output << R"(<?xml version="1.0"?>
+<msms_pipeline_analysis date="2026-09-13T12:00:00" summary_xml="terminal.pep.xml">
+<msms_run_summary base_name="terminal" raw_data_type="raw" raw_data=".mzML">
+<sample_enzyme name="trypsin"><specificity cut="KR" no_cut="P" sense="C"/></sample_enzyme>
+<search_summary base_name="terminal" search_engine="Comet" precursor_mass_type="monoisotopic" fragment_mass_type="monoisotopic" search_id="1">
+<search_database local_path="test.fasta" type="AA"/>
+<enzymatic_search_constraint enzyme="trypsin" max_num_internal_cleavages="2" min_number_termini="2"/>
+<terminal_modification terminus="n" protein_terminus="n" massdiff="42.010565" mass="43.01839" variable="N" description="Acetyl"/>
+<terminal_modification terminus="c" protein_terminus="c" massdiff="-0.984016" mass="16.018724" variable="N" description="Amidated"/>
+</search_summary>
+)";
+    for (Size i = 0; i < 3; ++i)
+    {
+      output << "<spectrum_query spectrum=\"terminal." << i + 1 << ".1.2\" start_scan=\"" << i + 1
+             << "\" end_scan=\"" << i + 1 << "\" precursor_neutral_mass=\"900\" assumed_charge=\"2\" index=\"" << i + 1
+             << "\" retention_time_sec=\"1\"><search_result>"
+                "<search_hit hit_rank=\"1\" peptide=\"PEPTIDEK\" peptide_prev_aa=\"" << (i == 1 ? "-" : "K")
+             << "\" peptide_next_aa=\"" << (i == 2 ? "-" : "A")
+             << "\" protein=\"protein\" num_tot_proteins=\"1\" calc_neutral_pep_mass=\"900\" massdiff=\"0\">"
+                "<search_score name=\"xcorr\" value=\"1\"/></search_hit></search_result></spectrum_query>\n";
+    }
+    output << "</msms_run_summary></msms_pipeline_analysis>\n";
+  }
+  vector<ProteinIdentification> proteins;
+  PeptideIdentificationList peptides;
+  file.load(filename, proteins, peptides);
+  TEST_EQUAL(peptides.size(), 3)
+  ABORT_IF(peptides.size() != 3)
+  for (Size i = 0; i < peptides.size(); ++i)
+  {
+    TEST_EQUAL(peptides[i].getHits().size(), 1)
+    ABORT_IF(peptides[i].getHits().size() != 1)
+    const auto& sequence = peptides[i].getHits()[0].getSequence();
+    TEST_EQUAL(sequence.hasNTerminalModification(), i == 1)
+    TEST_EQUAL(sequence.hasCTerminalModification(), i == 2)
+  }
+END_SECTION
 
 END_TEST

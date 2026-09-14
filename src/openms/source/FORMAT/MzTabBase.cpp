@@ -334,7 +334,10 @@ namespace OpenMS
       ret += CV_label_ + ", ";
       ret += accession_ + ", ";
 
-      if (StringUtils::hasSubstring(name_, ", "))
+      // any comma has to be quoted, not only ", ": fromCellString() splits the cell on
+      // every unquoted comma, so a bare comma would add a fifth field and make the
+      // written parameter unreadable
+      if (StringUtils::hasSubstring(name_, ','))
       {
         ret +="\"" + name_ + "\""; // quote name if it contains a ","
       }
@@ -345,7 +348,7 @@ namespace OpenMS
 
       ret +=std::string(", ");
 
-      if (StringUtils::hasSubstring(value_, ", "))
+      if (StringUtils::hasSubstring(value_, ','))
       {
         ret +="\"" + value_ + "\""; // quote value if it contains a ","
       }
