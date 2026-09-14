@@ -1042,11 +1042,13 @@ START_SECTION(([EXTRA] std::vector<FeatureMap> split(SplitMeta mode = SplitMeta:
   DataProcessing isobaric_analyzer;
   isobaric_analyzer.setSoftware(Software("IsobaricAnalyzer"));
 
-  // column headers keyed {0, 3}
+  // column headers keyed {0, 3}: two channels of one run
   ConsensusMap cm;
   cm.getDataProcessing().push_back(isobaric_analyzer);
   cm.getColumnHeaders()[0].filename = "run.mzML";
+  cm.getColumnHeaders()[0].label = "channel_0";
   cm.getColumnHeaders()[3].filename = "run.mzML";
+  cm.getColumnHeaders()[3].label = "channel_3";
 
   ConsensusFeature cf;
   cf.insert(FeatureHandle(0, Peak2D({ 10, 433.33 }, 100000), 0));
@@ -1092,6 +1094,7 @@ START_SECTION(([EXTRA] std::vector<FeatureMap> split(SplitMeta mode = SplitMeta:
   ConsensusMap no_column_0;
   no_column_0.getDataProcessing().push_back(isobaric_analyzer);
   no_column_0.getColumnHeaders()[1].filename = "run.mzML";
+  no_column_0.getColumnHeaders()[1].label = "channel_1";
   no_column_0.getUnassignedPeptideIdentifications().push_back(uid);
   TEST_EXCEPTION(Exception::ElementNotFound, no_column_0.split())
   no_column_0.getColumnHeaders().clear();
