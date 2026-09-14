@@ -1228,8 +1228,10 @@ namespace OpenMS::Internal
 
       //std::cout << "reading scan" << "\n";
       // A <precursorMz> after <peaks> decodes the payload early (onStartElement). The count was checked then,
-      // so the payload that decoding consumed must not be reported again as missing.
-      if (spectrum_data.peaks_decoded_)
+      // so the payload that decoding consumed must not be reported again as missing. Only that consumed payload
+      // is skipped: a later <peaks> of the same scan has been collected in char_rest_ since and is decoded here
+      // (or by the next <precursorMz>) like any other payload.
+      if (spectrum_data.peaks_decoded_ && spectrum_data.char_rest_.empty())
       {
         return;
       }

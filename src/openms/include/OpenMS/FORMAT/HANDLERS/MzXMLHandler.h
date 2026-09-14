@@ -126,7 +126,7 @@ protected:
         std::string char_rest_;
         SpectrumType spectrum;
         bool skip_data;
-        /// true once the payload has been decoded (a \<precursorMz\> after \<peaks\> decodes it early)
+        /// true once a payload has been decoded (a \<precursorMz\> after \<peaks\> decodes it early); an empty char_rest_ then means that payload was consumed, not that it is missing
         bool peaks_decoded_ = false;
       };
 

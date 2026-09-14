@@ -863,6 +863,53 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
   ABORT_IF(peaks_first[0].getPrecursors().size() != 1)
   TEST_REAL_SIMILAR(peaks_first[0].getPrecursors()[0].getMZ(), 500.5)
 
+  // Only the payload that a <precursorMz> has decoded early is skipped when the scans are populated. A later
+  // <peaks> of the same scan is still decoded, and each payload is checked against the count on its own: two
+  // payloads (39), the same followed by a second precursor, whose m/z must not be mixed with the second payload
+  // (40), and an empty second payload, which has nothing to decode or report (41).
+  auto peaks = [](const std::string& payload) {
+    return "<peaks precision=\"32\" byteOrder=\"network\" contentType=\"m/z-int\">" + payload + "</peaks>";
+  };
+  auto precursor = [](const std::string& mz) {
+    return "<precursorMz precursorIntensity=\"5\">" + mz + "</precursorMz>";
+  };
+  auto ms2Scan = [](const std::string& num, const std::string& count, const std::string& content) {
+    return "<scan num=\"" + num + "\" msLevel=\"2\" peaksCount=\"" + count + "\" retentionTime=\"PT" + num + "S\">" + content + "</scan>";
+  };
+  PeakMap peaks_twice = loadScans(ms2Scan("39", "3", peaks(one_pair) + precursor("500.5") + peaks(two_pairs))
+                                  + ms2Scan("40", "3", peaks(one_pair) + precursor("500.5") + peaks(two_pairs) + precursor("600.5"))
+                                  + ms2Scan("41", "1", peaks(one_pair) + precursor("500.5") + peaks("")));
+  TEST_STRING_EQUAL(warned, "Scan 'scan=39' declares peaksCount=\"3\", but its peaks decode to 2 values (1 m/z-intensity pairs). Reading 1 pairs.\n"
+                            "Scan 'scan=39' declares peaksCount=\"3\", but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 2 pairs.\n"
+                            "Scan 'scan=40' declares peaksCount=\"3\", but its peaks decode to 2 values (1 m/z-intensity pairs). Reading 1 pairs.\n"
+                            "Scan 'scan=40' declares peaksCount=\"3\", but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 2 pairs.\n")
+  TEST_EQUAL(peaks_twice.size(), 3)
+  ABORT_IF(peaks_twice.size() != 3)
+  TEST_EQUAL(peaks_twice[0].size(), 3)
+  TEST_EQUAL(peaks_twice[1].size(), 3)
+  TEST_EQUAL(peaks_twice[2].size(), 1)
+  ABORT_IF(peaks_twice[0].size() != 3 || peaks_twice[1].size() != 3)
+  TEST_REAL_SIMILAR(peaks_twice[0][0].getMZ(), 120.0)
+  TEST_REAL_SIMILAR(peaks_twice[0][2].getMZ(), 130.0)
+  TEST_REAL_SIMILAR(peaks_twice[0][2].getIntensity(), 200.0)
+  TEST_REAL_SIMILAR(peaks_twice[1][2].getMZ(), 130.0)
+  TEST_EQUAL(peaks_twice[1].getPrecursors().size(), 2)
+  ABORT_IF(peaks_twice[1].getPrecursors().size() != 2)
+  TEST_REAL_SIMILAR(peaks_twice[1].getPrecursors()[0].getMZ(), 500.5)
+  TEST_REAL_SIMILAR(peaks_twice[1].getPrecursors()[1].getMZ(), 600.5)
+
+  // <peaks> after <precursorMz> (schema order) is decoded when the scans are populated and checked once
+  PeakMap precursor_first = loadScans(ms2Scan("42", "2", precursor("500.5") + peaks(two_pairs))
+                                      + ms2Scan("43", "3", precursor("500.5") + peaks(two_pairs)));
+  TEST_STRING_EQUAL(warned, "Scan 'scan=43' declares peaksCount=\"3\", but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 2 pairs.\n")
+  TEST_EQUAL(precursor_first.size(), 2)
+  ABORT_IF(precursor_first.size() != 2)
+  TEST_EQUAL(precursor_first[0].size(), 2)
+  TEST_EQUAL(precursor_first[1].size(), 2)
+  ABORT_IF(precursor_first[1].size() != 2 || precursor_first[1].getPrecursors().size() != 1)
+  TEST_REAL_SIMILAR(precursor_first[1][1].getMZ(), 130.0)
+  TEST_REAL_SIMILAR(precursor_first[1].getPrecursors()[0].getMZ(), 500.5)
+
   // a count outside the Int range is not wrapped into a different count: like a negative count, it reads
   // the decoded pairs, and the warning shows the text of the file. INT_MAX and INT_MIN are still counts.
   PeakMap out_of_range = loadScans(scan("30", "4294967296", "32", two_pairs) + scan("31", "4294967295", "32", two_pairs)
