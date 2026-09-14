@@ -439,12 +439,16 @@ namespace OpenMS
         // Parse Sample Row
         else if (state == SAMPLE_CONTENT)
         {
-          // Same width check as the file section: the Sample lookup below indexes the row
-          // unchecked, and a short row stored here would be read past its end by getFactorValue().
-          parseErrorIf_(n_col != cells.size(), tsv_file, "Wrong number of records in line");
+          // Lines are trimmed before they are split, so a row whose last values are empty (e.g. an optional
+          // factor left blank) comes out short. Pad it with empty values and ignore cells beyond the header,
+          // so every stored row has exactly one value per column and getFactorValue() stays inside it.
+          // Only the sample name itself must be present.
+          const Size sample_column = sample_columnname_to_columnindex_.at("Sample");
+          parseErrorIf_(sample_column >= cells.size(), tsv_file, "Missing sample name in a row of the sample table");
+          cells.resize(n_col);
 
           // Parse Error if sample appears multiple times
-          const std::string& sample = cells[sample_columnname_to_columnindex_["Sample"]];
+          const std::string& sample = cells[sample_column];
           parseErrorIf_(sample_sample_to_rowindex_.contains(sample),
                         tsv_file,
                         "Sample: " + std::string(sample) + " appears multiple times in the sample table");
