@@ -95,10 +95,9 @@ namespace
     return result.ec == std::errc{} && result.ptr == last;
   }
 
-  // Classifies a metadata key by its form. key_fields are the '-' separated fields of key. Whitespace
-  // inside and after the brackets of an index, and at the end of the key, does not make a key malformed:
-  // the reader trims an index, and reads e.g. "mzTab-ID " by its prefix. (A key that the reader compares
-  // exactly, such as "title ", is still not read.)
+  // Classifies a metadata key by its form. key is trimmed, and key_fields are its '-' separated fields.
+  // Whitespace inside and after the brackets of an index does not make a key malformed, since the reader
+  // trims an index when it extracts it.
   //
   // A key belongs to an mzTab 1.0 key if it has as many fields, its first field has the name (the text
   // before '[') of that key's first field, and each further field has the name of that key's field or
@@ -123,11 +122,7 @@ namespace
     std::vector<bool> empty;          // whether a field is empty or whitespace only
     for (size_t i = 0; i != key_fields.size(); ++i)
     {
-      std::string field = key_fields[i];
-      if (i + 1 == key_fields.size())
-      {
-        field.erase(field.find_last_not_of(" \t\n\r") + 1); // whitespace at the end of the key
-      }
+      const std::string& field = key_fields[i];
       const size_t bracket = std::min(field.find('['), field.size());
       names.push_back(field.substr(0, bracket));
       indices.push_back(field.substr(bracket));
@@ -395,9 +390,12 @@ namespace OpenMS
     if (section == "MTD")
     {
       sections_present.insert("MTD");
+      // whitespace around the key is removed here, so that the check below and the branches reading the
+      // key see the same key: e.g. "title " is read as "title"
+      StringUtils::trim(cells[1]);
       StringList meta_key_fields; // the "-" separated fields of the metavalue key
       StringUtils::split(cells[1], "-", meta_key_fields);
-      if (StringUtils::trimmed(cells[1]).empty()) // e.g. "MTD<tab><tab>value"
+      if (cells[1].empty()) // e.g. "MTD<tab><tab>value"
       {
         throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, filename, "Error parsing MzTab line: " + std::string(s) + ". The metadata key is empty");
       }

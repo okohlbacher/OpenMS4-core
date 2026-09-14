@@ -295,8 +295,9 @@ START_SECTION(([EXTRA] a metadata key that is empty, or that belongs to an mzTab
     NEW_TMP_FILE(filename)
     storeSILACWithMetaData(filename, {"MTD\t" + malformed.first + "\tx"});
     MzTab mz_tab;
+    // the message names the key without the whitespace around it, which the reader removes
     TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, MzTabFile().load(filename, mz_tab),
-      "Error parsing MzTab metadata key '" + malformed.first + "': " + malformed.second + " in: " + filename)
+      "Error parsing MzTab metadata key '" + StringUtils::trimmed(malformed.first) + "': " + malformed.second + " in: " + filename)
   }
 
   // the unmodified file still loads completely
@@ -353,10 +354,17 @@ START_SECTION(([EXTRA] a metadata key that is not an mzTab 1.0 key is ignored))
 }
 END_SECTION
 
-START_SECTION(([EXTRA] a metadata key with whitespace inside or after an index, or at its end, is read))
+START_SECTION(([EXTRA] a metadata key with whitespace inside or after an index, or around the key, is read))
 {
   const std::map<std::string, std::string> replaced_keys =
   {
+    // whitespace around the key, also for keys whose fields are compared exactly
+    {"title", "title "},
+    {"protein-quantification_unit", " protein-quantification_unit "},
+    {"contact[2]-email", "contact[2]-email  "},
+    {"sample[1]-description", " sample[1]-description"},
+    {"study_variable[2]-assay_refs", "study_variable[2]-assay_refs "},
+    // whitespace inside or after an index
     {"mzTab-ID", "mzTab-ID "},
     {"sample_processing[2]", "sample_processing[2] "},
     {"psm_search_engine_score[1]", "psm_search_engine_score[ 1 ]"},
@@ -385,6 +393,17 @@ START_SECTION(([EXTRA] a metadata key with whitespace inside or after an index, 
   const std::string metadata_unmodified = storedMetaData(loaded_unmodified);
   TEST_NOT_EQUAL(metadata_unmodified, "")
   TEST_EQUAL(storedMetaData(loaded), metadata_unmodified)
+
+  // a column-unit key with whitespace around it is read into its section as well
+  const std::string psm_unit = "retention_time=[UO, UO:0000010, second, ]";
+  std::string colunit_with_whitespace;
+  NEW_TMP_FILE(colunit_with_whitespace)
+  storeSILACWithMetaData(colunit_with_whitespace, {"MTD\t colunit-PSM \t" + psm_unit});
+  MzTab loaded_colunit;
+  MzTabFile().load(colunit_with_whitespace, loaded_colunit);
+  TEST_EQUAL(loaded_colunit.getMetaData().colunit_psm.size(), 1)
+  ABORT_IF(loaded_colunit.getMetaData().colunit_psm.size() != 1)
+  TEST_EQUAL(loaded_colunit.getMetaData().colunit_psm[0], psm_unit)
 }
 END_SECTION
 
