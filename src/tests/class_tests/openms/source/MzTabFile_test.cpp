@@ -15,6 +15,8 @@
 #include <OpenMS/FORMAT/TextFile.h>
 ///////////////////////////
 
+#include <algorithm>
+
 using namespace OpenMS;
 using namespace std;
 
@@ -195,6 +197,101 @@ START_SECTION(([EXTRA] optional PSM columns retain trailing empty cells as null)
     TEST_TRUE(present)
     TEST_TRUE(empty)
   }
+END_SECTION
+
+// writes MzTabFile_SILAC.mzTab to filename, with extra_lines inserted after its first metadata line
+auto storeSILACWithMetaData = [](const std::string& filename, const std::vector<std::string>& extra_lines)
+{
+  TextFile text(OPENMS_GET_TEST_DATA_PATH("MzTabFile_SILAC.mzTab"));
+  TextFile modified;
+  bool inserted = false;
+  for (const auto& line : text)
+  {
+    modified.addLine(line);
+    if (!inserted && StringUtils::hasPrefix(line, "MTD\t"))
+    {
+      for (const auto& extra : extra_lines) modified.addLine(extra);
+      inserted = true;
+    }
+  }
+  modified.store(filename);
+};
+
+START_SECTION(([EXTRA] metadata lines with an empty or incomplete key are rejected))
+{
+  MzTab mz_tab;
+
+  std::string empty_key;
+  NEW_TMP_FILE(empty_key)
+  storeSILACWithMetaData(empty_key, {"MTD\t\tx"});
+  TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, MzTabFile().load(empty_key, mz_tab),
+    "Error parsing MzTab line: MTD\t\tx. The metadata key is empty in: " + empty_key)
+
+  // an indexed key that lacks the "-" separated field its family requires
+  std::string no_field;
+  NEW_TMP_FILE(no_field)
+  storeSILACWithMetaData(no_field, {"MTD\tinstrument[1]\tx"});
+  TEST_EXCEPTION_WITH_MESSAGE(Exception::ParseError, MzTabFile().load(no_field, mz_tab),
+    "Error parsing MzTab metadata key 'instrument[1]': a '-' separated field of the key is missing in: " + no_field)
+
+  // the unmodified file still loads
+  std::string unmodified;
+  NEW_TMP_FILE(unmodified)
+  storeSILACWithMetaData(unmodified, {});
+  MzTabFile().load(unmodified, mz_tab);
+  TEST_NOT_EQUAL(mz_tab.getPSMSectionRows().size(), 0)
+}
+END_SECTION
+
+START_SECTION(([EXTRA] column unit metadata is loaded and stored))
+{
+  const std::string protein_unit = "best_search_engine_score[1]=[UO, UO:0000186, dimensionless unit, ]";
+  const std::string peptide_unit = "retention_time=[UO, UO:0000031, minute, ]";
+  const std::string psm_unit = "retention_time=[UO, UO:0000010, second, ]";
+
+  std::string filename;
+  NEW_TMP_FILE(filename)
+  storeSILACWithMetaData(filename, {"MTD\tcolunit-protein\t" + protein_unit,
+                                    "MTD\tcolunit-peptide\t" + peptide_unit,
+                                    "MTD\tcolunit-psm\t" + psm_unit});
+  MzTab loaded;
+  MzTabFile().load(filename, loaded);
+  {
+    const MzTabMetaData& md = loaded.getMetaData();
+    TEST_EQUAL(md.colunit_protein.size(), 1)
+    TEST_EQUAL(md.colunit_peptide.size(), 1)
+    TEST_EQUAL(md.colunit_psm.size(), 1)
+    TEST_EQUAL(md.colunit_small_molecule.size(), 0)
+    ABORT_IF(md.colunit_protein.size() != 1 || md.colunit_peptide.size() != 1 || md.colunit_psm.size() != 1)
+    TEST_EQUAL(md.colunit_protein[0], protein_unit)
+    TEST_EQUAL(md.colunit_peptide[0], peptide_unit)
+    TEST_EQUAL(md.colunit_psm[0], psm_unit)
+  }
+
+  // store: key and value are separate cells
+  std::string stored;
+  NEW_TMP_FILE(stored)
+  MzTabFile().store(stored, loaded);
+  TextFile stored_text(stored, true);
+  TEST_EQUAL(std::count(stored_text.begin(), stored_text.end(), "MTD\tcolunit-protein\t" + protein_unit), 1)
+  TEST_EQUAL(std::count(stored_text.begin(), stored_text.end(), "MTD\tcolunit-peptide\t" + peptide_unit), 1)
+  TEST_EQUAL(std::count(stored_text.begin(), stored_text.end(), "MTD\tcolunit-PSM\t" + psm_unit), 1)
+
+  // and the stored file loads back to the same units
+  MzTab reloaded;
+  MzTabFile().load(stored, reloaded);
+  {
+    const MzTabMetaData& md = reloaded.getMetaData();
+    TEST_EQUAL(md.colunit_protein.size(), 1)
+    TEST_EQUAL(md.colunit_peptide.size(), 1)
+    TEST_EQUAL(md.colunit_psm.size(), 1)
+    TEST_EQUAL(md.colunit_small_molecule.size(), 0)
+    ABORT_IF(md.colunit_protein.size() != 1 || md.colunit_peptide.size() != 1 || md.colunit_psm.size() != 1)
+    TEST_EQUAL(md.colunit_protein[0], protein_unit)
+    TEST_EQUAL(md.colunit_peptide[0], peptide_unit)
+    TEST_EQUAL(md.colunit_psm[0], psm_unit)
+  }
+}
 END_SECTION
 
 END_TEST

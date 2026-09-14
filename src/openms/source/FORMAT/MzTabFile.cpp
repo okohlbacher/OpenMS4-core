@@ -255,7 +255,23 @@ namespace OpenMS
       sections_present.insert("MTD");
       StringList meta_key_fields; // the "-" separated fields of the metavalue key
       StringUtils::split(cells[1], "-", meta_key_fields);
+      if (meta_key_fields.empty()) // an empty key cell ("MTD<tab><tab>value") splits into no field at all
+      {
+        throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, filename, "Error parsing MzTab line: " + std::string(s) + ". The metadata key is empty");
+      }
       std::string meta_key = meta_key_fields[0];
+
+      // Checked access to the "-" separated fields after the first one. The branches below test
+      // these fields for every key of an indexed family, so a key that lacks the field its family
+      // requires (e.g. "instrument[1]" instead of "instrument[1]-name") is malformed.
+      auto key_field = [&](Size i) -> const std::string&
+      {
+        if (i >= meta_key_fields.size())
+        {
+          throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, filename, "Error parsing MzTab metadata key '" + cells[1] + "': a '-' separated field of the key is missing");
+        }
+        return meta_key_fields[i];
+      };
 
       if (StringUtils::hasPrefix(cells[1], "mzTab-version"))
       {
@@ -292,29 +308,29 @@ namespace OpenMS
         pl.fromCellString(cells[2]);
         mz_tab_metadata.sample_processing[n] = pl;
       }
-      else if (StringUtils::hasPrefix(meta_key, "instrument[") && meta_key_fields[1] == "name")
+      else if (StringUtils::hasPrefix(meta_key, "instrument[") && key_field(1) == "name")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "instrument[");
         MzTabParameter p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.instrument[n].name = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "instrument[") && meta_key_fields[1] == "source")
+      else if (StringUtils::hasPrefix(meta_key, "instrument[") && key_field(1) == "source")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "instrument[");
         MzTabParameter p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.instrument[n].source = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "instrument[") && meta_key_fields.size() == 2 && StringUtils::hasPrefix(meta_key_fields[1], "analyzer["))
+      else if (StringUtils::hasPrefix(meta_key, "instrument[") && meta_key_fields.size() == 2 && StringUtils::hasPrefix(key_field(1), "analyzer["))
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "instrument[");
-        Int m = (Size)extractBracketIndex(meta_key_fields[1], "analyzer[");
+        Int m = (Size)extractBracketIndex(key_field(1), "analyzer[");
         MzTabParameter p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.instrument[n].analyzer[m] = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "instrument[") && meta_key_fields[1] == "detector")
+      else if (StringUtils::hasPrefix(meta_key, "instrument[") && key_field(1) == "detector")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "instrument[");
         MzTabParameter p;
@@ -328,10 +344,10 @@ namespace OpenMS
         p.fromCellString(cells[2]);
         mz_tab_metadata.software[n].software = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "software[") && meta_key_fields.size() == 2 && StringUtils::hasPrefix(meta_key_fields[1], "setting["))
+      else if (StringUtils::hasPrefix(meta_key, "software[") && meta_key_fields.size() == 2 && StringUtils::hasPrefix(key_field(1), "setting["))
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "software[");
-        Int m = (Size)extractBracketIndex(meta_key_fields[1], "setting[");
+        Int m = (Size)extractBracketIndex(key_field(1), "setting[");
         MzTabString p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.software[n].setting[m] = p;
@@ -381,21 +397,21 @@ namespace OpenMS
         sl.fromCellString(cells[2]);
         mz_tab_metadata.publication[n] = sl;
       }
-      else if (StringUtils::hasPrefix(meta_key, "contact") && meta_key_fields[1] == "name")
+      else if (StringUtils::hasPrefix(meta_key, "contact") && key_field(1) == "name")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "contact[");
         MzTabString s;
         s.fromCellString(cells[2]);
         mz_tab_metadata.contact[n].name = s;
       }
-      else if (StringUtils::hasPrefix(meta_key, "contact") && meta_key_fields[1] == "affiliation")
+      else if (StringUtils::hasPrefix(meta_key, "contact") && key_field(1) == "affiliation")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "contact[");
         MzTabString s;
         s.fromCellString(cells[2]);
         mz_tab_metadata.contact[n].affiliation = s;
       }
-      else if (StringUtils::hasPrefix(meta_key, "contact") && meta_key_fields[1] == "email")
+      else if (StringUtils::hasPrefix(meta_key, "contact") && key_field(1) == "email")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "contact[");
         MzTabString s;
@@ -417,14 +433,14 @@ namespace OpenMS
         pl.fromCellString(cells[2]);
         mz_tab_metadata.variable_mod[n].modification = pl;
       }
-      else if (StringUtils::hasPrefix(meta_key, "variable_mod[") &&  meta_key_fields[1] == "site") // variable_mod[1-n]-site
+      else if (StringUtils::hasPrefix(meta_key, "variable_mod[") &&  key_field(1) == "site") // variable_mod[1-n]-site
       {
         Int n = extractBracketIndex(meta_key, "variable_mod[");
         MzTabString pl;
         pl.fromCellString(cells[2]);
         mz_tab_metadata.variable_mod[n].site = pl;
       }
-      else if (StringUtils::hasPrefix(meta_key, "variable_mod[") &&  meta_key_fields[1] == "position") // variable_mod[1-n]-position
+      else if (StringUtils::hasPrefix(meta_key, "variable_mod[") &&  key_field(1) == "position") // variable_mod[1-n]-position
       {
         Int n = extractBracketIndex(meta_key, "variable_mod[");
         MzTabString pl;
@@ -439,14 +455,14 @@ namespace OpenMS
         pl.fromCellString(cells[2]);
         mz_tab_metadata.fixed_mod[n].modification = pl;
       }
-      else if (StringUtils::hasPrefix(meta_key, "fixed_mod[") &&  meta_key_fields[1] == "site") // fixed_mod[1-n]-site
+      else if (StringUtils::hasPrefix(meta_key, "fixed_mod[") &&  key_field(1) == "site") // fixed_mod[1-n]-site
       {
         Int n = extractBracketIndex(meta_key, "fixed_mod[");
         MzTabString pl;
         pl.fromCellString(cells[2]);
         mz_tab_metadata.fixed_mod[n].site = pl;
       }
-      else if (StringUtils::hasPrefix(meta_key, "fixed_mod[") &&  meta_key_fields[1] == "position") // fixed_mod[1-n]-position
+      else if (StringUtils::hasPrefix(meta_key, "fixed_mod[") &&  key_field(1) == "position") // fixed_mod[1-n]-position
       {
         Int n = extractBracketIndex(meta_key, "fixed_mod[");
         MzTabString pl;
@@ -459,35 +475,35 @@ namespace OpenMS
         p.fromCellString(cells[2]);
         mz_tab_metadata.quantification_method = p;
       }
-      else if (meta_key == "protein" && meta_key_fields[1] == "quantification_unit")
+      else if (meta_key == "protein" && key_field(1) == "quantification_unit")
       {
         MzTabParameter p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.protein_quantification_unit = p;
         mandatory_meta_values.insert("protein-quantification_unit");
       }
-      else if (meta_key == "peptide" && meta_key_fields[1] == "quantification_unit")
+      else if (meta_key == "peptide" && key_field(1) == "quantification_unit")
       {
         MzTabParameter p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.peptide_quantification_unit = p;
         mandatory_meta_values.insert("peptide-quantification_unit");
       }
-      else if (meta_key == "small_molecule" && meta_key_fields[1] == "quantification_unit")
+      else if (meta_key == "small_molecule" && key_field(1) == "quantification_unit")
       {
         MzTabParameter p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.small_molecule_quantification_unit = p;
         mandatory_meta_values.insert("small_molecule-quantification_unit");
       }
-      else if (StringUtils::hasPrefix(meta_key, "ms_run[") && meta_key_fields[1] == "format")
+      else if (StringUtils::hasPrefix(meta_key, "ms_run[") && key_field(1) == "format")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "ms_run[");
         MzTabParameter p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.ms_run[n].format = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "ms_run[") && meta_key_fields[1] == "location")
+      else if (StringUtils::hasPrefix(meta_key, "ms_run[") && key_field(1) == "location")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "ms_run[");
         MzTabString p;
@@ -495,14 +511,14 @@ namespace OpenMS
         mz_tab_metadata.ms_run[n].location = p;
         count_ms_run_location = std::max((Size)n, (Size)count_ms_run_location); // will be checked to match number of entries in map to detect skipped entries or wrong numbering
       }
-      else if (StringUtils::hasPrefix(meta_key, "ms_run[") && meta_key_fields[1] == "id_format")
+      else if (StringUtils::hasPrefix(meta_key, "ms_run[") && key_field(1) == "id_format")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "ms_run[");
         MzTabParameter p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.ms_run[n].id_format = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "ms_run[") && meta_key_fields[1] == "fragmentation_method")
+      else if (StringUtils::hasPrefix(meta_key, "ms_run[") && key_field(1) == "fragmentation_method")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "ms_run[");
         MzTabParameterList p;
@@ -516,120 +532,120 @@ namespace OpenMS
         p.fromCellString(cells[2]);
         mz_tab_metadata.custom[n] = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "sample[") && StringUtils::hasPrefix(meta_key_fields[1], "species["))
+      else if (StringUtils::hasPrefix(meta_key, "sample[") && StringUtils::hasPrefix(key_field(1), "species["))
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "sample[");
-        Int m = (Size)extractBracketIndex(meta_key_fields[1], "species[");
+        Int m = (Size)extractBracketIndex(key_field(1), "species[");
         MzTabParameter p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.sample[n].species[m] = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "sample[") && StringUtils::hasPrefix(meta_key_fields[1], "tissue["))
+      else if (StringUtils::hasPrefix(meta_key, "sample[") && StringUtils::hasPrefix(key_field(1), "tissue["))
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "sample[");
-        Int m = (Size)extractBracketIndex(meta_key_fields[1], "tissue[");
+        Int m = (Size)extractBracketIndex(key_field(1), "tissue[");
         MzTabParameter p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.sample[n].tissue[m] = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "sample[") && StringUtils::hasPrefix(meta_key_fields[1], "cell_type["))
+      else if (StringUtils::hasPrefix(meta_key, "sample[") && StringUtils::hasPrefix(key_field(1), "cell_type["))
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "sample[");
-        Int m = (Size)extractBracketIndex(meta_key_fields[1], "cell_type[");
+        Int m = (Size)extractBracketIndex(key_field(1), "cell_type[");
         MzTabParameter p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.sample[n].cell_type[m] = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "sample[") && StringUtils::hasPrefix(meta_key_fields[1], "disease["))
+      else if (StringUtils::hasPrefix(meta_key, "sample[") && StringUtils::hasPrefix(key_field(1), "disease["))
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "sample[");
-        Int m = (Size)extractBracketIndex(meta_key_fields[1], "disease[");
+        Int m = (Size)extractBracketIndex(key_field(1), "disease[");
         MzTabParameter p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.sample[n].disease[m] = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "sample[") && meta_key_fields[1] == "description")
+      else if (StringUtils::hasPrefix(meta_key, "sample[") && key_field(1) == "description")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "sample[");
         MzTabString p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.sample[n].description = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "sample[") && StringUtils::hasPrefix(meta_key_fields[1], "custom["))
+      else if (StringUtils::hasPrefix(meta_key, "sample[") && StringUtils::hasPrefix(key_field(1), "custom["))
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "sample[");
-        Int m = (Size)extractBracketIndex(meta_key_fields[1], "custom[");
+        Int m = (Size)extractBracketIndex(key_field(1), "custom[");
         MzTabParameter p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.sample[n].custom[m] = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "assay[") && meta_key_fields[1] == "quantification_reagent")
+      else if (StringUtils::hasPrefix(meta_key, "assay[") && key_field(1) == "quantification_reagent")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "assay[");
         MzTabParameter p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.assay[n].quantification_reagent = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "assay[") && StringUtils::hasPrefix(meta_key_fields[1], "quantification_mod[") && meta_key_fields.size() == 2) // assay[]-quantification_mod[]
+      else if (StringUtils::hasPrefix(meta_key, "assay[") && StringUtils::hasPrefix(key_field(1), "quantification_mod[") && meta_key_fields.size() == 2) // assay[]-quantification_mod[]
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "assay[");
-        Int m = (Size)extractBracketIndex(meta_key_fields[1], "quantification_mod[");
+        Int m = (Size)extractBracketIndex(key_field(1), "quantification_mod[");
         MzTabParameter p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.assay[n].quantification_mod[m].modification = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "assay[") && StringUtils::hasPrefix(meta_key_fields[1], "quantification_mod[") && meta_key_fields[2] == "site")
+      else if (StringUtils::hasPrefix(meta_key, "assay[") && StringUtils::hasPrefix(key_field(1), "quantification_mod[") && key_field(2) == "site")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "assay[");
-        Int m = (Size)extractBracketIndex(meta_key_fields[1], "quantification_mod[");
+        Int m = (Size)extractBracketIndex(key_field(1), "quantification_mod[");
         MzTabString s;
         s.fromCellString(cells[2]);
         mz_tab_metadata.assay[n].quantification_mod[m].site = s;
       }
-      else if (StringUtils::hasPrefix(meta_key, "assay[") && StringUtils::hasPrefix(meta_key_fields[1], "quantification_mod[") && meta_key_fields[2] == "position")
+      else if (StringUtils::hasPrefix(meta_key, "assay[") && StringUtils::hasPrefix(key_field(1), "quantification_mod[") && key_field(2) == "position")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "assay[");
-        Int m = (Size)extractBracketIndex(meta_key_fields[1], "quantification_mod[");
+        Int m = (Size)extractBracketIndex(key_field(1), "quantification_mod[");
         MzTabString s;
         s.fromCellString(cells[2]);
         mz_tab_metadata.assay[n].quantification_mod[m].position = s;
       }
-      else if (StringUtils::hasPrefix(meta_key, "assay[") && meta_key_fields[1] == "sample_ref")
+      else if (StringUtils::hasPrefix(meta_key, "assay[") && key_field(1) == "sample_ref")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "assay[");
         MzTabString p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.assay[n].sample_ref = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "cv[") && meta_key_fields[1] == "label")
+      else if (StringUtils::hasPrefix(meta_key, "cv[") && key_field(1) == "label")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "cv[");
         MzTabString p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.cv[n].label = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "cv[") && meta_key_fields[1] == "full_name")
+      else if (StringUtils::hasPrefix(meta_key, "cv[") && key_field(1) == "full_name")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "cv[");
         MzTabString p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.cv[n].full_name = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "cv[") && meta_key_fields[1] == "version")
+      else if (StringUtils::hasPrefix(meta_key, "cv[") && key_field(1) == "version")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "cv[");
         MzTabString p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.cv[n].version = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "cv[") && meta_key_fields[1] == "url")
+      else if (StringUtils::hasPrefix(meta_key, "cv[") && key_field(1) == "url")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "cv[");
         MzTabString p;
         p.fromCellString(cells[2]);
         mz_tab_metadata.cv[n].url = p;
       }
-      else if (StringUtils::hasPrefix(meta_key, "assay[") && meta_key_fields[1] == "ms_run_ref")
+      else if (StringUtils::hasPrefix(meta_key, "assay[") && key_field(1) == "ms_run_ref")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "assay[");
         std::string s = cells[2];
@@ -643,7 +659,7 @@ namespace OpenMS
           mz_tab_metadata.assay[n].ms_run_ref.push_back(StringUtils::toInt32(a));
         }
       }
-      else if (StringUtils::hasPrefix(meta_key, "study_variable[") && meta_key_fields[1] == "assay_refs")
+      else if (StringUtils::hasPrefix(meta_key, "study_variable[") && key_field(1) == "assay_refs")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "study_variable[");
         std::string s = cells[2];
@@ -657,7 +673,7 @@ namespace OpenMS
           mz_tab_metadata.study_variable[n].assay_refs.push_back(StringUtils::toInt32(a));
         }
       }
-      else if (StringUtils::hasPrefix(meta_key, "study_variable[") && meta_key_fields[1] == "sample_refs")
+      else if (StringUtils::hasPrefix(meta_key, "study_variable[") && key_field(1) == "sample_refs")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "study_variable[");
         std::string s = cells[2];
@@ -672,7 +688,7 @@ namespace OpenMS
           mz_tab_metadata.study_variable[n].sample_refs.push_back(StringUtils::toInt32(a));
       }
       }
-      else if (StringUtils::hasPrefix(meta_key, "study_variable[") && meta_key_fields[1] == "description")
+      else if (StringUtils::hasPrefix(meta_key, "study_variable[") && key_field(1) == "description")
       {
         Int n = (Size)extractBracketIndex(meta_key_fields[0], "study_variable[");
         MzTabString p;
@@ -686,7 +702,7 @@ namespace OpenMS
         // colunit-PSM, colunit-small_molecule), so there is nothing to extract from the key
         // and the definition is appended - reading an index out of the key threw on every
         // such line, and the section vectors are never resized to hold one
-        std::string section_key = meta_key_fields[1];
+        std::string section_key = key_field(1);
         StringUtils::toLower(section_key); // the PSM key is written in upper case
         const std::string& s = cells[2];
 
