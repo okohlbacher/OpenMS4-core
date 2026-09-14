@@ -17,6 +17,7 @@
 #include <OpenMS/CHEMISTRY/CrossLinksDB.h>
 #include <OpenMS/CONCEPT/Constants.h>
 
+#include <algorithm>
 
 using namespace OpenMS;
 using namespace std;
@@ -122,10 +123,10 @@ START_SECTION(([EXTRA] read mzIdentML Modification without the optional location
   MzIdentMLFile().load(OPENMS_GET_TEST_DATA_PATH("MzIdentMLFile_missing_mod_location.mzid"), protein_ids, peptide_ids);
 
   ABORT_IF(peptide_ids.size() != 5)
-  for (Size i = 0; i < peptide_ids.size(); ++i)
-  {
-    ABORT_IF(peptide_ids[i].getHits().empty())
-  }
+  // ABORT_IF leaves only the innermost loop, so test all identifications first and abort outside of any loop
+  const bool all_have_hits = std::none_of(peptide_ids.begin(), peptide_ids.end(),
+    [](const PeptideIdentification& id) { return id.getHits().empty(); });
+  ABORT_IF(!all_have_hits)
 
   // 1) N-terminal Acetyl without 'location' -> inferred as N-terminal
   const AASequence& acetyl_seq = peptide_ids[0].getHits()[0].getSequence();
@@ -156,6 +157,55 @@ START_SECTION(([EXTRA] read mzIdentML Modification without the optional location
   const AASequence& acetyl_on_k_seq = peptide_ids[4].getHits()[0].getSequence();
   TEST_EQUAL(acetyl_on_k_seq.toUnmodifiedString(), "PEPTIKDE")
   TEST_FALSE(acetyl_on_k_seq.isModified())
+}
+END_SECTION
+
+START_SECTION(([EXTRA] read a Peptide with an empty PeptideSequence element))
+{
+  // An empty <PeptideSequence/> has no text child node. The reader used to dereference that missing node and crash.
+  // The Peptide must now be reported as unreadable, so its identification gets an empty sequence.
+  std::vector<ProteinIdentification> protein_ids;
+  PeptideIdentificationList peptide_ids;
+  MzIdentMLFile().load(OPENMS_GET_TEST_DATA_PATH("MzIdentMLFile_empty_peptide_sequence.mzid"), protein_ids, peptide_ids);
+
+  ABORT_IF(peptide_ids.size() != 2)
+  // ABORT_IF leaves only the innermost loop, so test all identifications first and abort outside of any loop
+  const bool one_hit_each = std::all_of(peptide_ids.begin(), peptide_ids.end(),
+    [](const PeptideIdentification& id) { return id.getHits().size() == 1; });
+  ABORT_IF(!one_hit_each)
+  TEST_TRUE(peptide_ids[0].getHits()[0].getSequence().empty())
+  // control: a regular PeptideSequence in the same file is still read
+  TEST_EQUAL(peptide_ids[1].getHits()[0].getSequence().toString(), "PEPTIDEK")
+}
+END_SECTION
+
+START_SECTION(([EXTRA] read SubstitutionModification locations))
+{
+  // 'location' is the 1-based position of the substituted residue. A location of 0, a negative location or one past
+  // the end of the sequence used to be written outside of the sequence string. Such a Peptide must now be reported
+  // as unreadable (empty sequence), while a valid substitution is applied at its location, including the first and
+  // the last residue.
+  std::vector<ProteinIdentification> protein_ids;
+  PeptideIdentificationList peptide_ids;
+  MzIdentMLFile().load(OPENMS_GET_TEST_DATA_PATH("MzIdentMLFile_substitution_location.mzid"), protein_ids, peptide_ids);
+
+  ABORT_IF(peptide_ids.size() != 6)
+  // ABORT_IF leaves only the innermost loop, so test all identifications first and abort outside of any loop
+  const bool one_hit_each = std::all_of(peptide_ids.begin(), peptide_ids.end(),
+    [](const PeptideIdentification& id) { return id.getHits().size() == 1; });
+  ABORT_IF(!one_hit_each)
+  // location 3 of PEPTIDEK: the second P becomes A, not the first one
+  TEST_EQUAL(peptide_ids[0].getHits()[0].getSequence().toString(), "PEATIDEK")
+  // location 0
+  TEST_TRUE(peptide_ids[1].getHits()[0].getSequence().empty())
+  // location -5
+  TEST_TRUE(peptide_ids[2].getHits()[0].getSequence().empty())
+  // location 9 on the 8 residues of PEPTIDEK
+  TEST_TRUE(peptide_ids[3].getHits()[0].getSequence().empty())
+  // location 1, the first residue
+  TEST_EQUAL(peptide_ids[4].getHits()[0].getSequence().toString(), "AEPTIDEK")
+  // location 8, the last residue of PEPTIDEK
+  TEST_EQUAL(peptide_ids[5].getHits()[0].getSequence().toString(), "PEPTIDER")
 }
 END_SECTION
 
