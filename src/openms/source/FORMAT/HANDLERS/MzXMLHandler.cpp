@@ -1252,12 +1252,13 @@ namespace OpenMS::Internal
           return decoded_pairs;
         }
         const Size loaded_pairs = declared_pairs < 0 ? decoded_pairs : std::min(decoded_pairs, static_cast<Size>(declared_pairs));
+        auto counted = [](const Size n, const std::string& noun) { return std::to_string(n) + " " + noun + (n == 1 ? "" : "s"); };
         // warning() only logs at debug level in release builds, but a truncated or inconsistent scan must be visible
         OPENMS_LOG_WARN << "While loading '" << file_ << "': Scan '" << spectrum_data.spectrum.getNativeID()
                         << "' declares peaksCount=\"" << spectrum_data.peak_count_text_ << "\""
                         << (declared_pairs < 0 ? " (not a valid count)" : "") << ", but its peaks decode to "
-                        << decoded_values << " values (" << decoded_pairs << " m/z-intensity pairs). Reading "
-                        << loaded_pairs << " pairs." << std::endl;
+                        << counted(decoded_values, "value") << " (" << counted(decoded_pairs, "m/z-intensity pair")
+                        << "). Reading " << counted(loaded_pairs, "pair") << "." << std::endl;
         return loaded_pairs;
       };
 

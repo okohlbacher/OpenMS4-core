@@ -706,7 +706,7 @@ private:
 
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
-START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
+START_SECTION((regression: SAX chunk boundaries and mismatched peak counts))
 {
   MzXMLFile file;
   std::string input;
@@ -760,7 +760,7 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
 
   // declared larger than decoded: only the decoded pair is read, nothing past the payload
   PeakMap larger = loadScans(scan("11", "2", "32", one_pair));
-  TEST_STRING_EQUAL(warned, "Scan 'scan=11' declares peaksCount=\"2\", but its peaks decode to 2 values (1 m/z-intensity pairs). Reading 1 pairs.\n")
+  TEST_STRING_EQUAL(warned, "Scan 'scan=11' declares peaksCount=\"2\", but its peaks decode to 2 values (1 m/z-intensity pair). Reading 1 pair.\n")
   TEST_EQUAL(larger.size(), 1)
   ABORT_IF(larger.size() != 1)
   TEST_EQUAL(larger[0].size(), 1)
@@ -780,7 +780,7 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
 
   // an odd number of decoded values: the unpaired trailing m/z is not read together with an intensity past the end
   PeakMap odd = loadScans(scan("13", "2", "32", three_values));
-  TEST_STRING_EQUAL(warned, "Scan 'scan=13' declares peaksCount=\"2\", but its peaks decode to 3 values (1 m/z-intensity pairs). Reading 1 pairs.\n")
+  TEST_STRING_EQUAL(warned, "Scan 'scan=13' declares peaksCount=\"2\", but its peaks decode to 3 values (1 m/z-intensity pair). Reading 1 pair.\n")
   TEST_EQUAL(odd.size(), 1)
   ABORT_IF(odd.size() != 1)
   TEST_EQUAL(odd[0].size(), 1)
@@ -789,8 +789,8 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
 
   // declared smaller than decoded: only the declared pairs are read
   PeakMap smaller = loadScans(scan("14", "1", "32", two_pairs) + scan("15", "0", "32", one_pair));
-  TEST_STRING_EQUAL(warned, "Scan 'scan=14' declares peaksCount=\"1\", but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 1 pairs.\n"
-                            "Scan 'scan=15' declares peaksCount=\"0\", but its peaks decode to 2 values (1 m/z-intensity pairs). Reading 0 pairs.\n")
+  TEST_STRING_EQUAL(warned, "Scan 'scan=14' declares peaksCount=\"1\", but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 1 pair.\n"
+                            "Scan 'scan=15' declares peaksCount=\"0\", but its peaks decode to 2 values (1 m/z-intensity pair). Reading 0 pairs.\n")
   TEST_EQUAL(smaller.size(), 2)
   ABORT_IF(smaller.size() != 2)
   TEST_EQUAL(smaller[0].size(), 1)
@@ -812,7 +812,7 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
 
   // a bad scan does not affect a consistent scan next to it in the same file, and only the bad scan is reported
   PeakMap mixed = loadScans(scan("17", "2", "32", two_pairs) + scan("18", "5", "32", one_pair) + scan("19", "2", "32", two_pairs));
-  TEST_STRING_EQUAL(warned, "Scan 'scan=18' declares peaksCount=\"5\", but its peaks decode to 2 values (1 m/z-intensity pairs). Reading 1 pairs.\n")
+  TEST_STRING_EQUAL(warned, "Scan 'scan=18' declares peaksCount=\"5\", but its peaks decode to 2 values (1 m/z-intensity pair). Reading 1 pair.\n")
   TEST_EQUAL(mixed.size(), 3)
   ABORT_IF(mixed.size() != 3)
   TEST_EQUAL(mixed[0].size(), 2)
@@ -855,7 +855,7 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
            + "</peaks><precursorMz precursorIntensity=\"5\">500.5</precursorMz></scan>";
   };
   PeakMap peaks_first = loadScans(peaksFirst("28", "1", one_pair) + peaksFirst("29", "3", one_pair));
-  TEST_STRING_EQUAL(warned, "Scan 'scan=29' declares peaksCount=\"3\", but its peaks decode to 2 values (1 m/z-intensity pairs). Reading 1 pairs.\n")
+  TEST_STRING_EQUAL(warned, "Scan 'scan=29' declares peaksCount=\"3\", but its peaks decode to 2 values (1 m/z-intensity pair). Reading 1 pair.\n")
   TEST_EQUAL(peaks_first.size(), 2)
   ABORT_IF(peaks_first.size() != 2)
   TEST_EQUAL(peaks_first[0].size(), 1)
@@ -880,9 +880,9 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
   PeakMap peaks_twice = loadScans(ms2Scan("39", "3", peaks(one_pair) + precursor("500.5") + peaks(two_pairs))
                                   + ms2Scan("40", "3", peaks(one_pair) + precursor("500.5") + peaks(two_pairs) + precursor("600.5"))
                                   + ms2Scan("41", "1", peaks(one_pair) + precursor("500.5") + peaks("")));
-  TEST_STRING_EQUAL(warned, "Scan 'scan=39' declares peaksCount=\"3\", but its peaks decode to 2 values (1 m/z-intensity pairs). Reading 1 pairs.\n"
+  TEST_STRING_EQUAL(warned, "Scan 'scan=39' declares peaksCount=\"3\", but its peaks decode to 2 values (1 m/z-intensity pair). Reading 1 pair.\n"
                             "Scan 'scan=39' declares peaksCount=\"3\", but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 2 pairs.\n"
-                            "Scan 'scan=40' declares peaksCount=\"3\", but its peaks decode to 2 values (1 m/z-intensity pairs). Reading 1 pairs.\n"
+                            "Scan 'scan=40' declares peaksCount=\"3\", but its peaks decode to 2 values (1 m/z-intensity pair). Reading 1 pair.\n"
                             "Scan 'scan=40' declares peaksCount=\"3\", but its peaks decode to 4 values (2 m/z-intensity pairs). Reading 2 pairs.\n")
   TEST_EQUAL(peaks_twice.size(), 3)
   ABORT_IF(peaks_twice.size() != 3)
@@ -912,7 +912,8 @@ START_SECTION((regression : SAX chunk boundaries and mismatched peak counts))
   TEST_REAL_SIMILAR(precursor_first[1].getPrecursors()[0].getMZ(), 500.5)
 
   // a count outside the Int range is not wrapped into a different count: like a negative count, it reads
-  // the decoded pairs, and the warning shows the text of the file. INT_MAX and INT_MIN are still counts.
+  // the decoded pairs, and the warning shows the text of the file. INT_MAX and INT_MIN are inside the Int
+  // range: INT_MAX is read as a count, and INT_MIN is reported like any other negative count.
   PeakMap out_of_range = loadScans(scan("30", "4294967296", "32", two_pairs) + scan("31", "4294967295", "32", two_pairs)
                                    + scan("32", "99999999999", "32", two_pairs) + scan("33", "2147483648", "32", two_pairs)
                                    + scan("34", "-2147483649", "32", two_pairs) + scan("35", "2147483647", "32", two_pairs)
