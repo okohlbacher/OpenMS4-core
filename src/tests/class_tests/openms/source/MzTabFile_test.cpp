@@ -12,11 +12,16 @@
 ///////////////////////////
 #include <OpenMS/FORMAT/MzTabFile.h>
 #include <OpenMS/FORMAT/MzTab.h>
+#include <OpenMS/FORMAT/MzTabM.h>
+#include <OpenMS/FORMAT/MzTabMFile.h>
+#include <OpenMS/FORMAT/OMSFile.h>
 #include <OpenMS/FORMAT/TextFile.h>
 #include <OpenMS/DATASTRUCTURES/ListUtils.h>
+#include <OpenMS/KERNEL/FeatureMap.h>
 ///////////////////////////
 
 #include <algorithm>
+#include <map>
 
 using namespace OpenMS;
 using namespace std;
@@ -218,7 +223,46 @@ auto storeSILACWithMetaData = [](const std::string& filename, const std::vector<
   modified.store(filename);
 };
 
-START_SECTION(([EXTRA] a metadata key that is empty or has the field names but not the indices of an mzTab 1.0 key is rejected))
+// writes MzTabFile_SILAC.mzTab to filename, with the metadata keys given in replaced_keys (key -> replacement) replaced
+auto storeSILACWithReplacedKeys = [](const std::string& filename, const std::map<std::string, std::string>& replaced_keys)
+{
+  TextFile text(OPENMS_GET_TEST_DATA_PATH("MzTabFile_SILAC.mzTab"));
+  TextFile modified;
+  Size replaced = 0;
+  for (const auto& line : text)
+  {
+    std::vector<std::string> cells;
+    StringUtils::split(line, '\t', cells);
+    const auto replacement = cells.size() > 2 && cells[0] == "MTD" ? replaced_keys.find(cells[1]) : replaced_keys.end();
+    if (replacement == replaced_keys.end())
+    {
+      modified.addLine(line);
+      continue;
+    }
+    cells[1] = replacement->second;
+    modified.addLine(ListUtils::concatenate(cells, "\t"));
+    ++replaced;
+  }
+  modified.store(filename);
+  return replaced;
+};
+
+// the metadata lines of mz_tab as stored (only the metadata lines are compared, since empty and comment
+// lines are stored at their original line numbers)
+auto storedMetaData = [](const MzTab& mz_tab)
+{
+  std::string stored;
+  NEW_TMP_FILE(stored)
+  MzTabFile().store(stored, mz_tab);
+  std::vector<std::string> metadata;
+  for (const auto& line : TextFile(stored, true))
+  {
+    if (StringUtils::hasPrefix(line, "MTD\t")) metadata.push_back(line);
+  }
+  return ListUtils::concatenate(metadata, "\n");
+};
+
+START_SECTION(([EXTRA] a metadata key that is empty, or that belongs to an mzTab 1.0 key but has an empty field or lacks its indices, is rejected))
 {
   for (const std::string& key : {std::string(), std::string(" ")})
   {
@@ -233,17 +277,17 @@ START_SECTION(([EXTRA] a metadata key that is empty or has the field names but n
   const std::string empty_field = "a '-' separated field of the key is empty";
   const std::vector<std::pair<std::string, std::string>> malformed_keys =
   {
-    {"-", empty_field},
     {"instrument[1]-", empty_field},
+    {"mzTab-", empty_field},
+    {"assay[1]-quantification_mod[1]- ", empty_field},
     {"instrument-name", "the mzTab 1.0 key with these field names has the form 'instrument[1-n]-name'"},
     {"instrument[x]-name", "the mzTab 1.0 key with these field names has the form 'instrument[1-n]-name'"},
     {"instrument[1-name", "the mzTab 1.0 key with these field names has the form 'instrument[1-n]-name'"},
+    {"instrument[ ]-name", "the mzTab 1.0 key with these field names has the form 'instrument[1-n]-name'"},
+    {"ms_run[1 2]-location", "the mzTab 1.0 key with these field names has the form 'ms_run[1-n]-location'"},
     {"sample[1]-species", "the mzTab 1.0 key with these field names has the form 'sample[1-n]-species[1-n]'"},
     {"sample_processing[x]", "the mzTab 1.0 key with these field names has the form 'sample_processing[1-n]'"},
-    {"ms_run[99999999999]-location", "the mzTab 1.0 key with these field names has the form 'ms_run[1-n]-location'"},
-    {"colunit[3]-protein", "the mzTab 1.0 key with these field names has the form 'colunit-protein'"},
-    {"protein[1]-quantification_unit", "the mzTab 1.0 key with these field names has the form 'protein-quantification_unit'"},
-    {"title[1]", "the mzTab 1.0 key with these field names has the form 'title'"}
+    {"ms_run[99999999999]-location", "the mzTab 1.0 key with these field names has the form 'ms_run[1-n]-location'"}
   };
   for (const auto& malformed : malformed_keys)
   {
@@ -271,12 +315,22 @@ END_SECTION
 
 START_SECTION(([EXTRA] a metadata key that is not an mzTab 1.0 key is ignored))
 {
-  // keys of mzTab-M, and keys that lack a field of the mzTab 1.0 key they resemble
-  const std::vector<std::string> keys = {"assay[1]", "study_variable[1]", "sample[1]", "database[1]-prefix", "cv[1]-uri",
-                                         "ms_run[1]-scan_polarity[1]", "colunit-small_molecule_feature",
-                                         "instrument[1]", "contact[1]", "ms_run[1]", "protein", "colunit"};
+  const std::vector<std::string> keys =
+  {
+    // keys of mzTab-M ("ms_run[1-n]-fragmentation_method[1-n]" is written by MzTabMFile)
+    "assay[1]", "study_variable[1]", "sample[1]", "database[1]-prefix", "cv[1]-uri",
+    "ms_run[1]-scan_polarity[1]", "ms_run[1]-fragmentation_method[1]", "colunit-small_molecule_feature",
+    // keys with an index where the mzTab 1.0 key they resemble has none
+    "title[1]", "colunit[3]-protein", "protein[1]-quantification_unit",
+    // keys that lack a field of the mzTab 1.0 key they resemble
+    "instrument[1]", "contact[1]", "ms_run[1]", "protein", "colunit",
+    // keys with an empty field that belong to no mzTab 1.0 key
+    "-", "my_tool--setting", "database[1]-",
+    // whitespace before an index is not trimmed by the reader
+    "instrument [1]-name"
+  };
   std::vector<std::string> lines;
-  for (const std::string& key : keys) lines.push_back("MTD\t" + key + "\tx");
+  for (const std::string& key : keys) lines.push_back("MTD\t" + key + "\t[MS, MS:1000133, CID, ]");
 
   std::string with_keys;
   NEW_TMP_FILE(with_keys)
@@ -287,28 +341,50 @@ START_SECTION(([EXTRA] a metadata key that is not an mzTab 1.0 key is ignored))
   TEST_EQUAL(loaded.getPeptideSectionRows().size(), 80)
   TEST_EQUAL(loaded.getPSMSectionRows().size(), 946)
 
-  // nothing of these lines is kept: the metadata stores to the same lines as without them (only the
-  // metadata lines are compared, since empty and comment lines are stored at their original line numbers)
+  // nothing of these lines is kept: the metadata stores to the same lines as without them
   std::string without_keys;
   NEW_TMP_FILE(without_keys)
   storeSILACWithMetaData(without_keys, {});
   MzTab loaded_without_keys;
   MzTabFile().load(without_keys, loaded_without_keys);
-  auto storedMetaData = [](const MzTab& mz_tab)
+  const std::string metadata_without_keys = storedMetaData(loaded_without_keys);
+  TEST_NOT_EQUAL(metadata_without_keys, "")
+  TEST_EQUAL(storedMetaData(loaded), metadata_without_keys)
+}
+END_SECTION
+
+START_SECTION(([EXTRA] a metadata key with whitespace inside or after an index, or at its end, is read))
+{
+  const std::map<std::string, std::string> replaced_keys =
   {
-    std::string stored;
-    NEW_TMP_FILE(stored)
-    MzTabFile().store(stored, mz_tab);
-    std::vector<std::string> metadata;
-    for (const auto& line : TextFile(stored, true))
-    {
-      if (StringUtils::hasPrefix(line, "MTD\t")) metadata.push_back(line);
-    }
-    return metadata;
+    {"mzTab-ID", "mzTab-ID "},
+    {"sample_processing[2]", "sample_processing[2] "},
+    {"psm_search_engine_score[1]", "psm_search_engine_score[ 1 ]"},
+    {"instrument[1]-name", "instrument[ 1]-name"},
+    {"instrument[1]-analyzer[1]", "instrument[1] -analyzer[1 ] "},
+    {"software[2]-setting[3]", "software[2 ]-setting[3]  "},
+    {"ms_run[1]-location", "ms_run[1 ]-location"},
+    {"sample[2]-species[1]", "sample[2]-species[ 1 ] "},
+    {"assay[7]-quantification_mod[2]-site", "assay[7]-quantification_mod[ 2 ] -site"}
   };
-  const std::vector<std::string> metadata_without_keys = storedMetaData(loaded_without_keys);
-  TEST_NOT_EQUAL(metadata_without_keys.size(), 0)
-  TEST_EQUAL(ListUtils::concatenate(storedMetaData(loaded), "\n"), ListUtils::concatenate(metadata_without_keys, "\n"))
+  std::string with_whitespace;
+  NEW_TMP_FILE(with_whitespace)
+  TEST_EQUAL(storeSILACWithReplacedKeys(with_whitespace, replaced_keys), replaced_keys.size())
+  MzTab loaded;
+  MzTabFile().load(with_whitespace, loaded);
+  TEST_EQUAL(loaded.getProteinSectionRows().size(), 57)
+  TEST_EQUAL(loaded.getPeptideSectionRows().size(), 80)
+  TEST_EQUAL(loaded.getPSMSectionRows().size(), 946)
+
+  // the keys are read as without the whitespace: the metadata stores to the same lines
+  std::string unmodified;
+  NEW_TMP_FILE(unmodified)
+  TEST_EQUAL(storeSILACWithReplacedKeys(unmodified, {}), 0)
+  MzTab loaded_unmodified;
+  MzTabFile().load(unmodified, loaded_unmodified);
+  const std::string metadata_unmodified = storedMetaData(loaded_unmodified);
+  TEST_NOT_EQUAL(metadata_unmodified, "")
+  TEST_EQUAL(storedMetaData(loaded), metadata_unmodified)
 }
 END_SECTION
 
@@ -354,6 +430,43 @@ START_SECTION(([EXTRA] the metadata of mzTab-M files is not rejected))
     }
     TEST_FALSE(parse_error)
   }
+}
+END_SECTION
+
+START_SECTION(([EXTRA] the metadata written by MzTabMFile, including an ms_run fragmentation method, is not rejected))
+{
+  FeatureMap feature_map;
+  OMSFile().load(OPENMS_GET_TEST_DATA_PATH("MzTabMFile_input_1.oms"), feature_map);
+  MzTabM mz_tab_m = MzTabM::exportFeatureMapToMzTabM(feature_map);
+  MzTabMMetaData md_m = mz_tab_m.getMetaData();
+  ABORT_IF(md_m.ms_run.size() != 1)
+  MzTabParameter cid;
+  cid.fromCellString("[MS, MS:1000133, CID, ]");
+  md_m.ms_run.begin()->second.fragmentation_method[1] = cid;
+  mz_tab_m.setMetaData(md_m);
+  std::string written;
+  NEW_TMP_FILE(written)
+  MzTabMFile().store(written, mz_tab_m);
+
+  TextFile metadata;
+  Size fragmentation_method_lines = 0;
+  for (const auto& line : TextFile(written))
+  {
+    if (!StringUtils::hasPrefix(line, "MTD\t")) continue;
+    metadata.addLine(line);
+    if (StringUtils::hasPrefix(line, "MTD\tms_run[1]-fragmentation_method[1]\t")) ++fragmentation_method_lines;
+  }
+  TEST_EQUAL(fragmentation_method_lines, 1)
+  std::string filename;
+  NEW_TMP_FILE(filename)
+  metadata.store(filename);
+  MzTab mz_tab;
+  MzTabFile().load(filename, mz_tab);
+  const MzTabMetaData& md = mz_tab.getMetaData();
+  TEST_EQUAL(md.mz_tab_version.get(), "2.0.0-M")
+  TEST_EQUAL(md.ms_run.size(), 1)
+  ABORT_IF(md.ms_run.size() != 1)
+  TEST_TRUE(md.ms_run.begin()->second.fragmentation_method.isNull()) // mzTab 1.0 has no indexed ms_run fragmentation_method
 }
 END_SECTION
 

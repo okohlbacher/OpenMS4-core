@@ -81,24 +81,36 @@ namespace
     return keys;
   }
 
-  // true if s is a bracketed index "[digits]" that fits into an Int
+  // true if s is a bracketed index "[digits]" that fits into an Int. Whitespace inside the brackets and
+  // after them is allowed, since the reader trims it when it extracts the index (extractBracketIndex).
   bool isMetaDataKeyIndex(const std::string& s)
   {
-    if (s.size() < 3 || s.front() != '[' || s.back() != ']') return false;
-    const char* first = s.data() + 1;
-    const char* last = s.data() + s.size() - 1;
-    if (!std::all_of(first, last, [](char c) { return c >= '0' && c <= '9'; })) return false;
+    const std::string index = OpenMS::StringUtils::trimmed(s);
+    if (index.size() < 2 || index.front() != '[' || index.back() != ']') return false;
+    const std::string digits = OpenMS::StringUtils::trimmed(index.substr(1, index.size() - 2));
+    if (digits.empty() || !std::all_of(digits.begin(), digits.end(), [](char c) { return c >= '0' && c <= '9'; })) return false;
+    const char* last = digits.data() + digits.size();
     int value;
-    const auto result = std::from_chars(first, last, value);
+    const auto result = std::from_chars(digits.data(), last, value);
     return result.ec == std::errc{} && result.ptr == last;
   }
 
-  // Classifies a metadata key by its form. key_fields are the '-' separated fields of key.
-  // Returns true for a key in the form of an mzTab 1.0 key, and false for a key whose field names
-  // are not those of any mzTab 1.0 key (e.g. the mzTab-M keys "assay[1]" or "database[1]-prefix",
-  // or "instrument[1]", which lacks the field of the key it resembles). Throws ParseError for a key
-  // with an empty field, and for a key with the field names of an mzTab 1.0 key but not its
-  // indices (e.g. "instrument-name", "ms_run[x]-location" or "colunit[3]-protein").
+  // Classifies a metadata key by its form. key_fields are the '-' separated fields of key. Whitespace
+  // inside and after the brackets of an index, and at the end of the key, does not make a key malformed:
+  // the reader trims an index, and reads e.g. "mzTab-ID " by its prefix. (A key that the reader compares
+  // exactly, such as "title ", is still not read.)
+  //
+  // A key belongs to an mzTab 1.0 key if it has as many fields, its first field has the name (the text
+  // before '[') of that key's first field, and each further field has the name of that key's field or
+  // is empty.
+  // - Returns false for a key that belongs to no mzTab 1.0 key, or that has an index in a field where
+  //   the mzTab 1.0 key has none. Such a key is not an mzTab 1.0 key and is ignored, even where its form
+  //   resembles one: e.g. the mzTab-M keys "assay[1]", "database[1]-prefix" and
+  //   "ms_run[1]-fragmentation_method[1]" (mzTab 1.0: "ms_run[1]-fragmentation_method"), or
+  //   "instrument[1]", "title[1]", "colunit[3]-protein" and "my_tool--setting".
+  // - Returns true for a key in the form of the mzTab 1.0 key it belongs to.
+  // - Throws ParseError for a key that belongs to an mzTab 1.0 key but has an empty field
+  //   ("instrument[1]-") or lacks an index of that key ("instrument-name", "ms_run[x]-location").
   bool isMzTab10MetaDataKey(const std::string& key, const std::vector<std::string>& key_fields, const std::string& filename)
   {
     auto reject = [&](const std::string& reason)
@@ -106,15 +118,22 @@ namespace
       throw OpenMS::Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, filename, "Error parsing MzTab metadata key '" + key + "': " + reason);
     };
 
-    std::vector<std::string> names; // each field up to its first '['
-    for (const std::string& field : key_fields)
+    std::vector<std::string> names;   // each field up to its first '['
+    std::vector<std::string> indices; // the rest of each field, from its first '['
+    std::vector<bool> empty;          // whether a field is empty or whitespace only
+    for (size_t i = 0; i != key_fields.size(); ++i)
     {
-      if (OpenMS::StringUtils::trimmed(field).empty())
+      std::string field = key_fields[i];
+      if (i + 1 == key_fields.size())
       {
-        reject("a '-' separated field of the key is empty");
+        field.erase(field.find_last_not_of(" \t\n\r") + 1); // whitespace at the end of the key
       }
-      names.push_back(field.substr(0, field.find('[')));
+      const size_t bracket = std::min(field.find('['), field.size());
+      names.push_back(field.substr(0, bracket));
+      indices.push_back(field.substr(bracket));
+      empty.push_back(OpenMS::StringUtils::trimmed(field).empty());
     }
+    if (names.empty() || empty[0]) return false;
     if (names.size() == 2 && names[0] == "colunit")
     {
       OpenMS::StringUtils::toLower(names[1]); // the column-unit section is read case-insensitively (the writer spells colunit-PSM)
@@ -124,18 +143,26 @@ namespace
     {
       const std::vector<std::string>& form = key_form.fields;
       if (form.size() != names.size()) continue;
-      bool same_names = true;
-      for (size_t i = 0; i != form.size() && same_names; ++i)
+      bool belongs = true;
+      bool index_where_none = false;
+      for (size_t i = 0; i != form.size(); ++i)
       {
-        same_names = form[i].substr(0, form[i].find('[')) == names[i];
+        const bool indexed = OpenMS::StringUtils::hasSuffix(form[i], "[]");
+        belongs = belongs && ((i != 0 && empty[i]) || names[i] == form[i].substr(0, form[i].find('[')));
+        index_where_none = index_where_none || (!indexed && !indices[i].empty());
       }
-      if (!same_names) continue;
+      if (!belongs || index_where_none) continue; // e.g. "ms_run[1]-fragmentation_method[1]" is not "ms_run[1]-fragmentation_method"
 
       for (size_t i = 0; i != form.size(); ++i)
       {
-        const std::string index = key_fields[i].substr(names[i].size());
-        const bool indexed = OpenMS::StringUtils::hasSuffix(form[i], "[]");
-        if (indexed ? !isMetaDataKeyIndex(index) : !index.empty())
+        if (empty[i])
+        {
+          reject("a '-' separated field of the key is empty");
+        }
+      }
+      for (size_t i = 0; i != form.size(); ++i)
+      {
+        if (OpenMS::StringUtils::hasSuffix(form[i], "[]") && !isMetaDataKeyIndex(indices[i]))
         {
           std::string expected = key_form.form;
           OpenMS::StringUtils::substitute(expected, "[]", "[1-n]");
@@ -374,9 +401,9 @@ namespace OpenMS
       {
         throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, filename, "Error parsing MzTab line: " + std::string(s) + ". The metadata key is empty");
       }
-      // The form of the key decides: a key in the form of an mzTab 1.0 key is read below, a key with
-      // the field names of an mzTab 1.0 key but other indices is rejected, and any other key (e.g. an
-      // mzTab-M key such as "assay[1]") is ignored.
+      // The form of the key decides: a key in the form of an mzTab 1.0 key is read below, a key that
+      // belongs to an mzTab 1.0 key but lacks its indices or has an empty field is rejected, and any
+      // other key (e.g. the mzTab-M keys "assay[1]" or "ms_run[1]-fragmentation_method[1]") is ignored.
       if (!isMzTab10MetaDataKey(cells[1], meta_key_fields, filename))
       {
         continue;
