@@ -15,6 +15,7 @@
 
 #include <OpenMS/FORMAT/MzMLFile.h>
 #include <OpenMS/FORMAT/SqliteConnector.h>
+#include <OpenMS/FORMAT/ZlibCompression.h>
 #include <OpenMS/KERNEL/MSExperiment.h>
 
 #include <filesystem>
@@ -949,6 +950,82 @@ START_SECTION([EXTRA] reading rejects data arrays of different length and duplic
       TEST_EXCEPTION(Exception::IllegalArgument, handler.readSpectra(read_spectra, {1}))
       std::vector<MSChromatogram> read_chroms;
       TEST_EXCEPTION(Exception::IllegalArgument, handler.readChromatograms(read_chroms, {1}))
+    }
+
+    // Records that already have peaks when their data arrays are read: readExperiment takes the records
+    // from the full metadata (an mzML file stored in RUN_EXTRA) and copies each data array into the peaks
+    // given there. OpenMS writes that mzML without peaks, but a file may bring them, and then every array,
+    // the first one of a record included, has to have the length of those peaks: a shorter array was read
+    // past its end (on this route the read can leave its allocation), a longer one was truncated. The mzML
+    // stored here has the peaks written above and a meta value that shows it was read. DATA is unaltered,
+    // or record 0 gets the two arrays of record 1 (2 values for 3 peaks) or record 1 those of record 0
+    // (3 values for 2 peaks), in the spectra or in the chromatograms.
+    {
+      MSExperiment full_meta;
+      full_meta.setSpectra(spectra);
+      full_meta.setChromatograms(chroms);
+      full_meta.getSpectra()[0].setMetaValue("peaks_from", "RUN_EXTRA");
+      std::string mzml, compressed_mzml;
+      MzMLFile().storeBuffer(mzml, full_meta);
+      ZlibCompression::compressString(mzml, compressed_mzml);
+      // writes the records above, applies 'alter_sql' and stores the mzML above as the full metadata of run 0
+      auto writeWithPeaks = [&](const std::string& filename, const std::string& alter_sql)
+      {
+        writeAltered(filename, alter_sql);
+        SqliteConnector conn(filename);
+        conn.executeBindStatement("INSERT INTO RUN_EXTRA (RUN_ID, DATA) VALUES (0, ?)", {compressed_mzml});
+      };
+
+      {
+        STATUS((lossy ? "lossy" : "lossless") << ": records with peaks from RUN_EXTRA, unaltered")
+        std::string filename;
+        NEW_TMP_FILE_EXT(filename, ".peaks" + extension);
+        writeWithPeaks(filename, "");
+        MzMLSqliteHandler handler(filename, 0);
+        MSExperiment exp;
+        handler.readExperiment(exp);
+        TEST_EQUAL(exp.getNrSpectra(), 3)
+        TEST_EQUAL(exp.getNrChromatograms(), 3)
+        if (exp.getNrSpectra() == 3 && exp.getNrChromatograms() == 3)
+        {
+          TEST_STRING_EQUAL(exp.getSpectra()[0].getMetaValue("peaks_from", "").toString(), "RUN_EXTRA")
+          TEST_EQUAL(exp.getSpectra()[0].size(), 3)
+          TEST_EQUAL(exp.getSpectra()[1].size(), 2)
+          TEST_EQUAL(exp.getSpectra()[2].size(), 0)
+          TEST_EQUAL(exp.getChromatograms()[0].size(), 3)
+          TEST_EQUAL(exp.getChromatograms()[1].size(), 2)
+          TEST_EQUAL(exp.getChromatograms()[2].size(), 0)
+          if (exp.getSpectra()[0].size() == 3)
+          {
+            TEST_REAL_SIMILAR(exp.getSpectra()[0][2].getMZ(), 300.0)
+            TEST_REAL_SIMILAR(exp.getSpectra()[0][2].getIntensity(), 3000.0)
+          }
+        }
+      }
+
+      for (bool chromatograms : {false, true})
+      {
+        const std::string id = chromatograms ? "CHROMATOGRAM_ID" : "SPECTRUM_ID";
+        for (int record : {0, 1})
+        {
+          const int donor = 1 - record;
+          const std::string native_id = chromatograms ? chroms[record].getNativeID() : spectra[record].getNativeID();
+          const Size peaks = chromatograms ? chroms[record].size() : spectra[record].size();
+          const Size values = chromatograms ? chroms[donor].size() : spectra[donor].size();
+          STATUS((lossy ? "lossy" : "lossless") << ": records with peaks from RUN_EXTRA, " << native_id
+                 << " (" << peaks << " peaks) with the data arrays of record " << donor << " (" << values << " values)")
+          std::string filename;
+          NEW_TMP_FILE_EXT(filename, std::string(".peaks.") + (chromatograms ? "chromatogram" : "spectrum") + std::to_string(record) + extension);
+          const std::string donor_row = " FROM DATA AS donor WHERE donor." + id + " = " + std::to_string(donor) +
+                                        " AND donor.DATA_TYPE = DATA.DATA_TYPE)";
+          writeWithPeaks(filename, "UPDATE DATA SET COMPRESSION = (SELECT donor.COMPRESSION" + donor_row +
+                                   ", DATA = (SELECT donor.DATA" + donor_row + " WHERE " + id + " = " + std::to_string(record) + ";");
+          MzMLSqliteHandler handler(filename, 0);
+          MSExperiment exp;
+          TEST_EXCEPTION_WITH_MESSAGE(Exception::IllegalArgument, handler.readExperiment(exp),
+              "Data arrays of spectrum/chromatogram " + native_id + " differ in length: " + std::to_string(values) + " != " + std::to_string(peaks))
+        }
+      }
     }
   }
 }
