@@ -90,6 +90,81 @@ START_SECTION((static ExperimentalDesign load(const TextFile&, bool, String) pad
 }
 END_SECTION
 
+START_SECTION((static ExperimentalDesign load(const TextFile&, bool, String) keeps blank sample cells in their column))
+{
+  // A blank FIRST cell must not shift the row: its tab is whitespace, so trimming the line before
+  // splitting it would drop the cell and move every later value one column to the left.
+  const std::vector<std::string> file_section = {
+    "Fraction_Group\tFraction\tSpectra_Filepath\tLabel\tSample",
+    "1\t1\ta.mzML\t1\tS1",
+    "2\t1\tb.mzML\t1\tS2",
+    ""};
+  const auto design_with = [&file_section](const std::vector<std::string>& sample_section)
+  {
+    TextFile tf;
+    for (const std::string& l : file_section) tf.addLine(l);
+    for (const std::string& l : sample_section) tf.addLine(l);
+    return tf;
+  };
+
+  // blank factor before the Sample column, and blank values at both ends of a row
+  const TextFile before_sample = design_with({
+    "MSstats_Condition\tSample\tMSstats_BioReplicate",
+    "\tS1\t1",
+    "B\tS2\t2"});
+  ExperimentalDesign::SampleSection ss = ExperimentalDesignFile::load(before_sample, false, "inline_blank_first_cell.tsv").getSampleSection();
+  TEST_EQUAL(ss.getContentSize(), 2)
+  TEST_EQUAL(ss.hasSample("S1"), true)
+  TEST_EQUAL(ss.hasSample("1"), false)
+  TEST_EQUAL(ss.getFactorValue("S1", "MSstats_Condition"), "")
+  TEST_EQUAL(ss.getFactorValue("S1", "MSstats_BioReplicate"), "1")
+  TEST_EQUAL(ss.getFactorValue("S2", "MSstats_Condition"), "B")
+
+  const TextFile both_ends = design_with({
+    "MSstats_Condition\tMSstats_Fraction\tSample\tAlias",
+    "\tX\tS1\t",
+    "A\t\tS2\tsecond"});
+  ss = ExperimentalDesignFile::load(both_ends, false, "inline_blank_outer_cells.tsv").getSampleSection();
+  TEST_EQUAL(ss.getContentSize(), 2)
+  TEST_EQUAL(ss.getFactorValue("S1", "MSstats_Condition"), "")
+  TEST_EQUAL(ss.getFactorValue("S1", "MSstats_Fraction"), "X")
+  TEST_EQUAL(ss.getFactorValue("S1", "Alias"), "")
+  TEST_EQUAL(ss.getFactorValue("S2", "MSstats_Condition"), "A")
+  TEST_EQUAL(ss.getFactorValue("S2", "MSstats_Fraction"), "")
+  TEST_EQUAL(ss.getFactorValue("S2", "Alias"), "second")
+
+  // the same from a file: loading it must not trim the lines either
+  std::string filename;
+  NEW_TMP_FILE(filename);
+  design_with({
+    "MSstats_Condition\tMSstats_Fraction\tSample\tAlias",
+    "\tX\tS1\t",
+    "A\t\tS2\tsecond"}).store(filename);
+  ss = ExperimentalDesignFile::load(filename, false).getSampleSection();
+  TEST_EQUAL(ss.getContentSize(), 2)
+  TEST_EQUAL(ss.getFactorValue("S1", "MSstats_Condition"), "")
+  TEST_EQUAL(ss.getFactorValue("S1", "MSstats_Fraction"), "X")
+  TEST_EQUAL(ss.getFactorValue("S1", "Alias"), "")
+  TEST_EQUAL(ss.getFactorValue("S2", "MSstats_Condition"), "A")
+
+  // a blank sample name is an error, wherever the Sample column is
+  TextFile blank_first_name = design_with({
+    "Sample\tMSstats_Condition\tMSstats_BioReplicate",
+    "S1\tA\t1",
+    "\tC\t3"});
+  TEST_EXCEPTION(Exception::ParseError, ExperimentalDesignFile::load(blank_first_name, false, "inline_blank_sample_name.tsv"))
+  const TextFile blank_inner_name = design_with({
+    "MSstats_Condition\tSample\tMSstats_BioReplicate",
+    "A\tS1\t1",
+    "B\t\t2"});
+  TEST_EXCEPTION(Exception::ParseError, ExperimentalDesignFile::load(blank_inner_name, false, "inline_blank_inner_sample_name.tsv"))
+  std::string blank_name_file;
+  NEW_TMP_FILE(blank_name_file);
+  blank_first_name.store(blank_name_file);
+  TEST_EXCEPTION(Exception::ParseError, ExperimentalDesignFile::load(blank_name_file, false))
+}
+END_SECTION
+
 START_SECTION((static ExperimentalDesign load(const TextFile&, bool, String) ignores extra cells in sample rows))
 {
   TextFile tf;
