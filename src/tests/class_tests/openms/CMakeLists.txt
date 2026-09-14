@@ -313,9 +313,12 @@ endif()
 # returned value, so only a heap checker can reliably see it if it comes back. On Linux with
 # glibc >= 2.34, run the test with glibc malloc checking, appended to any LD_PRELOAD and
 # GLIBC_TUNABLES the caller has set.
-# Not in sanitizer builds: a sanitizer sees the write itself, and AddressSanitizer refuses to start
-# when libc_malloc_debug is preloaded. Such a build is recognised by the ADDRESS_SANITIZER option or
-# by -fsanitize in the C/C++ compiler or linker flags, including those of the build configuration(s).
+# Not in sanitizer builds: AddressSanitizer and HWASan report the write themselves, and the dynamic
+# AddressSanitizer runtime (GCC's default) refuses to start when libc_malloc_debug is preloaded.
+# Builds with other sanitizers (e.g. UBSan, TSan), which do not see the write, are skipped as well,
+# conservatively, and run without malloc checking. Such a build is recognised by the
+# ADDRESS_SANITIZER option or by -fsanitize in the C/C++ compiler or linker flags, including those
+# of the build configuration(s).
 # It comes after the Release flags are restored above, so it sees the flags the tests are built with.
 set(_sanitizer_flags "${CMAKE_C_FLAGS} ${CMAKE_CXX_FLAGS} ${CMAKE_EXE_LINKER_FLAGS} ${CMAKE_SHARED_LINKER_FLAGS}")
 get_property(_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
