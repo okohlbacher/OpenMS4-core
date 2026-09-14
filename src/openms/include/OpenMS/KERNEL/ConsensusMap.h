@@ -330,21 +330,35 @@ public:
      provided by the map index.
      One FeatureMap is returned per column header: the k-th output map corresponds to the k-th column header in key
      (map index) order. This is map index k only if the column headers are keyed 0..n-1.
+     Each FeatureHandle of a ConsensusFeature becomes a Feature in the FeatureMap of its map index.
+
      If the ConsensusMap originated from the IsobaricAnalyzer, only Features are separated. All PeptideIdentifications
-     (assigned and unassigned) are added to the first FeatureMap.
-     Otherwise, PeptideIdentifications (assigned and unassigned) are distributed by their "map_index" meta value.
-     Those whose map index is not a column header key are added to the unassigned PeptideIdentifications of the
-     first FeatureMap, and one warning is logged per such map index.
+     (assigned and unassigned) and all ProteinIdentifications are added to the first FeatureMap.
+
+     Otherwise, PeptideIdentifications (assigned and unassigned) are distributed by their "map_index" meta value, and
+     no ProteinIdentifications are copied:
+     - An assigned PeptideIdentification is attached to the Feature that the same ConsensusFeature yields in the
+       FeatureMap of its map index. If that ConsensusFeature has no FeatureHandle of this map index, a Feature is
+       created for it anyway: an empty one (RT 0, m/z 0, intensity 0) that carries only the PeptideIdentifications
+       (and, with @p mode COPY_ALL, the MetaValues).
+     - An unassigned PeptideIdentification is added to the unassigned PeptideIdentifications of the FeatureMap of
+       its map index.
+     - A PeptideIdentification whose map index is not a column header key belongs to none of the returned maps. It
+       is dropped, not filed under another map (which would attribute it to the wrong run). A single warning per
+       call lists each such map index with the number of dropped PeptideIdentifications; the log may collapse
+       identical repeated warnings into one.
 
      MetaValues of ConsensusFeatures can be copied to all FeatureMaps, just to the first or they can be ignored.
 
      @param[in] mode Decide what to do with the MetaValues annotated at the ConsensusFeatures.
      @return FeatureMaps, one per column header in key order
-     @exception Exception::ElementNotFound if a FeatureHandle's map index is not a column header key, if map index 0
-                is required (IsobaricAnalyzer data, or @p mode COPY_FIRST) but missing, or if a PeptideIdentification's
-                map index is not a column header key and there are no column headers at all
+     @exception Exception::ElementNotFound if a FeatureHandle's map index is not a column header key; for
+                IsobaricAnalyzer data, if a ConsensusFeature has no FeatureHandle of map index 0 or there is no column
+                header with key 0; for @p mode COPY_FIRST, if a ConsensusFeature has no FeatureHandle of map index 0
      @exception Exception::MissingInformation if a PeptideIdentification of non-IsobaricAnalyzer data has no
                 "map_index" meta value
+     @exception Exception::ConversionError if the "map_index" meta value of a PeptideIdentification of
+                non-IsobaricAnalyzer data is not a non-negative integer
     */
     std::vector<FeatureMap> split(SplitMeta mode = SplitMeta::DISCARD) const;
 

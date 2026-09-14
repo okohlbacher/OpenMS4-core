@@ -754,21 +754,10 @@ OPENMS_THREAD_CRITICAL(LOGSTREAM)
 
     // A peptide identification can reference a map index without a column header even in a
     // consistent map (isMapConsistent() checks only the handles), e.g. after the columns of some
-    // maps were removed but their identifications kept. There is no feature map of its own for it,
-    // so it is kept as an unassigned identification of the first feature map instead of being
-    // lost or aborting the split; the counts feed one warning per unknown index below.
-    std::map<UInt64, Size> unknown_index_id_count;
-    auto keepAsUnassigned = [&fmaps, &unknown_index_id_count](const PeptideIdentification& pep_id, UInt64 map_index)
-    {
-      if (fmaps.empty())
-      {
-        throw Exception::ElementNotFound(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
-          "Map index " + StringUtils::toStr(map_index) + " of a PeptideIdentification does not name a column of this ConsensusMap, "
-          "which has no columns to keep it in. Check Input!");
-      }
-      fmaps.front().getUnassignedPeptideIdentifications().push_back(pep_id);
-      ++unknown_index_id_count[map_index];
-    };
+    // maps were removed but their identifications kept. No output map belongs to that run, and
+    // filing the identification under another map would attribute it to the wrong run, so it is
+    // dropped; the counts per map index feed a single warning at the end of the split.
+    std::map<UInt64, Size> dropped_id_count;
 
     // Check for Isobaric Analyzer
     bool iso_analyze = DataProcessingUtils::hasIsobaricAnalyzer(getDataProcessing());
@@ -815,9 +804,10 @@ OPENMS_THREAD_CRITICAL(LOGSTREAM)
         const UInt64 map_index = static_cast<UInt64>(pep_id.getMetaValue("map_index"));
         if (!index_to_position.contains(map_index))
         {
-          keepAsUnassigned(pep_id, map_index);
+          ++dropped_id_count[map_index];
           continue;
         }
+        // creates an empty feature if this consensus feature has no handle of that map
         new_feats[map_index].getPeptideIdentifications().push_back(pep_id);
       }
 
@@ -873,18 +863,26 @@ OPENMS_THREAD_CRITICAL(LOGSTREAM)
         const UInt64 map_index = static_cast<UInt64>(upep_id.getMetaValue("map_index"));
         if (!index_to_position.contains(map_index))
         {
-          keepAsUnassigned(upep_id, map_index);
+          ++dropped_id_count[map_index];
           continue;
         }
         fmaps[positionOf(map_index)].getUnassignedPeptideIdentifications().push_back(upep_id);
       }
     }
 
-    for (const auto& unknown : unknown_index_id_count)
+    if (!dropped_id_count.empty())
     {
-      OPENMS_LOG_WARN << "ConsensusMap::split(): " << unknown.second << " PeptideIdentification(s) reference map index "
-                      << unknown.first << ", which does not name a column of this ConsensusMap. "
-                      << "They were added to the unassigned PeptideIdentifications of the first FeatureMap." << std::endl;
+      std::string dropped;
+      for (const auto& [map_index, count] : dropped_id_count)
+      {
+        if (!dropped.empty())
+        {
+          dropped += ", ";
+        }
+        dropped += "map index " + StringUtils::toStr(map_index) + ": " + StringUtils::toStr(count);
+      }
+      OPENMS_LOG_WARN << "ConsensusMap::split(): dropped PeptideIdentifications whose map index does not name a column "
+                      << "of this ConsensusMap (" << dropped << ")." << std::endl;
     }
 
     for (auto& fm : fmaps)
