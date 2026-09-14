@@ -899,6 +899,131 @@ START_SECTION((regression: incomplete binary arrays and MSn scan modes))
 }
 END_SECTION
 
+START_SECTION((regression: missing, stray, short and empty arrays and nonstandard precision))
+{
+  // The reader stays lenient: a malformed spectrum loads without peaks or with shortened arrays, and the
+  // spectra next to it are unaffected. All spectra are MS1 without a ScanMode, so these fixtures do not
+  // depend on the MSn scan-mode fallback tested in the section above.
+  MzDataFile file;
+  const std::string mz = "<mzArrayBinary><data precision=\"32\" endian=\"little\" length=\"2\">AADwQgAA+kI=</data></mzArrayBinary>"; // 120, 125
+  const std::string intensity = "<intenArrayBinary><data precision=\"32\" endian=\"little\" length=\"2\">AADIQgAASEM=</data></intenArrayBinary>"; // 100, 200
+  auto sup = [](const std::string& id, const std::string& name, const std::string& data) {
+    return "<supDataArrayBinary id=\"" + id + "\"><arrayName>" + name + "</arrayName>" + data + "</supDataArrayBinary>";
+  };
+  auto spectrum = [](const std::string& id, const std::string& content) {
+    return "<spectrum id=\"" + id + "\"><spectrumDesc><spectrumSettings><spectrumInstrument msLevel=\"1\"/></spectrumSettings></spectrumDesc>"
+           + content + "</spectrum>";
+  };
+  auto load = [&](const std::string& spectra, Size count) {
+    std::string input;
+    NEW_TMP_FILE(input)
+    std::ofstream(input) << "<?xml version=\"1.0\"?><mzData version=\"1.05\" accessionNumber=\"test\"><spectrumList count=\"" << count << "\">"
+                         << spectra << "</spectrumList></mzData>";
+    PeakMap result;
+    file.load(input, result);
+    // These deliberately malformed reader fixtures are not writer-schema tests.
+    File::remove(input);
+    return result;
+  };
+  const std::string complete = spectrum("2", mz + intensity);
+
+  // a spectrum without any binary array
+  const auto no_arrays = load(spectrum("1", "") + complete, 2);
+  TEST_EQUAL(no_arrays.size(), 2)
+  ABORT_IF(no_arrays.size() != 2)
+  TEST_EQUAL(no_arrays[0].size(), 0)
+  TEST_EQUAL(no_arrays[1].size(), 2)
+
+  // a stray <data> outside any array element, before and after the arrays
+  const std::string stray = "<data precision=\"32\" endian=\"little\" length=\"1\">AADIQg==</data>";
+  const auto stray_data = load(spectrum("1", stray + mz + intensity) + spectrum("3", mz + intensity + stray) + complete, 3);
+  TEST_EQUAL(stray_data.size(), 3)
+  ABORT_IF(stray_data.size() != 3)
+  TEST_EQUAL(stray_data[0].size(), 0)
+  TEST_EQUAL(stray_data[1].size(), 0)
+  TEST_EQUAL(stray_data[2].size(), 2)
+  ABORT_IF(stray_data[2].size() != 2)
+  TEST_REAL_SIMILAR(stray_data[2][1].getMZ(), 125.0)
+  TEST_REAL_SIMILAR(stray_data[2][1].getIntensity(), 200.0)
+
+  // a supplemental array shorter than the m/z array ends early; a complete one next to it is unaffected
+  const auto short_sup = load(spectrum("1", mz + intensity
+                                            + sup("1", "short", "<data precision=\"32\" endian=\"little\" length=\"1\">AADAPw==</data>")
+                                            + sup("2", "full", "<data precision=\"32\" endian=\"little\" length=\"2\">AADAPwAAIEA=</data>")), 1);
+  TEST_EQUAL(short_sup.size(), 1)
+  ABORT_IF(short_sup.size() != 1)
+  TEST_EQUAL(short_sup[0].size(), 2)
+  TEST_EQUAL(short_sup[0].getFloatDataArrays().size(), 2)
+  ABORT_IF(short_sup[0].getFloatDataArrays().size() != 2)
+  TEST_STRING_EQUAL(short_sup[0].getFloatDataArrays()[0].getName(), "short")
+  TEST_EQUAL(short_sup[0].getFloatDataArrays()[0].size(), 1)
+  ABORT_IF(short_sup[0].getFloatDataArrays()[0].size() != 1)
+  TEST_REAL_SIMILAR(short_sup[0].getFloatDataArrays()[0][0], 1.5)
+  TEST_EQUAL(short_sup[0].getFloatDataArrays()[1].size(), 2)
+  ABORT_IF(short_sup[0].getFloatDataArrays()[1].size() != 2)
+  TEST_REAL_SIMILAR(short_sup[0].getFloatDataArrays()[1][1], 2.5)
+
+  // an empty supplemental array (as writeTo stores an empty FloatDataArray) loads empty next to the peaks
+  const auto empty_sup = load(spectrum("1", mz + intensity + sup("1", "empty", "<data precision=\"32\" endian=\"little\" length=\"0\"></data>")), 1);
+  TEST_EQUAL(empty_sup.size(), 1)
+  ABORT_IF(empty_sup.size() != 1)
+  TEST_EQUAL(empty_sup[0].size(), 2)
+  TEST_EQUAL(empty_sup[0].getFloatDataArrays().size(), 1)
+  ABORT_IF(empty_sup[0].getFloatDataArrays().size() != 1)
+  TEST_STRING_EQUAL(empty_sup[0].getFloatDataArrays()[0].getName(), "empty")
+  TEST_EQUAL(empty_sup[0].getFloatDataArrays()[0].size(), 0)
+
+  // a supplemental array without <data> cannot be paired with an encoding: the spectrum keeps no peaks
+  // and its FloatDataArray keeps the name but no values
+  const auto sup_without_data = load(spectrum("1", mz + intensity + sup("1", "nodata", "")) + complete, 2);
+  TEST_EQUAL(sup_without_data.size(), 2)
+  ABORT_IF(sup_without_data.size() != 2)
+  TEST_EQUAL(sup_without_data[0].size(), 0)
+  TEST_EQUAL(sup_without_data[0].getFloatDataArrays().size(), 1)
+  ABORT_IF(sup_without_data[0].getFloatDataArrays().size() != 1)
+  TEST_STRING_EQUAL(sup_without_data[0].getFloatDataArrays()[0].getName(), "nodata")
+  TEST_EQUAL(sup_without_data[0].getFloatDataArrays()[0].size(), 0)
+  TEST_EQUAL(sup_without_data[1].size(), 2)
+
+  // a precision other than "64" is decoded as 32 bit, and read back as 32 bit
+  const auto nonstandard = load(spectrum("1", mz + "<intenArrayBinary><data precision=\"float\" endian=\"little\" length=\"2\">AADIQgAASEM=</data></intenArrayBinary>"), 1);
+  TEST_EQUAL(nonstandard.size(), 1)
+  ABORT_IF(nonstandard.size() != 1)
+  TEST_EQUAL(nonstandard[0].size(), 2)
+  ABORT_IF(nonstandard[0].size() != 2)
+  TEST_REAL_SIMILAR(nonstandard[0][0].getIntensity(), 100.0)
+  TEST_REAL_SIMILAR(nonstandard[0][1].getMZ(), 125.0)
+  TEST_REAL_SIMILAR(nonstandard[0][1].getIntensity(), 200.0)
+
+  // the API path: store keeps short and empty FloatDataArrays (logging an error), load reads them back as stored
+  PeakMap stored;
+  MSSpectrum spec;
+  spec.setMSLevel(1);
+  for (double position : {100.0, 200.0, 300.0})
+  {
+    spec.push_back(Peak1D(position, 10.0f));
+  }
+  spec.getFloatDataArrays().resize(2);
+  spec.getFloatDataArrays()[0].setName("short");
+  spec.getFloatDataArrays()[0].push_back(1.5f);
+  spec.getFloatDataArrays()[0].push_back(2.5f);
+  spec.getFloatDataArrays()[1].setName("empty");
+  stored.addSpectrum(spec);
+  std::string round_trip;
+  NEW_TMP_FILE(round_trip)
+  file.store(round_trip, stored);
+  PeakMap reloaded;
+  file.load(round_trip, reloaded);
+  TEST_EQUAL(reloaded.size(), 1)
+  ABORT_IF(reloaded.size() != 1)
+  TEST_EQUAL(reloaded[0].size(), 3)
+  TEST_EQUAL(reloaded[0].getFloatDataArrays().size(), 2)
+  ABORT_IF(reloaded[0].getFloatDataArrays().size() != 2)
+  TEST_EQUAL(reloaded[0].getFloatDataArrays()[0].size(), 2)
+  TEST_EQUAL(reloaded[0].getFloatDataArrays()[1].size(), 0)
+}
+END_SECTION
+
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 /// check the temporary files written above against their XML schema (types without a validator are skipped)
