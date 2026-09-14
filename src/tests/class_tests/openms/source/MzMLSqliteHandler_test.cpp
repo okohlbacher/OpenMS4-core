@@ -808,6 +808,101 @@ START_SECTION([EXTRA] reading rejects data arrays of different length and duplic
 }
 END_SECTION
 
+START_SECTION([EXTRA] reading ignores stored activation methods outside the enum)
+{
+  // The metadata readers skipped only -1 ("no activation method"), so -2 and below became
+  // ActivationMethod values outside the range Precursor's name tables are indexed with, and
+  // the 32 bit read wrapped larger stored values into that range.
+  Precursor precursor;
+  precursor.setMZ(500.25);
+  precursor.getActivationMethods().insert(Precursor::ActivationMethod::CID);
+
+  MSSpectrum spectrum;
+  spectrum.setNativeID("spectrum=0");
+  spectrum.setMSLevel(2);
+  spectrum.push_back(Peak1D(100.0, 1000.0));
+  spectrum.getPrecursors().push_back(precursor);
+
+  MSChromatogram chrom;
+  chrom.setNativeID("chromatogram=0");
+  chrom.push_back(ChromatogramPeak(1.0, 10.0));
+  chrom.setPrecursor(precursor);
+  Product product;
+  product.setMZ(250.5);
+  chrom.setProduct(product);
+
+  std::string filename;
+  NEW_TMP_FILE(filename);
+  std::filesystem::remove(filename);
+  {
+    MzMLSqliteHandler handler(filename, 0);
+    handler.createTables();
+    handler.writeSpectra({spectrum});
+    handler.writeChromatograms({chrom});
+  }
+
+  // stores 'code' as the activation method of both precursors, returns the methods read back for
+  // the spectrum and the chromatogram
+  MzMLSqliteHandler handler(filename, 0);
+  auto readBack = [&](const std::string& code)
+  {
+    {
+      SqliteConnector conn(filename);
+      conn.executeStatement("UPDATE PRECURSOR SET ACTIVATION_METHOD = " + code + ";");
+    }
+    std::vector<MSSpectrum> spectra;
+    handler.readSpectra(spectra, {0}, true);
+    std::vector<MSChromatogram> chroms;
+    handler.readChromatograms(chroms, {0}, true);
+    std::set<Precursor::ActivationMethod> spectrum_methods, chrom_methods;
+    if (spectra.size() == 1 && spectra[0].getPrecursors().size() == 1)
+    {
+      spectrum_methods = spectra[0].getPrecursors()[0].getActivationMethods();
+    }
+    if (chroms.size() == 1)
+    {
+      chrom_methods = chroms[0].getPrecursor().getActivationMethods();
+    }
+    return std::make_pair(spectrum_methods, chrom_methods);
+  };
+  const std::set<Precursor::ActivationMethod> none;
+
+  // as written
+  auto methods = readBack(std::to_string(static_cast<int>(Precursor::ActivationMethod::CID)));
+  TEST_EQUAL(methods.first == std::set<Precursor::ActivationMethod>{Precursor::ActivationMethod::CID}, true)
+  TEST_EQUAL(methods.second == std::set<Precursor::ActivationMethod>{Precursor::ActivationMethod::CID}, true)
+  // the largest valid code
+  const int last_code = static_cast<int>(Precursor::ActivationMethod::SIZE_OF_ACTIVATIONMETHOD) - 1;
+  methods = readBack(std::to_string(last_code));
+  TEST_EQUAL(methods.first == std::set<Precursor::ActivationMethod>{static_cast<Precursor::ActivationMethod>(last_code)}, true)
+  TEST_EQUAL(methods.second == std::set<Precursor::ActivationMethod>{static_cast<Precursor::ActivationMethod>(last_code)}, true)
+  // -1 is what the writers store for no activation method
+  methods = readBack("-1");
+  TEST_EQUAL(methods.first == none, true)
+  TEST_EQUAL(methods.second == none, true)
+  methods = readBack("NULL");
+  TEST_EQUAL(methods.first == none, true)
+  TEST_EQUAL(methods.second == none, true)
+  // invalid codes load without an activation method
+  methods = readBack("-2");
+  TEST_EQUAL(methods.first == none, true)
+  TEST_EQUAL(methods.second == none, true)
+  methods = readBack("-2147483648");
+  TEST_EQUAL(methods.first == none, true)
+  TEST_EQUAL(methods.second == none, true)
+  methods = readBack(std::to_string(static_cast<int>(Precursor::ActivationMethod::SIZE_OF_ACTIVATIONMETHOD)));
+  TEST_EQUAL(methods.first == none, true)
+  TEST_EQUAL(methods.second == none, true)
+  // 2^32 - 2 and 2^32 + 1 wrapped to -2 and 1 in a 32 bit read
+  methods = readBack("4294967294");
+  TEST_EQUAL(methods.first == none, true)
+  TEST_EQUAL(methods.second == none, true)
+  methods = readBack("4294967297");
+  TEST_EQUAL(methods.first == none, true)
+  TEST_EQUAL(methods.second == none, true)
+}
+END_SECTION
+
 // reset error tolerances to default values
 TOLERANCE_ABSOLUTE(1e-5)
 TOLERANCE_RELATIVE(1+1e-5)
