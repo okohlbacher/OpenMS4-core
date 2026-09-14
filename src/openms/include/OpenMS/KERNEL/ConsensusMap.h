@@ -328,13 +328,23 @@ public:
 
      If the ConsensusMap originated from some number of FeatureMaps, those are reconstructed with the information
      provided by the map index.
+     One FeatureMap is returned per column header: the k-th output map corresponds to the k-th column header in key
+     (map index) order. This is map index k only if the column headers are keyed 0..n-1.
      If the ConsensusMap originated from the IsobaricAnalyzer, only Features are separated. All PeptideIdentifications
      (assigned and unassigned) are added to the first FeatureMap.
+     Otherwise, PeptideIdentifications (assigned and unassigned) are distributed by their "map_index" meta value.
+     Those whose map index is not a column header key are added to the unassigned PeptideIdentifications of the
+     first FeatureMap, and one warning is logged per such map index.
 
      MetaValues of ConsensusFeatures can be copied to all FeatureMaps, just to the first or they can be ignored.
 
      @param[in] mode Decide what to do with the MetaValues annotated at the ConsensusFeatures.
-     @return FeatureMaps
+     @return FeatureMaps, one per column header in key order
+     @exception Exception::ElementNotFound if a FeatureHandle's map index is not a column header key, if map index 0
+                is required (IsobaricAnalyzer data, or @p mode COPY_FIRST) but missing, or if a PeptideIdentification's
+                map index is not a column header key and there are no column headers at all
+     @exception Exception::MissingInformation if a PeptideIdentification of non-IsobaricAnalyzer data has no
+                "map_index" meta value
     */
     std::vector<FeatureMap> split(SplitMeta mode = SplitMeta::DISCARD) const;
 
