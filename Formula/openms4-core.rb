@@ -1,18 +1,18 @@
 class Openms4Core < Formula
   desc "Core C++ SDK for mass-spectrometry software"
   homepage "https://github.com/okohlbacher/OpenMS4-core"
-  url "https://github.com/okohlbacher/OpenMS4-core/archive/refs/tags/core-v4.0.0-ci.4.tar.gz"
+  url "https://github.com/okohlbacher/OpenMS4-core/archive/refs/tags/core-v4.0.0-ci.5.tar.gz"
   # The tag name is not a bare version, so Homebrew would otherwise detect "1".
-  version "4.0.0-ci.4"
-  sha256 "0e9a52bcca79c819e0c0306178f99b3a09e03523e5483530bf17cc0a7f2e0220"
+  version "4.0.0-ci.5"
+  sha256 "5c6efc71022d44ef2dfb0f9984601a3bf03028eb41c399c324a7e951cd4616f3"
   license "BSD-3-Clause"
 
   bottle do
-    root_url "https://github.com/okohlbacher/OpenMS4-core/releases/download/core-v4.0.0-ci.4"
+    root_url "https://github.com/okohlbacher/OpenMS4-core/releases/download/core-v4.0.0-ci.5"
     rebuild 1
-    sha256 arm64_sequoia: "630ceacbf26d8da2b1238c8d4ebde44feccf3a1582b4453375bdaf0069bc888b"
-    sha256 sequoia:       "b93eec19d3a2184540492493dcfb8e38a5d602a7a32b70d887a9d6df9dbf14ee"
-    sha256 x86_64_linux:  "451d91af48315b2884b080ae2c5805a218684a8c1aec66993ee6ded9677b291e"
+    sha256 arm64_sequoia: "46c37886e37d2ca7c72b387e7afbd262c3ef3dcf742b3ec8ffff2cfebab1d5cb"
+    sha256 sequoia:       "b6063468eb1e261a3c615afc6a312cf4aeea9ef3ae471cdb8e4dd80b60bb3479"
+    sha256 x86_64_linux:  "612f0e16cdca3f7301bfdf1b7afa229413fa55311ae74c423fdcff02eed8ca18"
   end
 
   depends_on "cmake" => :build
@@ -48,7 +48,7 @@ class Openms4Core < Formula
       -DCURL_ROOT=#{formula_opt_prefix("curl")}
       -DOpenMP_ROOT=#{formula_opt_prefix("libomp")}
       -DCMAKE_FIND_FRAMEWORK=LAST
-      -DOPENMS_SOURCE_REVISION=4f5c86fd90f385d950176b8a48bdb90665735c27
+      -DOPENMS_SOURCE_REVISION=ac41cc177023e24a8fbc711a6ce9010187c54c44
       -DOPENMS_SOURCE_DIRTY=OFF
       -DOPENMS_REQUIRE_CLEAN_SOURCE=ON
     ]
