@@ -348,9 +348,18 @@ namespace OpenMS
     -- OpenMS cannot guess which channel is which material. Without a @c Sample column, the
     sample name defaults to the @c Fraction_Group value, which makes every fraction group its own
     sample.
+  - Rows of the one-table format and of the two-table file section must have exactly as many
+    cells as their header. These lines are trimmed before they are split, so a blank first or
+    last cell counts as missing and the row is rejected.
+  - Two-table format only: every row of the sample section must name its sample. Its other cells
+    are optional: a blank cell keeps its column wherever it is in the row, a row with fewer cells
+    than the sample header is padded with empty values, and cells beyond the header are ignored.
+    Blank cells before the header's first name (a table indented by an empty first column) are
+    dropped from the header and from every row. A row with a value in a dropped or ignored cell is
+    read with a warning, because it may be shifted.
   - Two-table format only: every @c Sample value used in the file section must exist in the
-    sample section, otherwise loading fails with a bare @c std::out_of_range. Omitting the
-    @c Sample column from a two-table file section therefore fails as well, unless the sample
+    sample section, otherwise loading fails with a @c ParseError that names the sample. Omitting
+    the @c Sample column from a two-table file section therefore fails as well, unless the sample
     section literally contains rows named <tt>"Fraction group 1"</tt>,
     <tt>"Fraction group 2"</tt>, ...
   - A relative @c Spectra_Filepath is resolved first against the directory of the design file,
@@ -535,10 +544,19 @@ namespace OpenMS
       /// Checks whether Sample Section has a specific factor (i.e. column name)
       bool hasFactor(const std::string &factor) const;
 
-      /// Returns value of factor for given sample NAME and factor name
+      /// @brief Returns value of factor for given sample NAME and factor name
+      ///
+      /// @throws Exception::MissingInformation if the section has no row for @p sample_name,
+      ///         @p factor is not one of its columns, or the row has no value for @p factor. A
+      ///         design loaded from a file has a value for every column, but rows passed to the
+      ///         constructor or addSample() are not checked against the columns and can be short.
       std::string getFactorValue(const std::string& sample_name, const std::string &factor) const;
 
-      /// Returns value of factor for given sample ROW INDEX (zero-based) and factor name
+      /// @brief Returns value of factor for given sample ROW INDEX (zero-based) and factor name
+      ///
+      /// @throws Exception::MissingInformation if @p factor is not one of the columns, or the row
+      ///         has no value for @p factor (see the overload above)
+      /// @throws std::out_of_range if there is no row @p sample_idx
       std::string getFactorValue(unsigned sample_idx, const std::string &factor) const;
 
       /// @brief Returns column index of factor

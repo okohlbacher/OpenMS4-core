@@ -15,9 +15,11 @@
 
 #include <OpenMS/FORMAT/MzMLFile.h>
 #include <OpenMS/FORMAT/SqliteConnector.h>
+#include <OpenMS/FORMAT/ZlibCompression.h>
 #include <OpenMS/KERNEL/MSExperiment.h>
 
 #include <filesystem>
+#include <functional>
 
 using namespace OpenMS;
 using namespace OpenMS::Internal;
@@ -664,6 +666,464 @@ START_SECTION(void writeChromatograms(const std::vector<MSChromatogram>& chroms)
     handler.writeChromatograms(exp_orig.getChromatograms());
     TEST_EQUAL(handler.getNrChromatograms(), 1)
   }
+}
+END_SECTION
+
+START_SECTION([EXTRA] reading rejects data arrays of different length and duplicated array roles)
+{
+  // Each record was sized by its first data array (or by the next one, after an empty first array)
+  // and every further array was copied by that length without a check (a shorter one was read past
+  // its end, a longer one truncated), and the rows were only counted, so two m/z arrays passed as an
+  // m/z and an intensity array. The malformed files are written with the API and their DATA table
+  // altered afterwards.
+  std::vector<MSSpectrum> spectra(3);
+  for (Size i = 0; i < spectra.size(); ++i)
+  {
+    spectra[i].setNativeID("spectrum=" + std::to_string(i));
+    spectra[i].setRT(10.0 * (i + 1));
+  }
+  spectra[0].push_back(Peak1D(100.0, 1000.0));
+  spectra[0].push_back(Peak1D(200.0, 2000.0));
+  spectra[0].push_back(Peak1D(300.0, 3000.0));
+  spectra[1].push_back(Peak1D(400.0, 4000.0));
+  spectra[1].push_back(Peak1D(500.0, 5000.0));
+  // spectra[2] has no peaks
+
+  std::vector<MSChromatogram> chroms(3);
+  for (Size i = 0; i < chroms.size(); ++i)
+  {
+    chroms[i].setNativeID("chromatogram=" + std::to_string(i));
+  }
+  chroms[0].push_back(ChromatogramPeak(1.0, 10.0));
+  chroms[0].push_back(ChromatogramPeak(2.0, 20.0));
+  chroms[0].push_back(ChromatogramPeak(3.0, 30.0));
+  chroms[1].push_back(ChromatogramPeak(4.0, 40.0));
+  chroms[1].push_back(ChromatogramPeak(5.0, 50.0));
+  // chroms[2] has no peaks
+
+  for (bool lossy : {false, true})
+  {
+    const std::string extension = lossy ? ".lossy" : ".lossless";
+    // writes the records above to 'filename', then applies 'alter_sql' to the file
+    auto writeAltered = [&](const std::string& filename, const std::string& alter_sql)
+    {
+      std::filesystem::remove(filename);
+      {
+        MzMLSqliteHandler handler(filename, 0);
+        handler.setConfig(false, lossy, 0.0001);
+        handler.createTables();
+        handler.writeSpectra(spectra);
+        handler.writeChromatograms(chroms);
+        handler.writeRunLevelInformation(MSExperiment(), false);
+      }
+      if (!alter_sql.empty())
+      {
+        SqliteConnector conn(filename);
+        conn.executeStatement(alter_sql);
+      }
+    };
+
+    // unaltered: every record loads, including the ones without peaks
+    {
+      STATUS((lossy ? "lossy" : "lossless") << ": unaltered")
+      std::string filename;
+      NEW_TMP_FILE_EXT(filename, extension);
+      writeAltered(filename, "");
+      MzMLSqliteHandler handler(filename, 0);
+      std::vector<MSSpectrum> read_spectra;
+      handler.readSpectra(read_spectra, {0, 1, 2});
+      // no ABORT_IF in this loop: it would leave only the loop and skip the remaining cases unreported
+      TEST_EQUAL(read_spectra.size(), 3)
+      if (read_spectra.size() == 3)
+      {
+        TEST_EQUAL(read_spectra[0].size(), 3)
+        TEST_EQUAL(read_spectra[1].size(), 2)
+        TEST_EQUAL(read_spectra[2].size(), 0)
+        if (read_spectra[0].size() == 3)
+        {
+          TEST_REAL_SIMILAR(read_spectra[0][2].getMZ(), 300.0)
+          TEST_REAL_SIMILAR(read_spectra[0][2].getIntensity(), 3000.0)
+        }
+      }
+
+      std::vector<MSChromatogram> read_chroms;
+      handler.readChromatograms(read_chroms, {0, 1, 2});
+      TEST_EQUAL(read_chroms.size(), 3)
+      if (read_chroms.size() == 3)
+      {
+        TEST_EQUAL(read_chroms[0].size(), 3)
+        TEST_EQUAL(read_chroms[1].size(), 2)
+        TEST_EQUAL(read_chroms[2].size(), 0)
+      }
+
+      MSExperiment exp;
+      handler.readExperiment(exp);
+      TEST_EQUAL(exp.getNrSpectra(), 3)
+      TEST_EQUAL(exp.getNrChromatograms(), 3)
+    }
+
+    // Record 1 (2 m/z or RT values) with the intensity array of record 0 (3 values) or of record 2 (none).
+    // What has to reject it depends on which of its two arrays is read first: a longer array read second
+    // must not be truncated, and an empty array read first must not leave the length to the next array.
+    // The reading queries order the rows by record only, so within a record the order is whatever the
+    // query plan of the SQLite in use produces; the test cannot set it. The test sets the rowids: each
+    // variant is written twice, with the intensity row stored after the m/z (RT) row (at the higher
+    // rowid) and before it. It does not assume that a read follows the rowids. It takes the order a read
+    // saw from the error, which gives the length of the array read second first, and requires the two
+    // files to be read in opposite orders. If SQLite read the rows of a record in the same order from
+    // both files, one of the two orders would go untested, and the test fails.
+
+    // 'storeRecord1' gives record 1 the intensity array (and its compression) of record 'donor', then
+    // stores the two rows of record 1 again at the rowids 'rowid' (its row of DATA_TYPE 'first_type')
+    // and 'rowid' + 1; 'id' is SPECTRUM_ID or CHROMATOGRAM_ID
+    auto storeRecord1 = [](const std::string& id, int donor, int first_type, int rowid)
+    {
+      const std::string donor_row = " FROM DATA WHERE " + id + " = " + std::to_string(donor) + " AND DATA_TYPE = 1)";
+      const std::string rowids = std::to_string(rowid) + ", " + std::to_string(rowid + 1);
+      return "UPDATE DATA SET COMPRESSION = (SELECT COMPRESSION" + donor_row + ", DATA = (SELECT DATA" + donor_row +
+             " WHERE " + id + " = 1 AND DATA_TYPE = 1;"
+             "INSERT INTO DATA (rowid, SPECTRUM_ID, CHROMATOGRAM_ID, COMPRESSION, DATA_TYPE, DATA)"
+             " SELECT " + std::to_string(rowid) + " + (DATA_TYPE != " + std::to_string(first_type) + "),"
+             " SPECTRUM_ID, CHROMATOGRAM_ID, COMPRESSION, DATA_TYPE, DATA FROM DATA WHERE " + id + " = 1;"
+             "DELETE FROM DATA WHERE " + id + " = 1 AND rowid NOT IN (" + rowids + ");";
+    };
+    // Runs 'read', which has to reject record 1 (2 m/z or RT values, 'intensities' intensities) for data
+    // arrays of different length. Returns "" and sets 'second' to the array the read took second, or
+    // returns what happened instead.
+    auto lengthRejection = [](Size intensities, std::string& second, const std::function<void()>& read) -> std::string
+    {
+      try
+      {
+        read();
+      }
+      catch (const Exception::IllegalArgument& e)
+      {
+        const std::string message = e.what();
+        if (message.ends_with(" differ in length: " + std::to_string(intensities) + " != 2"))
+        {
+          second = "intensity";
+          return "";
+        }
+        if (message.ends_with(" differ in length: 2 != " + std::to_string(intensities)))
+        {
+          second = "m/z (RT)";
+          return "";
+        }
+        return std::string("rejected for another reason: ") + message;
+      }
+      catch (...)
+      {
+        return "threw " + TEST::describeCaughtException();
+      }
+      return "not rejected";
+    };
+    for (int donor : {0, 2})
+    {
+      const Size intensities = spectra[donor].size();
+      // the array each read took second from the file with the intensity row stored last [0] and first [1]
+      std::string spectra_second[2], chroms_second[2], exp_second[2];
+      for (int file : {0, 1})
+      {
+        const bool intensities_last = (file == 0);
+        STATUS((lossy ? "lossy" : "lossless") << ": record 1 with the intensity array of record " << donor << ", "
+               << (intensities_last ? "intensity" : "m/z (RT)") << " row stored last")
+        // a file name per variant: a rejected read does not finalize its statement, so the file stays open
+        // until the end of the process (and cannot be removed on Windows)
+        std::string filename;
+        NEW_TMP_FILE_EXT(filename, ".donor" + std::to_string(donor) + (intensities_last ? ".intensity_last" : ".coordinate_last") + extension);
+        writeAltered(filename, storeRecord1("SPECTRUM_ID", donor, intensities_last ? 0 : 1, 1001) +
+                               storeRecord1("CHROMATOGRAM_ID", donor, intensities_last ? 2 : 1, 2001));
+        MzMLSqliteHandler handler(filename, 0);
+        // distinct per file, so that a read not rejected as expected does not also fail the order check below
+        spectra_second[file] = chroms_second[file] = exp_second[file] = "not determined for file " + std::to_string(file);
+
+        std::vector<MSSpectrum> read_spectra;
+        TEST_STRING_EQUAL(lengthRejection(intensities, spectra_second[file], [&]() { handler.readSpectra(read_spectra, {1}); }), "")
+        read_spectra.clear();
+        handler.readSpectra(read_spectra, {0, 2}); // not altered
+        TEST_EQUAL(read_spectra.size(), 2)
+        if (read_spectra.size() == 2)
+        {
+          TEST_EQUAL(read_spectra[0].size(), 3)
+          TEST_EQUAL(read_spectra[1].size(), 0)
+        }
+
+        std::vector<MSChromatogram> read_chroms;
+        TEST_STRING_EQUAL(lengthRejection(intensities, chroms_second[file], [&]() { handler.readChromatograms(read_chroms, {1}); }), "")
+        read_chroms.clear();
+        handler.readChromatograms(read_chroms, {0, 2}); // not altered
+        TEST_EQUAL(read_chroms.size(), 2)
+        if (read_chroms.size() == 2)
+        {
+          TEST_EQUAL(read_chroms[0].size(), 3)
+          TEST_EQUAL(read_chroms[1].size(), 0)
+        }
+
+        MSExperiment exp;
+        TEST_STRING_EQUAL(lengthRejection(intensities, exp_second[file], [&]() { handler.readExperiment(exp); }), "")
+      }
+      STATUS((lossy ? "lossy" : "lossless") << ": record 1 with the intensity array of record " << donor
+             << ", array read second with the intensity row stored last / first: spectra " << spectra_second[0] << " / " << spectra_second[1]
+             << ", chromatograms " << chroms_second[0] << " / " << chroms_second[1] << ", experiment " << exp_second[0] << " / " << exp_second[1])
+      TEST_NOT_EQUAL(spectra_second[0], spectra_second[1])
+      TEST_NOT_EQUAL(chroms_second[0], chroms_second[1])
+      TEST_NOT_EQUAL(exp_second[0], exp_second[1])
+    }
+
+    // record 0 with both arrays and a copy of one of them: the copy has the length of the others and
+    // both roles are present, so only the check for a repeated role rejects it, in whatever order the
+    // rows are read (the copy is stored at an explicit rowid all the same)
+    for (bool copy_intensities : {false, true})
+    {
+      STATUS((lossy ? "lossy" : "lossless") << ": record 0 with a second " << (copy_intensities ? "intensity" : "m/z (RT)") << " array")
+      const auto copyRow = [](const std::string& rowid)
+      {
+        return "INSERT INTO DATA (rowid, SPECTRUM_ID, CHROMATOGRAM_ID, COMPRESSION, DATA_TYPE, DATA)"
+               " SELECT " + rowid + ", SPECTRUM_ID, CHROMATOGRAM_ID, COMPRESSION, DATA_TYPE, DATA FROM DATA WHERE ";
+      };
+      std::string filename;
+      NEW_TMP_FILE_EXT(filename, (copy_intensities ? ".intensity_copy" : ".coordinate_copy") + extension);
+      writeAltered(filename, copyRow("1001") + "SPECTRUM_ID = 0 AND DATA_TYPE = " + (copy_intensities ? "1" : "0") + ";" +
+                             copyRow("2001") + "CHROMATOGRAM_ID = 0 AND DATA_TYPE = " + (copy_intensities ? "1" : "2") + ";");
+      MzMLSqliteHandler handler(filename, 0);
+      std::vector<MSSpectrum> read_spectra;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readSpectra(read_spectra, {0}))
+      read_spectra.clear();
+      handler.readSpectra(read_spectra, {1}); // not altered
+      TEST_EQUAL(read_spectra.size(), 1)
+      if (read_spectra.size() == 1)
+      {
+        TEST_EQUAL(read_spectra[0].size(), 2)
+      }
+
+      std::vector<MSChromatogram> read_chroms;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readChromatograms(read_chroms, {0}))
+      read_chroms.clear();
+      handler.readChromatograms(read_chroms, {1}); // not altered
+      TEST_EQUAL(read_chroms.size(), 1)
+      if (read_chroms.size() == 1)
+      {
+        TEST_EQUAL(read_chroms[0].size(), 2)
+      }
+    }
+
+    // record 0 without an intensity array: only the check that every record has both roles rejects it
+    {
+      STATUS((lossy ? "lossy" : "lossless") << ": record 0 without an intensity array")
+      std::string filename;
+      NEW_TMP_FILE_EXT(filename, extension);
+      writeAltered(filename,
+          "DELETE FROM DATA WHERE SPECTRUM_ID = 0 AND DATA_TYPE = 1;"
+          "DELETE FROM DATA WHERE CHROMATOGRAM_ID = 0 AND DATA_TYPE = 1;");
+      MzMLSqliteHandler handler(filename, 0);
+      std::vector<MSSpectrum> read_spectra;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readSpectra(read_spectra, {0}))
+      std::vector<MSChromatogram> read_chroms;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readChromatograms(read_chroms, {0}))
+    }
+
+    // record 0 with two m/z (RT) arrays and no intensity array
+    {
+      STATUS((lossy ? "lossy" : "lossless") << ": record 0 with two m/z (RT) arrays and no intensity array")
+      std::string filename;
+      NEW_TMP_FILE_EXT(filename, extension);
+      writeAltered(filename,
+          "UPDATE DATA SET DATA_TYPE = 0 WHERE SPECTRUM_ID = 0 AND DATA_TYPE = 1;"
+          "UPDATE DATA SET DATA_TYPE = 2 WHERE CHROMATOGRAM_ID = 0 AND DATA_TYPE = 1;");
+      MzMLSqliteHandler handler(filename, 0);
+      std::vector<MSSpectrum> read_spectra;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readSpectra(read_spectra, {0}))
+      std::vector<MSChromatogram> read_chroms;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readChromatograms(read_chroms, {0}))
+    }
+
+    // record 1 with two intensity arrays and no m/z (RT) array
+    {
+      STATUS((lossy ? "lossy" : "lossless") << ": record 1 with two intensity arrays and no m/z (RT) array")
+      std::string filename;
+      NEW_TMP_FILE_EXT(filename, extension);
+      writeAltered(filename,
+          "UPDATE DATA SET DATA_TYPE = 1 WHERE SPECTRUM_ID = 1 AND DATA_TYPE = 0;"
+          "UPDATE DATA SET DATA_TYPE = 1 WHERE CHROMATOGRAM_ID = 1 AND DATA_TYPE = 2;");
+      MzMLSqliteHandler handler(filename, 0);
+      std::vector<MSSpectrum> read_spectra;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readSpectra(read_spectra, {1}))
+      std::vector<MSChromatogram> read_chroms;
+      TEST_EXCEPTION(Exception::IllegalArgument, handler.readChromatograms(read_chroms, {1}))
+    }
+
+    // Records that already have peaks when their data arrays are read: readExperiment takes the records
+    // from the full metadata (an mzML file stored in RUN_EXTRA) and copies each data array into the peaks
+    // given there. OpenMS writes that mzML without peaks, but a file may bring them, and then every array,
+    // the first one of a record included, has to have the length of those peaks: a shorter array was read
+    // past its end (on this route the read can leave its allocation), a longer one was truncated. The mzML
+    // stored here has the peaks written above and a meta value that shows it was read. DATA is unaltered,
+    // or record 0 gets the two arrays of record 1 (2 values for 3 peaks) or record 1 those of record 0
+    // (3 values for 2 peaks), in the spectra or in the chromatograms.
+    {
+      MSExperiment full_meta;
+      full_meta.setSpectra(spectra);
+      full_meta.setChromatograms(chroms);
+      full_meta.getSpectra()[0].setMetaValue("peaks_from", "RUN_EXTRA");
+      std::string mzml, compressed_mzml;
+      MzMLFile().storeBuffer(mzml, full_meta);
+      ZlibCompression::compressString(mzml, compressed_mzml);
+      // writes the records above, applies 'alter_sql' and stores the mzML above as the full metadata of run 0
+      auto writeWithPeaks = [&](const std::string& filename, const std::string& alter_sql)
+      {
+        writeAltered(filename, alter_sql);
+        SqliteConnector conn(filename);
+        conn.executeBindStatement("INSERT INTO RUN_EXTRA (RUN_ID, DATA) VALUES (0, ?)", {compressed_mzml});
+      };
+
+      {
+        STATUS((lossy ? "lossy" : "lossless") << ": records with peaks from RUN_EXTRA, unaltered")
+        std::string filename;
+        NEW_TMP_FILE_EXT(filename, ".peaks" + extension);
+        writeWithPeaks(filename, "");
+        MzMLSqliteHandler handler(filename, 0);
+        MSExperiment exp;
+        handler.readExperiment(exp);
+        TEST_EQUAL(exp.getNrSpectra(), 3)
+        TEST_EQUAL(exp.getNrChromatograms(), 3)
+        if (exp.getNrSpectra() == 3 && exp.getNrChromatograms() == 3)
+        {
+          TEST_STRING_EQUAL(exp.getSpectra()[0].getMetaValue("peaks_from", "").toString(), "RUN_EXTRA")
+          TEST_EQUAL(exp.getSpectra()[0].size(), 3)
+          TEST_EQUAL(exp.getSpectra()[1].size(), 2)
+          TEST_EQUAL(exp.getSpectra()[2].size(), 0)
+          TEST_EQUAL(exp.getChromatograms()[0].size(), 3)
+          TEST_EQUAL(exp.getChromatograms()[1].size(), 2)
+          TEST_EQUAL(exp.getChromatograms()[2].size(), 0)
+          if (exp.getSpectra()[0].size() == 3)
+          {
+            TEST_REAL_SIMILAR(exp.getSpectra()[0][2].getMZ(), 300.0)
+            TEST_REAL_SIMILAR(exp.getSpectra()[0][2].getIntensity(), 3000.0)
+          }
+        }
+      }
+
+      for (bool chromatograms : {false, true})
+      {
+        const std::string id = chromatograms ? "CHROMATOGRAM_ID" : "SPECTRUM_ID";
+        for (int record : {0, 1})
+        {
+          const int donor = 1 - record;
+          const std::string native_id = chromatograms ? chroms[record].getNativeID() : spectra[record].getNativeID();
+          const Size peaks = chromatograms ? chroms[record].size() : spectra[record].size();
+          const Size values = chromatograms ? chroms[donor].size() : spectra[donor].size();
+          STATUS((lossy ? "lossy" : "lossless") << ": records with peaks from RUN_EXTRA, " << native_id
+                 << " (" << peaks << " peaks) with the data arrays of record " << donor << " (" << values << " values)")
+          std::string filename;
+          NEW_TMP_FILE_EXT(filename, std::string(".peaks.") + (chromatograms ? "chromatogram" : "spectrum") + std::to_string(record) + extension);
+          const std::string donor_row = " FROM DATA AS donor WHERE donor." + id + " = " + std::to_string(donor) +
+                                        " AND donor.DATA_TYPE = DATA.DATA_TYPE)";
+          writeWithPeaks(filename, "UPDATE DATA SET COMPRESSION = (SELECT donor.COMPRESSION" + donor_row +
+                                   ", DATA = (SELECT donor.DATA" + donor_row + " WHERE " + id + " = " + std::to_string(record) + ";");
+          MzMLSqliteHandler handler(filename, 0);
+          MSExperiment exp;
+          TEST_EXCEPTION_WITH_MESSAGE(Exception::IllegalArgument, handler.readExperiment(exp),
+              "Data arrays of spectrum/chromatogram " + native_id + " differ in length: " + std::to_string(values) + " != " + std::to_string(peaks))
+        }
+      }
+    }
+  }
+}
+END_SECTION
+
+START_SECTION([EXTRA] reading ignores stored activation methods outside the enum)
+{
+  // The metadata readers skipped NULL, -1 ("no activation method") and codes from
+  // SIZE_OF_ACTIVATIONMETHOD up, but not -2 and below, which became ActivationMethod values
+  // outside the range Precursor's name tables are indexed with. The 32 bit read also wrapped
+  // stored values above 2^31 - 1, to negative codes or to valid ones.
+  Precursor precursor;
+  precursor.setMZ(500.25);
+  precursor.getActivationMethods().insert(Precursor::ActivationMethod::CID);
+
+  MSSpectrum spectrum;
+  spectrum.setNativeID("spectrum=0");
+  spectrum.setMSLevel(2);
+  spectrum.push_back(Peak1D(100.0, 1000.0));
+  spectrum.getPrecursors().push_back(precursor);
+
+  MSChromatogram chrom;
+  chrom.setNativeID("chromatogram=0");
+  chrom.push_back(ChromatogramPeak(1.0, 10.0));
+  chrom.setPrecursor(precursor);
+  Product product;
+  product.setMZ(250.5);
+  chrom.setProduct(product);
+
+  std::string filename;
+  NEW_TMP_FILE(filename);
+  std::filesystem::remove(filename);
+  {
+    MzMLSqliteHandler handler(filename, 0);
+    handler.createTables();
+    handler.writeSpectra({spectrum});
+    handler.writeChromatograms({chrom});
+  }
+
+  // stores 'code' as the activation method of both precursors, returns the methods read back for
+  // the spectrum and the chromatogram
+  MzMLSqliteHandler handler(filename, 0);
+  auto readBack = [&](const std::string& code)
+  {
+    {
+      SqliteConnector conn(filename);
+      conn.executeStatement("UPDATE PRECURSOR SET ACTIVATION_METHOD = " + code + ";");
+    }
+    std::vector<MSSpectrum> spectra;
+    handler.readSpectra(spectra, {0}, true);
+    std::vector<MSChromatogram> chroms;
+    handler.readChromatograms(chroms, {0}, true);
+    std::set<Precursor::ActivationMethod> spectrum_methods, chrom_methods;
+    if (spectra.size() == 1 && spectra[0].getPrecursors().size() == 1)
+    {
+      spectrum_methods = spectra[0].getPrecursors()[0].getActivationMethods();
+    }
+    if (chroms.size() == 1)
+    {
+      chrom_methods = chroms[0].getPrecursor().getActivationMethods();
+    }
+    return std::make_pair(spectrum_methods, chrom_methods);
+  };
+  const std::set<Precursor::ActivationMethod> none;
+
+  // as written
+  auto methods = readBack(std::to_string(static_cast<int>(Precursor::ActivationMethod::CID)));
+  TEST_EQUAL(methods.first == std::set<Precursor::ActivationMethod>{Precursor::ActivationMethod::CID}, true)
+  TEST_EQUAL(methods.second == std::set<Precursor::ActivationMethod>{Precursor::ActivationMethod::CID}, true)
+  // the largest valid code
+  const int last_code = static_cast<int>(Precursor::ActivationMethod::SIZE_OF_ACTIVATIONMETHOD) - 1;
+  methods = readBack(std::to_string(last_code));
+  TEST_EQUAL(methods.first == std::set<Precursor::ActivationMethod>{static_cast<Precursor::ActivationMethod>(last_code)}, true)
+  TEST_EQUAL(methods.second == std::set<Precursor::ActivationMethod>{static_cast<Precursor::ActivationMethod>(last_code)}, true)
+  // -1 is what the writers store for no activation method
+  methods = readBack("-1");
+  TEST_EQUAL(methods.first == none, true)
+  TEST_EQUAL(methods.second == none, true)
+  methods = readBack("NULL");
+  TEST_EQUAL(methods.first == none, true)
+  TEST_EQUAL(methods.second == none, true)
+  // invalid codes load without an activation method
+  methods = readBack("-2");
+  TEST_EQUAL(methods.first == none, true)
+  TEST_EQUAL(methods.second == none, true)
+  methods = readBack("-2147483648");
+  TEST_EQUAL(methods.first == none, true)
+  TEST_EQUAL(methods.second == none, true)
+  methods = readBack(std::to_string(static_cast<int>(Precursor::ActivationMethod::SIZE_OF_ACTIVATIONMETHOD)));
+  TEST_EQUAL(methods.first == none, true)
+  TEST_EQUAL(methods.second == none, true)
+  // 2^32 - 2 and 2^32 + 1 wrapped to -2 and 1 in a 32 bit read
+  methods = readBack("4294967294");
+  TEST_EQUAL(methods.first == none, true)
+  TEST_EQUAL(methods.second == none, true)
+  methods = readBack("4294967297");
+  TEST_EQUAL(methods.first == none, true)
+  TEST_EQUAL(methods.second == none, true)
 }
 END_SECTION
 

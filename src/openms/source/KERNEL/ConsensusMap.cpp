@@ -752,6 +752,13 @@ OPENMS_THREAD_CRITICAL(LOGSTREAM)
       return it->second;
     };
 
+    // A peptide identification can reference a map index without a column header even in a
+    // consistent map (isMapConsistent() checks only the handles), e.g. after the columns of some
+    // maps were removed but their identifications kept. No output map belongs to that run, and
+    // filing the identification under another map would attribute it to the wrong run, so it is
+    // dropped; the counts per map index feed a single warning at the end of the split.
+    std::map<UInt64, Size> dropped_id_count;
+
     // Check for Isobaric Analyzer
     bool iso_analyze = DataProcessingUtils::hasIsobaricAnalyzer(getDataProcessing());
 
@@ -763,6 +770,8 @@ OPENMS_THREAD_CRITICAL(LOGSTREAM)
       for (const FeatureHandle& fh : cf.getFeatures())
       {
         UInt64 index = fh.getMapIndex();
+        // Handles are ordered by map index, then unique id, so of several handles of one map index each
+        // overwrites the previous one below: only the one with the largest unique id is kept (documented).
         // GCC-OPT 4.8 does not compile with:  new_feats.emplace(index, fh);
         // , thus we use:
         new_feats[index] = BaseFeature(fh);
@@ -794,7 +803,14 @@ OPENMS_THREAD_CRITICAL(LOGSTREAM)
           throw Exception::MissingInformation(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
               "File did not undergo IsobaricAnalyzer, but no map index was found at PeptideIdentifications. Check Input!");
         }
-        new_feats[pep_id.getMetaValue("map_index")].getPeptideIdentifications().push_back(pep_id);
+        const UInt64 map_index = static_cast<UInt64>(pep_id.getMetaValue("map_index"));
+        if (!index_to_position.contains(map_index))
+        {
+          ++dropped_id_count[map_index];
+          continue;
+        }
+        // creates an empty feature if this consensus feature has no handle of that map
+        new_feats[map_index].getPeptideIdentifications().push_back(pep_id);
       }
 
       // handle MetaValues of current CF
@@ -846,8 +862,29 @@ OPENMS_THREAD_CRITICAL(LOGSTREAM)
           throw Exception::MissingInformation(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
             "File did not undergo IsobaricAnalyzer, but no map index was found at PeptideIdentifications. Check Input!");
         }
-        fmaps[positionOf(static_cast<UInt64>(upep_id.getMetaValue("map_index")))].getUnassignedPeptideIdentifications().push_back(upep_id);
+        const UInt64 map_index = static_cast<UInt64>(upep_id.getMetaValue("map_index"));
+        if (!index_to_position.contains(map_index))
+        {
+          ++dropped_id_count[map_index];
+          continue;
+        }
+        fmaps[positionOf(map_index)].getUnassignedPeptideIdentifications().push_back(upep_id);
       }
+    }
+
+    if (!dropped_id_count.empty())
+    {
+      std::string dropped;
+      for (const auto& [map_index, count] : dropped_id_count)
+      {
+        if (!dropped.empty())
+        {
+          dropped += ", ";
+        }
+        dropped += "map index " + StringUtils::toStr(map_index) + ": " + StringUtils::toStr(count);
+      }
+      OPENMS_LOG_WARN << "ConsensusMap::split(): dropped PeptideIdentifications whose map index does not name a column "
+                      << "of this ConsensusMap (" << dropped << ")." << std::endl;
     }
 
     for (auto& fm : fmaps)

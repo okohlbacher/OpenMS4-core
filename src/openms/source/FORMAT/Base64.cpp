@@ -210,19 +210,122 @@ namespace OpenMS
   const char Base64::encoder_[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   const char Base64::decoder_[] = "|$$$}rstuvwxyz{$$$$$$$>?@ABCDEFGHIJKLMNOPQRSTUVW$$$$$$XYZ[\\]^_`abcdefghijklmnopq";
 
-  bool Base64::checkNumericInput_(const std::string& in)
+  namespace
   {
-    // shorter input has always decoded to nothing
-    if (in.size() < 4)
+    /// The whitespace that xs:base64Binary allows, as skipped by StringUtils::skipWhitespace()
+    const char* const base64_whitespace = " \t\n\r";
+
+    /// Whether all @p size bytes at @p data are Base64 characters ('=' excluded). Compares 16 bytes at a time with
+    /// SIMD instructions rather than relying on the compiler to vectorize a loop (GCC does that only at -O3), so
+    /// the check stays cheap next to decoding with every compiler and optimization level.
+    bool isAlphabetOnly(const char* const data, const Size size)
     {
-      return false;
+      // Bytes from 0x80 up are negative in these signed comparisons, so they fall outside every range.
+      const simde__m128i case_bit = simde_mm_set1_epi8(0x20); // maps 'A'..'Z' to 'a'..'z', and nothing else into that range
+      const simde__m128i before_a = simde_mm_set1_epi8('a' - 1);
+      const simde__m128i after_z = simde_mm_set1_epi8('z' + 1);
+      const simde__m128i before_slash = simde_mm_set1_epi8('/' - 1); // '/' directly precedes '0'..'9'
+      const simde__m128i after_9 = simde_mm_set1_epi8('9' + 1);
+      const simde__m128i plus = simde_mm_set1_epi8('+');
+
+      Size i = 0;
+      while (size - i >= 16)
+      {
+        // Look at the result every 4096 bytes, so that malformed or line-wrapped input is recognized early.
+        const Size batch_end = i + std::min<Size>((size - i) / 16, 256) * 16;
+        simde__m128i all_valid = simde_mm_set1_epi8(-1);
+        for (; i < batch_end; i += 16)
+        {
+          const simde__m128i c = simde_mm_loadu_si128(reinterpret_cast<const simde__m128i*>(data + i));
+          const simde__m128i folded = simde_mm_or_si128(c, case_bit);
+          const simde__m128i letter = simde_mm_and_si128(simde_mm_cmpgt_epi8(folded, before_a), simde_mm_cmplt_epi8(folded, after_z));
+          const simde__m128i digit_or_slash = simde_mm_and_si128(simde_mm_cmpgt_epi8(c, before_slash), simde_mm_cmplt_epi8(c, after_9));
+          const simde__m128i valid = simde_mm_or_si128(simde_mm_or_si128(letter, digit_or_slash), simde_mm_cmpeq_epi8(c, plus));
+          all_valid = simde_mm_and_si128(all_valid, valid);
+        }
+        if (simde_mm_movemask_epi8(all_valid) != 0xFFFF)
+        {
+          return false;
+        }
+      }
+      for (; i < size; ++i)
+      {
+        const unsigned char c = static_cast<unsigned char>(data[i]);
+        const unsigned char folded = c | 0x20;
+        if (!((folded >= 'a' && folded <= 'z') || (c >= '/' && c <= '9') || c == '+'))
+        {
+          return false;
+        }
+      }
+      return true;
     }
-    if (in.size() % 4 != 0)
+
+    /// Whether @p s is complete groups of Base64 characters with at most two '=' at the end
+    bool isPlainBase64(const std::string& s)
+    {
+      if (s.size() < 4 || s.size() % 4 != 0)
+      {
+        return false;
+      }
+      Size data_end = s.size();
+      if (s[data_end - 1] == '=')
+      {
+        --data_end;
+        if (s[data_end - 1] == '=')
+        {
+          --data_end;
+        }
+      }
+      return isAlphabetOnly(s.data(), data_end);
+    }
+
+    /// Copies @p in without whitespace to @p out, in one pass that appends the text between whitespace runs
+    void copyWithoutWhitespace(const std::string& in, std::string& out)
+    {
+      out.clear();
+      out.reserve(in.size());
+      const char* p = in.data();
+      const char* const end = p + in.size();
+      while (p != end)
+      {
+        const char* const space = StringUtils::skipNonWhitespace(p, end);
+        out.append(p, space);
+        p = StringUtils::skipWhitespace(space, end);
+      }
+    }
+  }
+
+  const std::string* Base64::checkNumericInput_(const std::string& in, std::string& stripped)
+  {
+    if (isPlainBase64(in))
+    {
+      return &in;
+    }
+
+    // line-wrapped input: decode a copy without the whitespace
+    const std::string* text = &in;
+    if (in.find_first_of(base64_whitespace) != std::string::npos)
+    {
+      copyWithoutWhitespace(in, stripped);
+      if (isPlainBase64(stripped))
+      {
+        return &stripped;
+      }
+      text = &stripped;
+    }
+
+    // The text is short, padding only or malformed: find out which, byte by byte.
+    // shorter input has always decoded to nothing
+    if (text->size() < 4)
+    {
+      return nullptr;
+    }
+    if (text->size() % 4 != 0)
     {
       throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Malformed base64 input, length is not a multiple of 4.");
     }
     Size padding = 0;
-    for (const char c : in)
+    for (const char c : *text)
     {
       if (c == '=')
       {
@@ -235,15 +338,31 @@ namespace OpenMS
           padding != 0 ? "Malformed base64 input, data after padding." : "Malformed base64 input, invalid character.");
       }
     }
-    if (padding == in.size())
+    if (padding == text->size())
     {
-      return false; // e.g. "====": nothing to decode
+      return nullptr; // e.g. "====": nothing to decode
     }
     if (padding > 2)
     {
       throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, "Malformed base64 input, more than two padding characters.");
     }
-    return true;
+    return text; // not reached: such text passes isPlainBase64()
+  }
+
+  bool Base64::checkNumericInput_(const std::string& in)
+  {
+    // Kept for binaries built against the core-v4.0.0-ci.5 headers, whose decoders call this and then decode
+    // in itself. So for them whitespace stays an error: the same inputs pass, return false or throw ConversionError as
+    // in that release. Only the message can differ: ci.5 checks byte by byte and says "data after padding" when
+    // an '=' comes before the first byte it rejects, while this says "invalid character" (or reports the length)
+    // for all such input with whitespace.
+    if (in.size() >= 4 && in.find_first_of(base64_whitespace) != std::string::npos)
+    {
+      throw Exception::ConversionError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION,
+        in.size() % 4 != 0 ? "Malformed base64 input, length is not a multiple of 4." : "Malformed base64 input, invalid character.");
+    }
+    std::string stripped;
+    return checkNumericInput_(in, stripped) != nullptr;
   }
 
   void Base64::encodeStrings(const std::vector<std::string>& in, std::string& out, bool zlib_compression, bool append_null_byte)

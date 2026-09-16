@@ -22,6 +22,10 @@ namespace OpenMS
   /**
       @brief File adapter for MzData files
 
+      @note The MS1SPECTRUM and MSNSPECTRUM scan modes do not survive a round trip through mzData.
+      store() writes them like MASSSPECTRUM, as the ScanMode "MassScan" (or "Zoom" for a zoom scan),
+      and load() reads that back as MASSSPECTRUM. The MS level is kept. Use mzML to keep the scan mode.
+
       @ingroup FileIO
   */
   class OPENMS_DLLAPI MzDataFile :

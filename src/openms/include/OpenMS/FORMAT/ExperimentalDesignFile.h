@@ -35,6 +35,17 @@ namespace OpenMS
     @c Spectra_Filepath; @c Label (default 1) and @c Sample are optional. In the one-table
     format any further column is read as sample metadata, whereas the file section of a
     two-table design rejects unknown columns.
+  - Rows of the one-table format and of the MS file section must have exactly as many cells as
+    their header; these lines are trimmed before they are split, so a blank first or last cell
+    counts as missing. The sample section of a two-table design is split before it is trimmed:
+    blank cells before the first and after the last name of its header are not columns, and the
+    same number of leading cells is dropped from every row, so a table indented by an empty first
+    column still lines up. Its rows need not match the header's width: a blank cell keeps its
+    column wherever it is, a row with fewer cells than the header is padded with empty values,
+    and cells beyond the header are ignored. A row with a value in a dropped or ignored cell is
+    read with a warning, since it may be shifted; if the header and the rows are indented
+    differently, the shift usually also loses the sample name and the load fails. Every sample
+    row must name its sample.
   - A relative @c Spectra_Filepath is resolved against the directory of the design file first,
     then against the current working directory.
 
@@ -53,16 +64,17 @@ namespace OpenMS
                  existing file; otherwise unresolvable paths are kept as written
       @throws Exception::ParseError on a missing mandatory column, an unknown column in the file
               section of a two-table design, a row of the MS file section with the wrong number
-              of records, or -- with @p require_spectra_files -- a spectra file that does not exist
+              of records, a row of the sample section without a sample name, a @c Sample in the
+              file section of a two-table design that the sample section does not define
+              (including the implicit <tt>"Fraction group N"</tt> names used when the file section
+              has no @c Sample column; the message names the sample), or -- with
+              @p require_spectra_files -- a spectra file that does not exist
       @throws Exception::ConversionError if @c Fraction_Group, @c Fraction or @c Label is not an
               integer
       @throws Exception::InvalidValue if the fraction groups are not consecutive starting at 1
       @throws Exception::MissingInformation if a (fraction group, fraction, label) triple or a
               (path, label) pair repeats, or a design with a single distinct label maps one
               (fraction group, label) to several samples
-      @throws std::out_of_range if the file section of a two-table design names a @c Sample that
-              the sample section does not define -- including the implicit
-              <tt>"Fraction group N"</tt> names used when the file section has no @c Sample column
     */
     static ExperimentalDesign load(const std::string& tsv_file, bool require_spectra_files);
 
@@ -72,6 +84,10 @@ namespace OpenMS
     /// relative @c Spectra_Filepath entries are resolved, so pass the real design-file path
     /// whenever the spectra are relative to it; a placeholder that is not a real path makes
     /// them resolve against the current working directory.
+    ///
+    /// Do not trim the lines of @p text_file (e.g. with the @c trim_lines argument of TextFile):
+    /// the sample header and its rows need their leading and trailing tabs, or a blank first cell
+    /// of a row is lost and every later value of that row moves one column to the left.
     /// @see load(const std::string&, bool) for the exceptions thrown
     static ExperimentalDesign load(const TextFile& text_file, const bool require_spectra_file, std::string filename);
 

@@ -913,4 +913,26 @@ START_SECTION(([EXTRA] fromIdentifications numbers fraction groups from 1, sampl
 }
 END_SECTION
 
+START_SECTION((std::string SampleSection::getFactorValue(...) const throws MissingInformation for a value the row lacks))
+{
+  // Neither the constructor nor addSample() checks a row against the columns, so a row can be
+  // shorter than a factor's column index.
+  const std::vector<std::vector<std::string>> content = {{"S1", "A"}};
+  const std::map<std::string, Size> sample_to_row = {{"S1", 0}};
+  const std::map<std::string, Size> columns = {{"Sample", 0}, {"MSstats_Condition", 1}, {"MSstats_BioReplicate", 2}};
+  ExperimentalDesign::SampleSection ss(content, sample_to_row, columns);
+
+  TEST_EQUAL(ss.getFactorValue(0, "MSstats_Condition"), "A")
+  TEST_EQUAL(ss.getFactorValue("S1", "MSstats_Condition"), "A")
+  TEST_EXCEPTION(Exception::MissingInformation, ss.getFactorValue(0, "MSstats_BioReplicate"))
+  TEST_EXCEPTION(Exception::MissingInformation, ss.getFactorValue("S1", "MSstats_BioReplicate"))
+  TEST_EXCEPTION(Exception::MissingInformation, ss.getFactorValue(0, "not_a_column"))
+
+  // addSample() stores an empty row unless it is given one
+  ss.addSample("S2");
+  TEST_EXCEPTION(Exception::MissingInformation, ss.getFactorValue(1, "MSstats_Condition"))
+  TEST_EXCEPTION(Exception::MissingInformation, ss.getFactorValue("S2", "MSstats_Condition"))
+}
+END_SECTION
+
 END_TEST
