@@ -1,31 +1,43 @@
 Core SDK 4.0.0-ci.6 candidate (2026-09-16)
 -----------------------------------------
-Follow-ups to the P0 review fixes that ci.3 to ci.5 released. Each change below restores input
-those fixes rejected, or closes a gap they left; the class tests cover every case.
+Follow-ups to the P0 review fixes released in ci.3 to ci.5. Most of them accept input those fixes
+rejected; the ones that reject input ci.5 accepted are marked as such. The class tests cover every case.
 - Base64 numeric decoding skips ASCII whitespace (space, tab, CR, LF), so line-wrapped
-  xs:base64Binary decodes as it did before CPP-055 instead of throwing; every other byte outside
-  the alphabet still throws. The alphabet check compares 16 bytes at a time: decoding 50 million
-  doubles takes 0.46 s at -O2 (GCC 14, x86-64), against 0.86 s in ci.5 and 0.42 s in ci.2 without a
-  check. The ci.5 check symbol is kept, so binaries built against ci.5 headers still load.
+  xs:base64Binary decodes to the same values as unwrapped input. ci.2 decoded such input wrongly or
+  threw, and ci.3 to ci.5 rejected it; every other byte outside the alphabet still throws. The
+  alphabet check compares 16 bytes at a time: decoding 50 million doubles takes 0.46 s at -O2
+  (GCC 14, x86-64), against 0.86 s in ci.5 and 0.42 s in ci.2 without a check. Whitespace-only input
+  to the compressed integer decoder gives an empty array, as in the other decoders.
+  The ci.5 check symbol is kept, so binaries built against ci.5 headers still load, but their inlined
+  decoders keep the ci.5 check, whitespace rejection included, until they are rebuilt.
 - mzXML: a scan whose peaksCount disagrees with its decoded payload keeps the pairs that are both
   declared and decoded and logs a warning naming the file and scan, instead of failing the whole
   file (CPP-173). A peaksCount outside the Int range no longer wraps into an unrelated count, and
-  an empty payload with a nonzero count warns. A later <peaks> of a scan whose first payload was
-  decoded early is decoded again.
+  an empty payload with a nonzero count warns.
 - ConsensusMap::split drops peptide identifications whose map index names no column, with one
   warning that counts them per index, instead of throwing (CPP-113). A feature handle of an
   unknown map still throws.
 - Experimental design: short sample rows are padded and extra cells ignored instead of rejected
-  (CPP-059); a blank first cell keeps its column; a file-section sample missing from the sample
-  table is a ParseError naming it, not std::out_of_range.
-- Mascot XML: query numbers are checked against NumQueries at every use, only the first
-  NumQueries sizes the list, query number 0 is rejected, and pep_* elements outside their
-  peptide or query are ignored instead of updating another query.
-- mzTab: an empty metadata key, or an indexed key without its field, is a ParseError instead of a
-  read past the end of the split fields. Keys are classified before they are read, so mzTab-M
-  keys (including MzTabMFile's own "ms_run[1]-fragmentation_method[1]") are ignored as before,
-  keys with whitespace around them are read, and whitespace inside an index is accepted as in
-  ci.5.
+  (CPP-059), and blank cells keep their column. A sample table indented by an empty first column
+  lines up with its header, and a row with a value outside the header's columns is read with a
+  warning that it may be shifted. A file-section sample missing from the sample table is a
+  ParseError naming it, not std::out_of_range. Rejects input ci.5 accepted: a sample row without a
+  sample name. load(const TextFile&) must be given untrimmed lines, as load(path) now reads them;
+  trimmed lines move the values of a row with a blank first cell one column to the left.
+- Mascot XML: query numbers are checked against NumQueries wherever they are used, and query number
+  0 is rejected. Only the first NumQueries sizes the list; a repeated one is ignored with a warning.
+  pep_* elements outside a peptide element, and StringTitle and RTINSECONDS outside a query, are
+  ignored with a warning instead of updating another query, and nested peptide elements each keep
+  their own hit.
+- mzTab: an empty metadata key is a ParseError instead of a read past the end of the split fields.
+  Keys are classified before they are read: mzTab-M keys (including MzTabMFile's own
+  "ms_run[1]-fragmentation_method[1]") and keys that lack a field of an mzTab 1.0 key (such as
+  "instrument[1]") are ignored as in ci.5; keys that have the field names of an mzTab 1.0 key but an
+  empty field or a missing index (such as "instrument-name") are ignored as in ci.5, now with a
+  warning; keys with whitespace around them are read, and whitespace inside an index is accepted as
+  in ci.5. A key whose brackets hold something other than a closed index is a ParseError naming the
+  key; ci.5 failed on most of these with a ConversionError ("instrument[x]-name"), but read an unclosed
+  bracket ("instrument[1-name" as instrument 1), which is input ci.5 accepted and ci.6 rejects.
 - More class tests for sqMass, mzML, mzData, mzIdentML, MassTraceDetection, isotope
   distributions and IsobaricAnalyzer data; documentation of what Base64::decode accepts.
 
