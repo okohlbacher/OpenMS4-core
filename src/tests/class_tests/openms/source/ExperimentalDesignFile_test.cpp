@@ -233,7 +233,7 @@ START_SECTION((static ExperimentalDesign load(const TextFile&, bool, String) ali
   };
 
   ExperimentalDesign::SampleSection ss;
-  const TextFile indented = design_with({
+  TextFile indented = design_with({
     "\tMSstats_Condition\tMSstats_BioReplicate\tSample",
     "\tA\t1\tS1",
     "\tB\t2\tS2"});
