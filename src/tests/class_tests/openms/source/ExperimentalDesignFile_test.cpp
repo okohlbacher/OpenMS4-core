@@ -7,12 +7,15 @@
 // --------------------------------------------------------------------------
 
 #include <OpenMS/CONCEPT/ClassTest.h>
+#include <OpenMS/CONCEPT/LogStream.h>
 #include <OpenMS/test_config.h>
 
 ///////////////////////////
 #include <OpenMS/METADATA/ExperimentalDesign.h>
 #include <OpenMS/FORMAT/ExperimentalDesignFile.h>
 #include <OpenMS/FORMAT/TextFile.h>
+
+#include <sstream>
 ///////////////////////////
 
 using namespace OpenMS;
@@ -189,6 +192,100 @@ START_SECTION((static ExperimentalDesign load(const TextFile&, bool, String) kee
   NEW_TMP_FILE(blank_name_file);
   blank_first_name.store(blank_name_file);
   TEST_EXCEPTION(Exception::ParseError, ExperimentalDesignFile::load(blank_name_file, false))
+}
+END_SECTION
+
+START_SECTION((static ExperimentalDesign load(const TextFile&, bool, String) aligns an indented sample table))
+{
+  // A spreadsheet with an empty first column exports every line of the sample table with a leading tab. The header
+  // and the rows are split the same way, so the columns still line up; core-v4.0.0-ci.5 read such designs correctly.
+  const std::vector<std::string> file_section = {
+    "Fraction_Group\tFraction\tSpectra_Filepath\tLabel\tSample",
+    "1\t1\ta.mzML\t1\tS1",
+    "2\t1\tb.mzML\t1\tS2",
+    ""};
+  const auto design_with = [&file_section](const std::vector<std::string>& sample_section)
+  {
+    TextFile tf;
+    for (const std::string& l : file_section) tf.addLine(l);
+    for (const std::string& l : sample_section) tf.addLine(l);
+    return tf;
+  };
+  // loads @p tf and returns the warnings logged meanwhile
+  const auto load_warning = [](const TextFile& tf, const std::string& name, ExperimentalDesign::SampleSection& ss)
+  {
+    OPENMS_LOG_WARN->clearCache();
+    std::ostringstream captured;
+    OPENMS_LOG_WARN.insert(captured);
+    try
+    {
+      ss = ExperimentalDesignFile::load(tf, false, name).getSampleSection();
+    }
+    catch (...)
+    {
+      OPENMS_LOG_WARN.remove(captured);
+      OPENMS_LOG_WARN->clearCache();
+      throw;
+    }
+    OPENMS_LOG_WARN.remove(captured);
+    OPENMS_LOG_WARN->clearCache();
+    return captured.str();
+  };
+
+  ExperimentalDesign::SampleSection ss;
+  const TextFile indented = design_with({
+    "\tMSstats_Condition\tMSstats_BioReplicate\tSample",
+    "\tA\t1\tS1",
+    "\tB\t2\tS2"});
+  TEST_EQUAL(load_warning(indented, "inline_indented.tsv", ss), "")
+  TEST_EQUAL(ss.getContentSize(), 2)
+  TEST_EQUAL(ss.getFactorValue("S1", "MSstats_Condition"), "A")
+  TEST_EQUAL(ss.getFactorValue("S1", "MSstats_BioReplicate"), "1")
+  TEST_EQUAL(ss.getFactorValue("S2", "MSstats_Condition"), "B")
+  TEST_EQUAL(ss.getFactors().count(""), 0)
+
+  // the same from a file
+  std::string filename;
+  NEW_TMP_FILE(filename);
+  indented.store(filename);
+  ss = ExperimentalDesignFile::load(filename, false).getSampleSection();
+  TEST_EQUAL(ss.getFactorValue("S1", "MSstats_Condition"), "A")
+  TEST_EQUAL(ss.getFactorValue("S2", "MSstats_BioReplicate"), "2")
+
+  // Sample in the first named column, two blank leading columns, blank trailing header cells, and a row whose
+  // blank first value keeps its column
+  const TextFile sample_first = design_with({
+    "\t\tSample\tMSstats_Condition\tMSstats_BioReplicate\t\t",
+    "\t\tS1\tA\t1\t\t",
+    "\t\tS2\t\t2"});
+  TEST_EQUAL(load_warning(sample_first, "inline_indented_sample_first.tsv", ss), "")
+  TEST_EQUAL(ss.getContentSize(), 2)
+  TEST_EQUAL(ss.getFactorValue("S1", "MSstats_Condition"), "A")
+  TEST_EQUAL(ss.getFactorValue("S1", "MSstats_BioReplicate"), "1")
+  TEST_EQUAL(ss.getFactorValue("S2", "MSstats_Condition"), "")
+  TEST_EQUAL(ss.getFactorValue("S2", "MSstats_BioReplicate"), "2")
+  TEST_EQUAL(ss.getFactors().count(""), 0)
+
+  // A row that is indented while its header is not has a value outside the header's columns. It is ignored, and a
+  // warning says the row may be shifted: here the shift goes unnoticed otherwise, because the replicate column holds
+  // the sample names, so the shifted row still names a known sample.
+  const TextFile stray_tab = design_with({
+    "MSstats_Condition\tMSstats_BioReplicate\tSample",
+    "A\tS1\tS1",
+    "\tB\tS2\tS2"});
+  const std::string warning = load_warning(stray_tab, "inline_stray_tab.tsv", ss);
+  TEST_EQUAL(warning.find("row 2 of the sample table in 'inline_stray_tab.tsv' has values outside the columns of its header") != std::string::npos, true)
+  TEST_EQUAL(ss.getFactorValue("S1", "MSstats_Condition"), "A")
+  TEST_EQUAL(ss.getFactorValue("S2", "MSstats_BioReplicate"), "B")
+  // an extra value after the last column is ignored with the same warning, and blank extra cells without one
+  const TextFile extra_cells = design_with({
+    "MSstats_Condition\tSample",
+    "A\tS1\t\t",
+    "B\tS2\tnote"});
+  const std::string extra_warning = load_warning(extra_cells, "inline_extra_cells.tsv", ss);
+  TEST_EQUAL(extra_warning.find("row 1 of") == std::string::npos, true)
+  TEST_EQUAL(extra_warning.find("row 2 of the sample table in 'inline_extra_cells.tsv'") != std::string::npos, true)
+  TEST_EQUAL(ss.getFactorValue("S2", "MSstats_Condition"), "B")
 }
 END_SECTION
 

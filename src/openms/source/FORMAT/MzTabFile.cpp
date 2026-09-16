@@ -108,13 +108,22 @@ namespace
   //   "ms_run[1]-fragmentation_method[1]" (mzTab 1.0: "ms_run[1]-fragmentation_method"), or
   //   "instrument[1]", "title[1]", "colunit[3]-protein" and "my_tool--setting".
   // - Returns true for a key in the form of the mzTab 1.0 key it belongs to.
-  // - Throws ParseError for a key that belongs to an mzTab 1.0 key but has an empty field
-  //   ("instrument[1]-") or lacks an index of that key ("instrument-name", "ms_run[x]-location").
+  // - Logs a warning and returns false for a key that belongs to an mzTab 1.0 key but has an empty field
+  //   ("instrument[1]-") or lacks an index of that key ("instrument-name", "sample[1]-species").
+  //   core-v4.0.0-ci.5 ignored these keys as well, without the warning.
+  // - Throws ParseError for a key that belongs to an mzTab 1.0 key but has something other than an index
+  //   in the brackets of one ("instrument[x]-name", "ms_run[99999999999]-location"), which the reader
+  //   could not convert.
   bool isMzTab10MetaDataKey(const std::string& key, const std::vector<std::string>& key_fields, const std::string& filename)
   {
     auto reject = [&](const std::string& reason)
     {
       throw OpenMS::Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, filename, "Error parsing MzTab metadata key '" + key + "': " + reason);
+    };
+    auto ignore = [&](const std::string& reason)
+    {
+      OPENMS_LOG_WARN << "Warning: ignoring MzTab metadata key '" << key << "' in '" << filename << "': " << reason << std::endl;
+      return false;
     };
 
     std::vector<std::string> names;   // each field up to its first '['
@@ -148,19 +157,26 @@ namespace
       }
       if (!belongs || index_where_none) continue; // e.g. "ms_run[1]-fragmentation_method[1]" is not "ms_run[1]-fragmentation_method"
 
+      std::string expected = key_form.form;
+      OpenMS::StringUtils::substitute(expected, "[]", "[1-n]");
       for (size_t i = 0; i != form.size(); ++i)
       {
         if (empty[i])
         {
-          reject("a '-' separated field of the key is empty");
+          return ignore("a '-' separated field of the key is empty");
+        }
+      }
+      for (size_t i = 0; i != form.size(); ++i)
+      {
+        if (OpenMS::StringUtils::hasSuffix(form[i], "[]") && OpenMS::StringUtils::trimmed(indices[i]).empty())
+        {
+          return ignore("the mzTab 1.0 key with these field names has the form '" + expected + "'");
         }
       }
       for (size_t i = 0; i != form.size(); ++i)
       {
         if (OpenMS::StringUtils::hasSuffix(form[i], "[]") && !isMetaDataKeyIndex(indices[i]))
         {
-          std::string expected = key_form.form;
-          OpenMS::StringUtils::substitute(expected, "[]", "[1-n]");
           reject("the mzTab 1.0 key with these field names has the form '" + expected + "'");
         }
       }
@@ -400,8 +416,9 @@ namespace OpenMS
         throw Exception::ParseError(__FILE__, __LINE__, OPENMS_PRETTY_FUNCTION, filename, "Error parsing MzTab line: " + std::string(s) + ". The metadata key is empty");
       }
       // The form of the key decides: a key in the form of an mzTab 1.0 key is read below, a key that
-      // belongs to an mzTab 1.0 key but lacks its indices or has an empty field is rejected, and any
-      // other key (e.g. the mzTab-M keys "assay[1]" or "ms_run[1]-fragmentation_method[1]") is ignored.
+      // belongs to an mzTab 1.0 key but has a malformed index is rejected, one that lacks an index or has
+      // an empty field is ignored with a warning, and any other key (e.g. the mzTab-M keys "assay[1]" or
+      // "ms_run[1]-fragmentation_method[1]") is ignored.
       if (!isMzTab10MetaDataKey(cells[1], meta_key_fields, filename))
       {
         continue;

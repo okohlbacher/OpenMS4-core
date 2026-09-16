@@ -339,6 +339,9 @@ namespace OpenMS
 
       ParseState state(RUN_HEADER);
       Size n_col = 0;
+      // Blank cells in front of the first sample header name. A sample table exported with an empty first
+      // column has them in the header and in every row; they are dropped from both, so the columns line up.
+      Size sample_lead = 0;
 
       for (const std::string& raw_line : text_file)
       {
@@ -352,9 +355,11 @@ namespace OpenMS
 
         // Now split the line into individual cells
         StringList cells;
-        // Split a sample row before trimming it: trimming the line would also drop a blank first or last cell (its
-        // tab is whitespace), and every later value would then move into the wrong column. Cells are trimmed below.
-        StringUtils::split(state == SAMPLE_CONTENT ? raw_line : line, "\t", cells);
+        // Split the sample header and its rows before trimming them: trimming the line would also drop a blank
+        // first or last cell (its tab is whitespace), and every later value would then move into the wrong
+        // column. Both are split the same way, so they stay aligned. Cells are trimmed below.
+        const bool sample_table = state == SAMPLE_HEADER || state == SAMPLE_CONTENT;
+        StringUtils::split(sample_table ? raw_line : line, "\t", cells);
 
         // Trim whitespace from all cells (so , foo , and  ,foo, is the same)
         std::transform(cells.begin(), cells.end(), cells.begin(),
@@ -430,6 +435,16 @@ namespace OpenMS
         {
           state = SAMPLE_CONTENT;
           line_number = 0;
+          // Only named columns count: drop the blank cells before the first name and after the last one.
+          while (sample_lead < cells.size() && cells[sample_lead].empty())
+          {
+            ++sample_lead;
+          }
+          cells.erase(cells.begin(), cells.begin() + sample_lead);
+          while (!cells.empty() && cells.back().empty())
+          {
+            cells.pop_back();
+          }
           parseHeader_(
             cells,
             tsv_file,
@@ -446,6 +461,18 @@ namespace OpenMS
           // the header, so every stored row has exactly one value per column and getFactorValue() stays inside it.
           // Only the sample name itself must be present.
           const Size sample_column = sample_columnname_to_columnindex_.at("Sample");
+          const auto lead_end = cells.begin() + std::min(sample_lead, cells.size());
+          const auto non_empty = [](const std::string& cell) { return !cell.empty(); };
+          // A value outside the header's columns is ignored, but it may mean that the row is shifted (e.g. by a
+          // stray tab), so its other values could be in the wrong columns as well.
+          if (std::any_of(cells.begin(), lead_end, non_empty) ||
+              (cells.size() > sample_lead + n_col && std::any_of(cells.begin() + sample_lead + n_col, cells.end(), non_empty)))
+          {
+            OPENMS_LOG_WARN << "Warning: row " << line_number + 1 << " of the sample table in '" << tsv_file
+                            << "' has values outside the columns of its header. They are ignored; check that its other "
+                               "values are in the right columns." << std::endl;
+          }
+          cells.erase(cells.begin(), lead_end);
           cells.resize(n_col);
           parseErrorIf_(cells[sample_column].empty(), tsv_file, "Missing sample name in a row of the sample table");
 

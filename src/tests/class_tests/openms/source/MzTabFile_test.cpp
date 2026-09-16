@@ -7,6 +7,7 @@
 // --------------------------------------------------------------------------
 
 #include <OpenMS/CONCEPT/ClassTest.h>
+#include <OpenMS/CONCEPT/LogStream.h>
 #include <OpenMS/test_config.h>
 
 ///////////////////////////
@@ -18,6 +19,8 @@
 #include <OpenMS/FORMAT/TextFile.h>
 #include <OpenMS/DATASTRUCTURES/ListUtils.h>
 #include <OpenMS/KERNEL/FeatureMap.h>
+
+#include <sstream>
 ///////////////////////////
 
 #include <algorithm>
@@ -262,7 +265,7 @@ auto storedMetaData = [](const MzTab& mz_tab)
   return ListUtils::concatenate(metadata, "\n");
 };
 
-START_SECTION(([EXTRA] a metadata key that is empty, or that belongs to an mzTab 1.0 key but has an empty field or lacks its indices, is rejected))
+START_SECTION(([EXTRA] a metadata key that is empty, or that belongs to an mzTab 1.0 key but has a malformed index, is rejected))
 {
   for (const std::string& key : {std::string(), std::string(" ")})
   {
@@ -274,18 +277,12 @@ START_SECTION(([EXTRA] a metadata key that is empty, or that belongs to an mzTab
       "Error parsing MzTab line: MTD\t" + key + "\tx. The metadata key is empty in: " + filename)
   }
 
-  const std::string empty_field = "a '-' separated field of the key is empty";
   const std::vector<std::pair<std::string, std::string>> malformed_keys =
   {
-    {"instrument[1]-", empty_field},
-    {"mzTab-", empty_field},
-    {"assay[1]-quantification_mod[1]- ", empty_field},
-    {"instrument-name", "the mzTab 1.0 key with these field names has the form 'instrument[1-n]-name'"},
     {"instrument[x]-name", "the mzTab 1.0 key with these field names has the form 'instrument[1-n]-name'"},
     {"instrument[1-name", "the mzTab 1.0 key with these field names has the form 'instrument[1-n]-name'"},
     {"instrument[ ]-name", "the mzTab 1.0 key with these field names has the form 'instrument[1-n]-name'"},
     {"ms_run[1 2]-location", "the mzTab 1.0 key with these field names has the form 'ms_run[1-n]-location'"},
-    {"sample[1]-species", "the mzTab 1.0 key with these field names has the form 'sample[1-n]-species[1-n]'"},
     {"sample_processing[x]", "the mzTab 1.0 key with these field names has the form 'sample_processing[1-n]'"},
     {"ms_run[99999999999]-location", "the mzTab 1.0 key with these field names has the form 'ms_run[1-n]-location'"}
   };
@@ -311,6 +308,54 @@ START_SECTION(([EXTRA] a metadata key that is empty, or that belongs to an mzTab
   TEST_EQUAL(mz_tab.getPSMSectionRows().size(), 946)
   TEST_EQUAL(mz_tab.getMetaData().instrument.size(), 1)
   TEST_EQUAL(mz_tab.getMetaData().assay.size(), 12)
+}
+END_SECTION
+
+START_SECTION(([EXTRA] a metadata key that belongs to an mzTab 1.0 key but lacks an index or has an empty field is ignored with a warning))
+{
+  // core-v4.0.0-ci.5 ignored these keys without a warning; the load must not fail on them
+  const std::string empty_field = "a '-' separated field of the key is empty";
+  const std::vector<std::pair<std::string, std::string>> keys =
+  {
+    {"instrument[1]-", empty_field},
+    {"mzTab-", empty_field},
+    {"assay[1]-quantification_mod[1]- ", empty_field},
+    {"instrument-name", "the mzTab 1.0 key with these field names has the form 'instrument[1-n]-name'"},
+    {"sample[1]-species", "the mzTab 1.0 key with these field names has the form 'sample[1-n]-species[1-n]'"},
+    {"software[1]-setting", "the mzTab 1.0 key with these field names has the form 'software[1-n]-setting[1-n]'"},
+    {"instrument[1]-analyzer", "the mzTab 1.0 key with these field names has the form 'instrument[1-n]-analyzer[1-n]'"},
+    {"sample[1]-custom", "the mzTab 1.0 key with these field names has the form 'sample[1-n]-custom[1-n]'"},
+    {"sample_processing", "the mzTab 1.0 key with these field names has the form 'sample_processing[1-n]'"},
+    {"custom", "the mzTab 1.0 key with these field names has the form 'custom[1-n]'"}
+  };
+  std::vector<std::string> lines;
+  for (const auto& key : keys) lines.push_back("MTD\t" + key.first + "\t[MS, MS:1000133, CID, ]");
+  std::string with_keys;
+  NEW_TMP_FILE(with_keys)
+  storeSILACWithMetaData(with_keys, lines);
+
+  OPENMS_LOG_WARN->clearCache();
+  std::ostringstream warnings;
+  OPENMS_LOG_WARN.insert(warnings);
+  MzTab loaded;
+  MzTabFile().load(with_keys, loaded);
+  OPENMS_LOG_WARN.remove(warnings);
+  OPENMS_LOG_WARN->clearCache();
+  TEST_EQUAL(loaded.getPSMSectionRows().size(), 946)
+  for (const auto& key : keys)
+  {
+    // the warning names the key without the whitespace around it, which the reader removes
+    const std::string expected = "Warning: ignoring MzTab metadata key '" + StringUtils::trimmed(key.first) + "' in '" + with_keys + "': " + key.second;
+    TEST_EQUAL(warnings.str().find(expected) != std::string::npos, true)
+  }
+
+  // nothing of these lines is kept
+  std::string without_keys;
+  NEW_TMP_FILE(without_keys)
+  storeSILACWithMetaData(without_keys, {});
+  MzTab loaded_without_keys;
+  MzTabFile().load(without_keys, loaded_without_keys);
+  TEST_EQUAL(storedMetaData(loaded), storedMetaData(loaded_without_keys))
 }
 END_SECTION
 
