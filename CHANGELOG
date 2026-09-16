@@ -1,7 +1,7 @@
 Core SDK 4.0.0-ci.6 candidate (2026-09-16)
 -----------------------------------------
 Follow-ups to the P0 review fixes released in ci.3 to ci.5. Most of them accept input those fixes
-rejected; the ones that reject input ci.5 accepted are marked as such. The class tests cover every case.
+rejected; the ones that reject input ci.5 accepted are marked as such.
 - Base64 numeric decoding skips ASCII whitespace (space, tab, CR, LF), so line-wrapped
   xs:base64Binary decodes to the same values as unwrapped input. ci.2 decoded such input wrongly or
   threw, and ci.3 to ci.5 rejected it; every other byte outside the alphabet still throws. The
@@ -22,22 +22,30 @@ rejected; the ones that reject input ci.5 accepted are marked as such. The class
   lines up with its header, and a row with a value outside the header's columns is read with a
   warning that it may be shifted. A file-section sample missing from the sample table is a
   ParseError naming it, not std::out_of_range. Rejects input ci.5 accepted: a sample row without a
-  sample name. load(const TextFile&) must be given untrimmed lines, as load(path) now reads them;
-  trimmed lines move the values of a row with a blank first cell one column to the left.
-- Mascot XML: query numbers are checked against NumQueries wherever they are used, and query number
-  0 is rejected. Only the first NumQueries sizes the list; a repeated one is ignored with a warning.
-  pep_* elements outside a peptide element, and StringTitle and RTINSECONDS outside a query, are
-  ignored with a warning instead of updating another query, and nested peptide elements each keep
-  their own hit.
-- mzTab: an empty metadata key is a ParseError instead of a read past the end of the split fields.
-  Keys are classified before they are read: mzTab-M keys (including MzTabMFile's own
-  "ms_run[1]-fragmentation_method[1]") and keys that lack a field of an mzTab 1.0 key (such as
-  "instrument[1]") are ignored as in ci.5; keys that have the field names of an mzTab 1.0 key but an
-  empty field or a missing index (such as "instrument-name") are ignored as in ci.5, now with a
-  warning; keys with whitespace around them are read, and whitespace inside an index is accepted as
-  in ci.5. A key whose brackets hold something other than a closed index is a ParseError naming the
-  key; ci.5 failed on most of these with a ConversionError ("instrument[x]-name"), but read an unclosed
-  bracket ("instrument[1-name" as instrument 1), which is input ci.5 accepted and ci.6 rejects.
+  sample name, and a sample table whose header and rows are indented differently (after the
+  warning, the shifted row usually lacks its sample name). load(const TextFile&) must be given
+  untrimmed lines, as load(path) now reads them; trimmed lines move the values of a row with a blank
+  first cell one column to the left.
+- Mascot XML: query numbers are checked against NumQueries wherever they are used. Only the first
+  NumQueries sizes the list; a repeated one is ignored with a warning. pep_* elements outside a
+  peptide element, and StringTitle and RTINSECONDS outside a query, are ignored with a warning
+  instead of updating another query, and nested peptide elements each keep their own hit. Rejects
+  input ci.5 accepted: a query number of 0 or below, and a peptide query number above the first
+  NumQueries even if a later, larger NumQueries follows.
+- mzTab: each metadata key is classified against the mzTab 1.0 key list before it is read.
+  - Keys in the form of an mzTab 1.0 key are read as in ci.5, also with whitespace around the key
+    or inside an index.
+  - Keys that match no mzTab 1.0 key are ignored. For keys that lack a field of one ("instrument[1]")
+    and for mzTab-M keys, including those of MzTabMFile's own output, ci.5 read past the end of the
+    key's fields (a heap buffer overflow). Keys with an extra field ("instrument[2]-name-x",
+    "mzTab-version-1"), which ci.5 read by their prefix, are now ignored as well, without a warning.
+  - Keys with the field names of an mzTab 1.0 key but an empty field or a missing index
+    ("instrument-name") are ignored with a warning. ci.5 ignored most of them, but failed with a
+    ConversionError on "contact-name", "contact-affiliation" and "contact-email".
+  - Rejects input ci.5 accepted: an empty or whitespace-only key (ci.5 read past the end of the
+    fields of an empty one), and a key with the field names of an mzTab 1.0 key whose brackets hold
+    something other than an index ("instrument[1-name", "instrument[+2]-name", "instrument[2]]-name",
+    which ci.5 read as that index). ci.5 already failed on most such keys ("instrument[x]-name").
 - More class tests for sqMass, mzML, mzData, mzIdentML, MassTraceDetection, isotope
   distributions and IsobaricAnalyzer data; documentation of what Base64::decode accepts.
 

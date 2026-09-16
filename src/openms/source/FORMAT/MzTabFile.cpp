@@ -109,11 +109,11 @@ namespace
   //   "instrument[1]", "title[1]", "colunit[3]-protein" and "my_tool--setting".
   // - Returns true for a key in the form of the mzTab 1.0 key it belongs to.
   // - Logs a warning and returns false for a key that belongs to an mzTab 1.0 key but has an empty field
-  //   ("instrument[1]-") or lacks an index of that key ("instrument-name", "sample[1]-species").
-  //   core-v4.0.0-ci.5 ignored these keys as well, without the warning.
-  // - Throws ParseError for a key that belongs to an mzTab 1.0 key but has something other than an index
-  //   in the brackets of one ("instrument[x]-name", "ms_run[99999999999]-location"), which the reader
-  //   could not convert.
+  //   ("instrument[1]-") or lacks an index of that key ("instrument-name", "sample[1]-species"), whatever
+  //   its other brackets hold. core-v4.0.0-ci.5 ignored most of these keys without a warning (it failed on
+  //   "contact-name").
+  // - Otherwise throws ParseError for a key that belongs to an mzTab 1.0 key but has something other
+  //   than an index in the brackets of one ("instrument[x]-name", "ms_run[99999999999]-location").
   bool isMzTab10MetaDataKey(const std::string& key, const std::vector<std::string>& key_fields, const std::string& filename)
   {
     auto reject = [&](const std::string& reason)

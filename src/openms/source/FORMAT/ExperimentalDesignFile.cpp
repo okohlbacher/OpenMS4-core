@@ -527,7 +527,7 @@ namespace OpenMS
 
     ExperimentalDesign ExperimentalDesignFile::load(const std::string &tsv_file, const bool require_spectra_file)
     {
-      // Lines are not trimmed here: the parsers trim them, except sample rows, which need their leading and trailing tabs.
+      // Lines are not trimmed here: the parsers trim them, except the sample header and rows, which need their tabs.
       const TextFile text_file(tsv_file);
       return load(text_file, require_spectra_file, tsv_file);
     }

@@ -354,6 +354,9 @@ namespace OpenMS
   - Two-table format only: every row of the sample section must name its sample. Its other cells
     are optional: a blank cell keeps its column wherever it is in the row, a row with fewer cells
     than the sample header is padded with empty values, and cells beyond the header are ignored.
+    Blank cells before the header's first name (a table indented by an empty first column) are
+    dropped from the header and from every row. A row with a value in a dropped or ignored cell is
+    read with a warning, because it may be shifted.
   - Two-table format only: every @c Sample value used in the file section must exist in the
     sample section, otherwise loading fails with a @c ParseError that names the sample. Omitting
     the @c Sample column from a two-table file section therefore fails as well, unless the sample

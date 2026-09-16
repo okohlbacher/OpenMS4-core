@@ -37,10 +37,15 @@ namespace OpenMS
     two-table design rejects unknown columns.
   - Rows of the one-table format and of the MS file section must have exactly as many cells as
     their header; these lines are trimmed before they are split, so a blank first or last cell
-    counts as missing. Rows of the sample section of a two-table design need not: a blank cell
-    keeps its column wherever it is, a row with fewer cells than the sample header is padded
-    with empty values, and cells beyond the header are ignored. Every sample row must name its
-    sample.
+    counts as missing. The sample section of a two-table design is split before it is trimmed:
+    blank cells before the first and after the last name of its header are not columns, and the
+    same number of leading cells is dropped from every row, so a table indented by an empty first
+    column still lines up. Its rows need not match the header's width: a blank cell keeps its
+    column wherever it is, a row with fewer cells than the header is padded with empty values,
+    and cells beyond the header are ignored. A row with a value in a dropped or ignored cell is
+    read with a warning, since it may be shifted; if the header and the rows are indented
+    differently, the shift usually also loses the sample name and the load fails. Every sample
+    row must name its sample.
   - A relative @c Spectra_Filepath is resolved against the directory of the design file first,
     then against the current working directory.
 
@@ -81,8 +86,8 @@ namespace OpenMS
     /// them resolve against the current working directory.
     ///
     /// Do not trim the lines of @p text_file (e.g. with the @c trim_lines argument of TextFile):
-    /// a sample row needs its leading and trailing tabs, or a blank first cell is lost and every
-    /// later value of that row moves one column to the left.
+    /// the sample header and its rows need their leading and trailing tabs, or a blank first cell
+    /// of a row is lost and every later value of that row moves one column to the left.
     /// @see load(const std::string&, bool) for the exceptions thrown
     static ExperimentalDesign load(const TextFile& text_file, const bool require_spectra_file, std::string filename);
 
