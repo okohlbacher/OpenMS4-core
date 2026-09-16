@@ -338,9 +338,19 @@ START_SECTION(([EXTRA] a metadata key that belongs to an mzTab 1.0 key but lacks
   std::ostringstream warnings;
   OPENMS_LOG_WARN.insert(warnings);
   MzTab loaded;
-  MzTabFile().load(with_keys, loaded);
+  bool loads = true;
+  try
+  {
+    MzTabFile().load(with_keys, loaded);
+  }
+  catch (const Exception::ParseError&)
+  {
+    loads = false;
+  }
+  // remove the stream before anything else is logged, whether or not the load threw
   OPENMS_LOG_WARN.remove(warnings);
   OPENMS_LOG_WARN->clearCache();
+  TEST_EQUAL(loads, true)
   TEST_EQUAL(loaded.getPSMSectionRows().size(), 946)
   for (const auto& key : keys)
   {
