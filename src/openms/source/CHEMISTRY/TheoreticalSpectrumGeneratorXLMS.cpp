@@ -308,7 +308,8 @@ namespace OpenMS
         addPeak_(spectrum, charges, ion_names, pos, intensity, res_type, frag_index, charge, ion_type);
         if (add_losses_)
         {
-          addLinearIonLosses_(spectrum, charges, ion_names, pos, res_type, frag_index, intensity, charge, ion_type, backward_losses[i]);
+          // pass the charged mass as in the prefix branch, not pos: the helper subtracts the loss and divides by charge itself
+          addLinearIonLosses_(spectrum, charges, ion_names, mono_weight, res_type, frag_index, intensity, charge, ion_type, backward_losses[i]);
         }
         if (add_isotopes_ && max_isotope_ >= 2) // add second isotopic peak with fast method, if two or more peaks are asked for
         {

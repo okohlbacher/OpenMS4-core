@@ -812,6 +812,46 @@ END_SECTION
 
 delete ptr;
 
+START_SECTION(([EXTRA] charge-two suffix losses use neutral masses))
+  TheoreticalSpectrumGeneratorXLMS generator;
+  Param parameters = generator.getParameters();
+  parameters.setValue("add_b_ions", "false");
+  parameters.setValue("add_y_ions", "true");
+  parameters.setValue("add_losses", "true");
+  parameters.setValue("add_isotopes", "false");
+  parameters.setValue("add_metainfo", "true");
+  generator.setParameters(parameters);
+  AASequence sequence = AASequence::fromString("PEPTIDES");
+  PeakSpectrum spectrum;
+  generator.getLinearIonSpectrum(spectrum, sequence, 0, true, 2);
+  const PeakSpectrum::IntegerDataArray& charges = spectrum.getIntegerDataArrays().at(0);
+  const PeakSpectrum::StringDataArray& names = spectrum.getStringDataArrays().at(0);
+  Size losses_checked = 0;
+  for (Size i = 0; i != spectrum.size(); ++i)
+  {
+    if (charges[i] != 2) continue;
+    // Charge-one and charge-two versions of the same fragment differ by one proton, losses included.
+    const double charge_one_mz = 2 * spectrum[i].getMZ() - Constants::PROTON_MASS_U;
+    bool found = false;
+    for (Size j = 0; j != spectrum.size(); ++j)
+    {
+      if (charges[j] == 1 && std::string(names[j]) == std::string(names[i]) &&
+          std::abs(spectrum[j].getMZ() - charge_one_mz) < 1e-6)
+      {
+        found = true;
+        break;
+      }
+    }
+    TEST_TRUE(found)
+    if (std::string(names[i]).find("H2O") != std::string::npos ||
+        std::string(names[i]).find("NH3") != std::string::npos)
+    {
+      ++losses_checked;
+    }
+  }
+  TEST_EQUAL(losses_checked > 0, true) // neutral-loss peaks were included
+END_SECTION
+
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 
