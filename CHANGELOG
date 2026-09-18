@@ -1,3 +1,18 @@
+Core SDK 4.0.0-ci.7 candidate (2026-09-18)
+-----------------------------------------
+- Re-land CPP-042 on its own: both cross-link spectrum generators put the water and ammonia loss
+  peaks of linear x/y/z ions at charge 2 or higher at (M/z - L)/z instead of (M - L)/z, so the peak
+  landed below half its correct m/z. The suffix branch now passes the charged mass to the loss
+  helper, as the prefix branch and every cross-link loss call already did. Charge-1, prefix, intact
+  and cross-link ions are unchanged.
+  This changes what OpenPepXL matches: real loss peaks of charge-2 suffix ions now match, occasional
+  random matches disappear, and the linear-ion pre-filter (at least two matched linear peaks) can
+  keep or drop other candidates. Scores, fragment annotations and therefore the TOPP_OpenPepXL
+  reference outputs change; the references are updated in the same cycle, per output.
+  The fix shipped in ci.3 and was reverted in ci.4 together with CPP-043, because the installed
+  console suite failed and the ci.2 OpenPepXL output was restored until the references could be
+  reviewed. CPP-043 (precursor isotope companions of the cross-link generator) stays reverted.
+
 Core SDK 4.0.0-ci.6 candidate (2026-09-16)
 -----------------------------------------
 Follow-ups to the P0 review fixes released in ci.3 to ci.5. Most of them accept input those fixes

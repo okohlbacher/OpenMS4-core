@@ -227,7 +227,8 @@ namespace OpenMS
 
         if (add_losses_)
         {
-          addLosses_(spectrum, pos, charge, backward_losses[i]);
+          // pass the charged mass as in the prefix branch, not pos: the helper subtracts the loss and divides by charge itself
+          addLosses_(spectrum, mono_weight, charge, backward_losses[i]);
         }
         spectrum.emplace_back(pos, charge);
 
