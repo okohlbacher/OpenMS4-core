@@ -142,7 +142,9 @@ public:
     for (Size i = 0; i < data.size(); i++)
     {
       // double sz(2), UInt sp(1);
-      binned_data.emplace_back(data[i], sz, false, sp, offset);
+      // BinnedSpectrum takes the bin size as float; cast here, or MSVC reports the narrowing
+      // from inside <xutility> in every consumer that instantiates this function.
+      binned_data.emplace_back(data[i], static_cast<float>(sz), false, sp, offset);
     }
 
     // create distancematrix for data with comparator

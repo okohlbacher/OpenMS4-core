@@ -812,6 +812,51 @@ END_SECTION
 
 delete ptr;
 
+START_SECTION(([EXTRA] precursor isotope companions keep the isotope spacing of their charge))
+  TheoreticalSpectrumGeneratorXLMS generator;
+  Param parameters = generator.getParameters();
+  parameters.setValue("add_b_ions", "false");
+  parameters.setValue("add_y_ions", "false");
+  parameters.setValue("add_losses", "false");
+  parameters.setValue("add_isotopes", "true");
+  parameters.setValue("max_isotope", 2);
+  parameters.setValue("add_precursor_peaks", "true");
+  parameters.setValue("add_metainfo", "true");
+  generator.setParameters(parameters);
+  AASequence sequence = AASequence::fromString("PEPTIDESK");
+  const double precursor_mass = 2000.0;
+  for (Int charge : {1, 2, 3})
+  {
+    PeakSpectrum spectrum;
+    generator.getXLinkIonSpectrum(spectrum, sequence, 8, precursor_mass, true, charge, charge);
+    const PeakSpectrum::StringDataArray& names = spectrum.getStringDataArrays().at(0);
+    // the three precursor peaks (intact, -H2O, -NH3) each carry a second isotopic peak one
+    // C13-C12 spacing above them, and that spacing is in m/z, so it shrinks with the charge
+    const double spacing = Constants::C13C12_MASSDIFF_U / static_cast<double>(charge);
+    Size pairs = 0;
+    for (const std::string& name : {"[M+H]", "[M+H]-H2O", "[M+H]-NH3"})
+    {
+      std::vector<double> peaks;
+      for (Size i = 0; i != spectrum.size(); ++i)
+      {
+        if (std::string(names[i]) == name) peaks.push_back(spectrum[i].getMZ());
+      }
+      TEST_EQUAL(peaks.size(), 2)
+      std::sort(peaks.begin(), peaks.end());
+      TEST_REAL_SIMILAR(peaks[1] - peaks[0], spacing)
+      ++pairs;
+    }
+    TEST_EQUAL(pairs, 3)
+    // the intact precursor sits at the charged mass divided by its charge
+    double intact = 0;
+    for (Size i = 0; i != spectrum.size(); ++i)
+    {
+      if (std::string(names[i]) == "[M+H]") intact = std::max(intact, spectrum[i].getMZ());
+    }
+    TEST_REAL_SIMILAR(intact - spacing, (precursor_mass + Constants::PROTON_MASS_U * charge) / charge)
+  }
+END_SECTION
+
 START_SECTION(([EXTRA] charge-two suffix losses use neutral masses))
   TheoreticalSpectrumGeneratorXLMS generator;
   Param parameters = generator.getParameters();

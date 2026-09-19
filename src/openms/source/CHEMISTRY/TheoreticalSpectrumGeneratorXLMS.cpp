@@ -621,7 +621,8 @@ namespace OpenMS
     spectrum.push_back(p);
     if (add_isotopes_ && max_isotope_ >= 2) // add second isotopic peak with fast method, if two or more peaks are asked for
     {
-      double pos = mono_pos + (Constants::C13C12_MASSDIFF_U / static_cast<double>(charge));
+      // mono_pos is a charged mass, not an m/z, so the isotope spacing is added before dividing by charge
+      double pos = (mono_pos + Constants::C13C12_MASSDIFF_U) / static_cast<double>(charge);
       p.setMZ(pos);
       p.setIntensity(pre_int_);
       if (add_metainfo_)
@@ -651,7 +652,8 @@ namespace OpenMS
     spectrum.push_back(p);
     if (add_isotopes_ && max_isotope_ >= 2) // add second isotopic peak with fast method, if two or more peaks are asked for
     {
-      double pos = mono_pos + (Constants::C13C12_MASSDIFF_U / static_cast<double>(charge));
+      // mono_pos is a charged mass, not an m/z, so the isotope spacing is added before dividing by charge
+      double pos = (mono_pos + Constants::C13C12_MASSDIFF_U) / static_cast<double>(charge);
       p.setMZ(pos);
       p.setIntensity(pre_int_H2O_);
       if (add_metainfo_)
@@ -680,7 +682,8 @@ namespace OpenMS
     spectrum.push_back(p);
     if (add_isotopes_ && max_isotope_ >= 2) // add second isotopic peak with fast method, if two or more peaks are asked for
     {
-      double pos = mono_pos + (Constants::C13C12_MASSDIFF_U / static_cast<double>(charge));
+      // mono_pos is a charged mass, not an m/z, so the isotope spacing is added before dividing by charge
+      double pos = (mono_pos + Constants::C13C12_MASSDIFF_U) / static_cast<double>(charge);
       p.setMZ(pos);
       p.setIntensity(pre_int_NH3_);
       if (add_metainfo_)
