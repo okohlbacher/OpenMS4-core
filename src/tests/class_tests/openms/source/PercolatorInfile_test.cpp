@@ -67,6 +67,43 @@ START_SECTION(PeptideIdentificationList PercolatorInfile::load(const std::string
   TEST_EQUAL(pids[0].getSpectrumReference(), "30381")
   TEST_EQUAL(pids[6].getSpectrumReference(), "spectrum=2041")
   TEST_EQUAL(pids[7].getHits()[0].getMetaValue("target_decoy"),"decoy") // 8th entry is annotated as target in pin file but only maps to decoy proteins with prefix "DECOY_" -> set to decoy
+
+  // A .pin with exactly the standard column set - no FileName and no retentiontime, both of which
+  // are Sage extensions that getStandardFeatureSet() does not list - must load. This is what
+  // store() itself writes; reading it back used to throw a bare std::out_of_range.
+  {
+    PeptideHit hit;
+    hit.setSequence(AASequence::fromString("SAMPLER"));
+    hit.setCharge(2);
+    hit.setScore(1.0);
+    PeptideEvidence ev;
+    ev.setProteinAccession("PROT1");
+    ev.setAABefore('K');
+    ev.setAAAfter('S');
+    hit.setPeptideEvidences(std::vector<PeptideEvidence>{ev});
+
+    PeptideIdentification pid;
+    pid.setMZ(500.25);
+    pid.setRT(123.4);
+    pid.setSpectrumReference("scan=529");
+    pid.setHits(std::vector<PeptideHit>{hit});
+
+    PeptideIdentificationList in;
+    in.push_back(pid);
+
+    StringList feature_set = PercolatorInfile::getStandardFeatureSet(2, 3);
+    std::string std_pin;
+    NEW_TMP_FILE(std_pin);
+    PercolatorInfile::store(std_pin, in, feature_set, "trypsin", 2, 3);
+
+    StringList std_names;
+    PeptideIdentificationList out = PercolatorInfile::load(std_pin, true, "score", StringList(), std_names);
+    TEST_EQUAL(out.size(), 1)
+    ABORT_IF(out.empty())
+    TEST_EQUAL(std_names.empty(), true)        // no FileName column
+    TEST_EQUAL(out[0].hasRT(), false)          // no retentiontime column: the RT stays unset
+    TEST_EQUAL(out[0].getHits().size(), 1)
+  }
 }
 END_SECTION
 
