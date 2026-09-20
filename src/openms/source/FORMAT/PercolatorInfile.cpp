@@ -280,7 +280,13 @@ namespace OpenMS
         {
           pids.back().setMetaValue(Constants::UserParam::ID_MERGE_INDEX, map_filename_to_idx.at(raw_file_name));
         }
-        pids.back().setRT(StringUtils::toDouble(row[to_idx.at("retentiontime")]) * 60.0); // search engines typically write minutes (e.g., sage)
+        // retentiontime is optional for the same reason FileName is: neither is in the standard
+        // feature set, both are Sage extensions. Without it the RT stays unset instead of the
+        // load aborting with a bare std::out_of_range.
+        if (auto rt_it = to_idx.find("retentiontime"); rt_it != to_idx.end())
+        {
+          pids.back().setRT(StringUtils::toDouble(row[rt_it->second]) * 60.0); // search engines typically write minutes (e.g., sage)
+        }
         pids.back().setMetaValue("PinSpecId", sSpecId);
         if (IM > 0.0) // Sage might annotate 0.0 if no IM is present
         {

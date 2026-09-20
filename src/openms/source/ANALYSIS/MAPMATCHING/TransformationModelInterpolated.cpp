@@ -261,7 +261,7 @@ private:
     if (extrapolation_type == "global-linear")
     {
       std::vector<TransformationModel::DataPoint> bloated_data{};
-      bloated_data.resize(x_.size());
+      bloated_data.reserve(x_.size()); // reserve, not resize: the loop below appends
       //uff... well here we go.. adding an empty string
       for (Size s = 0; s < x_.size(); ++s)
       {
