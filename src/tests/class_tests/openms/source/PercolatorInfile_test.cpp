@@ -76,6 +76,7 @@ START_SECTION(PeptideIdentificationList PercolatorInfile::load(const std::string
     hit.setSequence(AASequence::fromString("SAMPLER"));
     hit.setCharge(2);
     hit.setScore(1.0);
+    hit.setTargetDecoyType(PeptideHit::TargetDecoyType::TARGET); // store() skips unannotated PSMs
     PeptideEvidence ev;
     ev.setProteinAccession("PROT1");
     ev.setAABefore('K');
