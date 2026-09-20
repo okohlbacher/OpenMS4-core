@@ -11,6 +11,7 @@
 
 ///////////////////////////
 #include <OpenMS/FORMAT/PercolatorInfile.h>
+#include <OpenMS/FORMAT/TextFile.h>
 ///////////////////////////
 
 #include <OpenMS/METADATA/PeptideIdentification.h>
@@ -68,42 +69,24 @@ START_SECTION(PeptideIdentificationList PercolatorInfile::load(const std::string
   TEST_EQUAL(pids[6].getSpectrumReference(), "spectrum=2041")
   TEST_EQUAL(pids[7].getHits()[0].getMetaValue("target_decoy"),"decoy") // 8th entry is annotated as target in pin file but only maps to decoy proteins with prefix "DECOY_" -> set to decoy
 
-  // A .pin with exactly the standard column set - no FileName and no retentiontime, both of which
-  // are Sage extensions that getStandardFeatureSet() does not list - must load. This is what
-  // store() itself writes; reading it back used to throw a bare std::out_of_range.
+  // A .pin without FileName and without retentiontime - neither is in the standard column set,
+  // both are Sage extensions - must load. Reading one used to throw a bare std::out_of_range.
   {
-    PeptideHit hit;
-    hit.setSequence(AASequence::fromString("SAMPLER"));
-    hit.setCharge(2);
-    hit.setScore(1.0);
-    hit.setTargetDecoyType(PeptideHit::TargetDecoyType::TARGET); // store() skips unannotated PSMs
-    PeptideEvidence ev;
-    ev.setProteinAccession("PROT1");
-    ev.setAABefore('K');
-    ev.setAAAfter('S');
-    hit.setPeptideEvidences(std::vector<PeptideEvidence>{ev});
-
-    PeptideIdentification pid;
-    pid.setMZ(500.25);
-    pid.setRT(123.4);
-    pid.setSpectrumReference("scan=529");
-    pid.setHits(std::vector<PeptideHit>{hit});
-
-    PeptideIdentificationList in;
-    in.push_back(pid);
-
-    StringList feature_set = PercolatorInfile::getStandardFeatureSet(2, 3);
+    TextFile pin;
+    pin.addLine("SpecId\tLabel\tScanNr\tExpMass\tCalcMass\tscore\tPeptide\tProteins");
+    pin.addLine("scan=529\t1\t529\t1000.5\t1000.4\t1.5\tK.SAMPLER.S\tPROT1");
     std::string std_pin;
     NEW_TMP_FILE(std_pin);
-    PercolatorInfile::store(std_pin, in, feature_set, "trypsin", 2, 3);
+    pin.store(std_pin);
 
     StringList std_names;
     PeptideIdentificationList out = PercolatorInfile::load(std_pin, true, "score", StringList(), std_names);
     TEST_EQUAL(out.size(), 1)
     ABORT_IF(out.empty())
-    TEST_EQUAL(std_names.empty(), true)        // no FileName column
-    TEST_EQUAL(out[0].hasRT(), false)          // no retentiontime column: the RT stays unset
+    TEST_EQUAL(std_names.empty(), true)   // no FileName column
+    TEST_EQUAL(out[0].hasRT(), false)     // no retentiontime column: the RT stays unset
     TEST_EQUAL(out[0].getHits().size(), 1)
+    TEST_EQUAL(out[0].getHits()[0].getMetaValue("target_decoy"), "target")
   }
 }
 END_SECTION
