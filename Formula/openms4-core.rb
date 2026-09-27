@@ -7,6 +7,14 @@ class Openms4Core < Formula
   sha256 "2ca8edf19896ef5902daa9decef4d6abbc55118990926a94be70ec86e1da5317"
   license "BSD-3-Clause"
 
+  bottle do
+    root_url "https://github.com/okohlbacher/OpenMS4-core/releases/download/core-v4.0.0-ci.9"
+    rebuild 1
+    sha256 arm64_sequoia: "006bb9dd1eec79550046ffaaa878f853d566ee54b9a573637bd26d1db129823a"
+    sha256 sequoia:       "826510dd1aa02c04d3203e558e6922c83d9ade26894f275d6f899ec8c950f146"
+    sha256 x86_64_linux:  "92c605807cfdc3bfa29b9a672393b248621a14758c157247b1c0435c47277c8f"
+  end
+
 
 
   depends_on "cmake" => :build
