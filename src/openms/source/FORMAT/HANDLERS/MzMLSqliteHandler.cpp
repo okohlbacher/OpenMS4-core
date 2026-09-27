@@ -988,38 +988,59 @@ namespace OpenMS::Internal
 
       if (write_full_meta)
       {
-        MSExperiment meta;
-
-        // copy experimental settings
-        meta.reserveSpaceSpectra(exp.getNrSpectra());
-        meta.reserveSpaceChromatograms(exp.getNrChromatograms());
-        static_cast<ExperimentalSettings &>(meta) = exp;
-        for (Size k = 0; k < exp.getNrSpectra(); k++)
-        {
-          MSSpectrum s = exp.getSpectra()[k];
-          s.clear(false);
-          meta.addSpectrum(s);
-        }
-        for (Size k = 0; k < exp.getNrChromatograms(); k++)
-        {
-          MSChromatogram c = exp.getChromatograms()[k];
-          c.clear(false);
-          meta.addChromatogram(c);
-        }
-        std::string prepare_statement = "INSERT INTO RUN_EXTRA (RUN_ID, DATA) VALUES ";
-        prepare_statement +=std::string("(") + run_id_ + ", ?)";
-        std::vector<std::string> data;
-
-        std::string output;
-        MzMLFile().storeBuffer(output, meta);
-
-        // write the full metadata into the sql file (compress with zlib before)
-        std::string encoded_string;
-        OpenMS::ZlibCompression::compressString(output, encoded_string);
-        data.emplace_back(encoded_string);
-        // data.push_back(output); // in case you need to debug on the uncompressed string ...
-        conn.executeBindStatement(prepare_statement, data);
+        writeRunExtra_(conn, exp);
       }
+    }
+
+    void MzMLSqliteHandler::writeRunMetaSnapshot(const MSExperiment& exp)
+    {
+      SqliteConnector conn(filename_);
+      try
+      {
+        conn.executeStatement("BEGIN TRANSACTION");
+        writeRunExtra_(conn, exp);
+        conn.executeStatement("END TRANSACTION");
+      }
+      catch (...)
+      {
+        rollbackOpenTransaction(conn);
+        throw;
+      }
+    }
+
+    void MzMLSqliteHandler::writeRunExtra_(SqliteConnector& conn, const MSExperiment& exp)
+    {
+      MSExperiment meta;
+
+      // copy experimental settings
+      meta.reserveSpaceSpectra(exp.getNrSpectra());
+      meta.reserveSpaceChromatograms(exp.getNrChromatograms());
+      static_cast<ExperimentalSettings &>(meta) = exp;
+      for (Size k = 0; k < exp.getNrSpectra(); k++)
+      {
+        MSSpectrum s = exp.getSpectra()[k];
+        s.clear(false);
+        meta.addSpectrum(s);
+      }
+      for (Size k = 0; k < exp.getNrChromatograms(); k++)
+      {
+        MSChromatogram c = exp.getChromatograms()[k];
+        c.clear(false);
+        meta.addChromatogram(c);
+      }
+      std::string prepare_statement = "INSERT INTO RUN_EXTRA (RUN_ID, DATA) VALUES ";
+      prepare_statement +=std::string("(") + run_id_ + ", ?)";
+      std::vector<std::string> data;
+
+      std::string output;
+      MzMLFile().storeBuffer(output, meta);
+
+      // write the full metadata into the sql file (compress with zlib before)
+      std::string encoded_string;
+      OpenMS::ZlibCompression::compressString(output, encoded_string);
+      data.emplace_back(encoded_string);
+      // data.push_back(output); // in case you need to debug on the uncompressed string ...
+      conn.executeBindStatement(prepare_statement, data);
     }
 
     void MzMLSqliteHandler::createTables()

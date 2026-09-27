@@ -84,6 +84,7 @@ namespace OpenMS
 
         Writes the RUN entry for the current run id (with the full meta-data
         snapshot if requested), unless addRun() has already registered a run.
+        With @c full_meta, a run registered by addRun() gets its meta-data snapshot here.
         Calling it again only flushes data consumed since.
 
         @throws Exception::BaseException if writing to the database fails
@@ -94,10 +95,12 @@ namespace OpenMS
         @brief Add/insert a RUN entry into the sqMass file (ID and filename)
 
         Buffered records are flushed first, so they keep the run id under
-        which they were consumed. The RUN entry is written immediately: with
-        @c full_meta, its meta-data snapshot only holds @p filename, and the
-        meta-data of records consumed afterwards is not stored (reading such a
-        file falls back to the columns of the SQL tables).
+        which they were consumed. The RUN entry is written immediately; with
+        @c full_meta its meta-data snapshot can only be written once the records
+        of the run are known, so finalize() (and hence the destructor) adds it.
+        Calling setRunId() with a different id after addRun() stores the
+        snapshot under that id, which has no RUN entry; reading such a file
+        falls back to the SQL columns with a warning.
       */
       void addRun(const std::string& filename, const UInt64 run_id);
 
@@ -140,6 +143,10 @@ namespace OpenMS
 
       MSExperiment peak_meta_;
       bool wrote_any_run_ = false;
+      /// a run registered by addRun() still owes its RUN_EXTRA snapshot
+      bool snapshot_pending_ = false;
+
+      void writeRunSnapshot_();
     };
 
 } //end namespace OpenMS

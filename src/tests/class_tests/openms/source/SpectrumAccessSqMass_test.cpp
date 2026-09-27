@@ -418,6 +418,35 @@ START_SECTION([EXTRA] reading spectra written by MSDataSqlConsumer)
   meta_handler.readExperiment(meta_exp);
   TEST_EQUAL(meta_exp.getNrSpectra(), 1)
   TEST_EQUAL(meta_exp.getSample().getName(), "MSDataSqlConsumer sample")
+
+  // a run registered with addRun() still stores the full meta-data of its records
+  std::string run_filename;
+  NEW_TMP_FILE(run_filename);
+  {
+    MSSpectrum spectrum;
+    spectrum.setNativeID("scan=1"); // the snapshot is stored as mzML, whose writer renames ids without '='
+    spectrum.setRT(7.0);
+    spectrum.push_back(Peak1D(300.0, 10.0));
+    spectrum.push_back(Peak1D(301.0, 20.0));
+    // MetaInfo is carried only by the snapshot, never by the SQL fallback
+    spectrum.setMetaValue("addRun_marker", "kept");
+
+    ExperimentalSettings settings;
+    settings.getSample().setName("addRun sample");
+
+    MSDataSqlConsumer consumer(run_filename, 0, 500, true);
+    consumer.setExperimentalSettings(settings);
+    consumer.addRun("input_run.mzML", 5);
+    consumer.consumeSpectrum(spectrum);
+  } // the destructor finalizes the file
+
+  MSExperiment run_exp;
+  OpenMS::Internal::MzMLSqliteHandler run_handler(run_filename, 5);
+  run_handler.readExperiment(run_exp);
+  TEST_EQUAL(run_exp.getNrSpectra(), 1)
+  TEST_EQUAL(run_exp.getSample().getName(), "addRun sample")
+  ABORT_IF(run_exp.getNrSpectra() != 1)
+  TEST_EQUAL(run_exp[0].getMetaValue("addRun_marker").toString(), "kept")
 }
 END_SECTION
 
