@@ -1,3 +1,52 @@
+Core SDK 4.0.0-ci.9 candidate (2026-09-27)
+-----------------------------------------
+- Completes the seven fixes that the 2026-09-19 re-check of the high-priority findings found only
+  partly done. None of them changes what the console tools write; each has a class test that fails
+  on ci.8 and passes on the fix (CPP-096 is a documentation change).
+- CPP-006: the global-linear extrapolation of TransformationModelInterpolated's pair-taking
+  constructor is fitted to the input points only. That branch resized the vector it then appends
+  to, so the fit also saw one (0, 0) anchor per input point; it now reserves, as the
+  preprocess=false branch of the same constructor already does. No in-tree code uses this
+  constructor.
+- CPP-007: the gradient of the EMG fit (EmgGradientDescent) stays finite far from the apex. E_wrt_h
+  is shift-invariant: its z < 0 branch used absolute-position exponentials, which overflow once
+  mu/tau is above about 700, and now has the form of the other three derivatives. The four middle
+  branches use the scaled complementary error function erfcx_ that emg_point already uses, instead
+  of forming exp(z^2) and erfc(z) separately. On ci.8 the overflow was silent: the fit aborted or
+  kept h pinned at the observed maximum. The fit is opt-in: inside Core only PeakIntegrator uses it,
+  and only with fit_EMG=true (default false). Results move only where the fit aborted or pinned h,
+  that is for peaks with mu/tau above about 700.
+- CPP-010: IntegerMassDecomposer::getDecomposition returns a decomposition that adds up to the
+  mass. ci.8 returned a truncated one (getDecomposition(73) over the weights 10, 16 and 25 gave
+  0, 0, 0), because the witness counter of the table construction did not follow its chain.
+  getDecomposition has no in-tree caller, and for amino-acid alphabets at precision 1.0, 0.1 and
+  0.01 the witness vector is byte-identical before and after the fix (verified).
+- CPP-096: Feature::getConvexHull is documented, not locked. The note now says why a lock would not
+  make the call thread-safe (the ConvexHull2D it returns caches its outer points the same way on
+  the first getHullPoints() call) and to warm both caches before a parallel region, with
+  f.getConvexHull().getHullPoints().
+- CPP-161: PercolatorInfile::load reads a .pin without a retentiontime column and leaves the RT
+  unset instead of throwing std::out_of_range. Like FileName, which is already optional, the column
+  is not in the standard feature set.
+- CPP-214: MSDataSqlConsumer with full_meta (the default) and addRun keeps the experimental
+  settings and the meta-data of its records. ci.8 wrote an empty meta-data snapshot at addRun and
+  skipped the one at finalize, so a reader silently fell back to the SQL columns. addRun still
+  writes the RUN row at once; the snapshot is written at finalize() or at the next addRun. A
+  full_meta=false file, as OpenSwath writes it, is unchanged. With full_meta and addRun, finalize
+  runs one more SQLite transaction, and the consumer releases the record meta-data it collected
+  at each run boundary.
+- CPP-220: .xic chromatograms store an RT array whose first or second value is negative as
+  zlib-compressed raw doubles (RT_COMPRESSION 1). ci.8 used linear Numpress, which read an RT of
+  -100 back as about 4.29e8. XICParquetFile already reads RT_COMPRESSION 1. Arrays without a
+  negative value among their first two, empty ones included, are encoded byte-identically, and
+  intensities are unchanged. A third-party reader that accepts only RT_COMPRESSION 5 fails on such
+  rows instead of reading a wrong value.
+- API: MzMLSqliteHandler::writeRunMetaSnapshot(const MSExperiment&) is new and public.
+  MSDataSqlConsumer gains a member, which changes its class layout: rebuild all consumers.
+- Known open: XIPMParquetConsumer's RT column uses the same unchecked linear Numpress codec, so a
+  negative leading RT is not stored exactly there either. It is out of scope for CPP-220 and not
+  fixed in ci.9; it is recorded as a separate open item, planned for ci.11.
+
 Core SDK 4.0.0-ci.8 candidate (2026-09-19)
 -----------------------------------------
 - Re-land CPP-043: the second isotopic peak of the cross-link generator's precursor peaks (intact,
