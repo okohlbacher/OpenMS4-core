@@ -72,10 +72,12 @@ namespace OpenMS
 
   void MSDataSqlConsumer::addRun(const std::string& filename, const UInt64 run_id)
   {
+    // no run written yet (by an earlier addRun() or by finalize()): this call starts the file's first run
+    const bool first_run = !wrote_any_run_;
     // the buffers do not record their run, so write them under the id they were consumed with
     flush();
-    // the snapshot accumulated so far describes the run that ends here (none before the first addRun())
-    const bool run_ended = snapshot_pending_;
+    // a pending snapshot describes the run that ends here (none is pending before the first
+    // addRun(), or once it has been written, e.g. by finalize())
     writeRunSnapshot_();
 
     // set handler's run id and write run level information. The snapshot of this run cannot be
@@ -90,8 +92,9 @@ namespace OpenMS
     if (full_meta_)
     {
       // The reader pairs the SQL records with the snapshot's headers by position, so records
-      // consumed before the first addRun() keep their headers: this run's snapshot covers them.
-      if (run_ended)
+      // consumed before the file's first run keep their headers: this run's snapshot covers them.
+      // Every later run starts over, whether or not a snapshot was pending above.
+      if (!first_run)
       {
         peak_meta_.clear(false); // the settings stay, the record headers start over with the run
       }
