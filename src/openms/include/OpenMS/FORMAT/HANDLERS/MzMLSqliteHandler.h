@@ -245,8 +245,8 @@ protected:
       void createIndices_();
 
       // The writers on an open connection. They neither begin nor end a transaction, so that
-      // writeExperiment can combine all three in one; the public functions of the same name
-      // wrap each in a transaction of its own.
+      // writeExperiment can combine all three in one; the public functions wrap each in a
+      // transaction of its own (writeRunExtra_ is wrapped by writeRunMetaSnapshot).
       void writeRunLevelInformation_(SqliteConnector& conn, const MSExperiment& exp, bool write_full_meta);
 
       void writeRunExtra_(SqliteConnector& conn, const MSExperiment& exp);

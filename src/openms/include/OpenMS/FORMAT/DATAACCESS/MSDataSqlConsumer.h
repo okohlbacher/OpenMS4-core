@@ -87,6 +87,11 @@ namespace OpenMS
         With @c full_meta, a run registered by addRun() gets its meta-data snapshot here.
         Calling it again only flushes data consumed since.
 
+        @note With @c full_meta the meta-data snapshot is written once. Records
+        consumed after it was written are not described by it, and reading the
+        file with its full meta-data then fails, so with @c full_meta consume
+        everything before calling finalize().
+
         @throws Exception::BaseException if writing to the database fails
       */
       void finalize();
@@ -97,10 +102,19 @@ namespace OpenMS
         Buffered records are flushed first, so they keep the run id under
         which they were consumed. The RUN entry is written immediately; with
         @c full_meta its meta-data snapshot can only be written once the records
-        of the run are known, so finalize() (and hence the destructor) adds it.
+        of the run are known, so it is written by the next addRun() or, for the
+        last run, by finalize() (and hence the destructor). The snapshot of the
+        first run also covers the records consumed before the first addRun().
         Calling setRunId() with a different id after addRun() stores the
         snapshot under that id, which has no RUN entry; reading such a file
         falls back to the SQL columns with a warning.
+
+        @note With @c full_meta the file is read through this snapshot, which
+        is stored as mzML. If the native id of any spectrum lacks '=', the mzML
+        writer renames every spectrum to spectrum=0, spectrum=1, ..., and
+        reading the file with its full meta-data then fails on the mismatched
+        native ids. Up to core-v4.0.0-ci.8 a file written with addRun() was
+        read from the SQL columns instead, without its meta-data.
       */
       void addRun(const std::string& filename, const UInt64 run_id);
 
