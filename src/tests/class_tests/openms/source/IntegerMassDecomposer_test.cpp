@@ -80,7 +80,28 @@ END_SECTION
 
 START_SECTION((IntegerMassDecomposer< ValueType, DecompositionValueType >::decomposition_type getDecomposition(value_type mass)))
 {
-  // TODO
+  // gcd(10, 25) == 5, so the third column is built by the cache-optimised
+  // (gcd > 1) branch of the extended residue table, which is where the witness
+  // counts are produced. 73 = 3*16 + 1*25 is decomposable over this alphabet.
+  Weights::alphabet_masses_type masses;
+  masses.push_back(10.0);
+  masses.push_back(16.0);
+  masses.push_back(25.0);
+  Weights gcd_weights(masses, 1.0);
+
+  IntegerMassDecomposer<> gcd_decomposer(gcd_weights);
+  TEST_EQUAL(gcd_decomposer.exist(73), true)
+
+  IntegerMassDecomposer<>::decomposition_type decomp = gcd_decomposer.getDecomposition(73);
+  TEST_EQUAL(decomp.size(), gcd_weights.size())
+
+  // whichever decomposition is returned, it has to add up to the requested mass
+  IntegerMassDecomposer<>::value_type sum = 0;
+  for (Weights::size_type i = 0; i < gcd_weights.size(); ++i)
+  {
+    sum += decomp[i] * gcd_weights.getWeight(i);
+  }
+  TEST_EQUAL(sum, 73u)
 }
 END_SECTION
 

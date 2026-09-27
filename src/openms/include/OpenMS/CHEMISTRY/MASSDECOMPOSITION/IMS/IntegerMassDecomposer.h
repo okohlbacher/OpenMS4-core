@@ -357,9 +357,10 @@ private:
             cont = false;
             prev++;
             cur++;
-            ++counters[cur];
             for (size_type r = 1; r < d; ++r)
             {
+              // counters[] follows the chain from cur_column[prev], as local_counter does in the gcd == 1 branch
+              counters[cur] = counters[prev] + 1;
               if (cur_column[prev] + currentMass < cur_column[cur])
               {
                 cur_column[cur] = cur_column[prev] + currentMass;
