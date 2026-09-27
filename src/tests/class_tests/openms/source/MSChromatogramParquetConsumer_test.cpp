@@ -223,6 +223,53 @@ START_SECTION(MSChromatogramParquetConsumer_mixed_target_and_decoy_identifying_t
 }
 END_SECTION
 
+START_SECTION([EXTRA_NEGATIVE_LINEAR] MSChromatogramParquetConsumer_negative_rt_roundtrips)
+{
+  OpenSwath::LightTargetedExperiment light_exp;
+
+  OpenSwath::LightCompound compound;
+  compound.id = "pep1";
+  compound.sequence = "PEPTIDE";
+  compound.charge = 2;
+  light_exp.compounds.push_back(compound);
+
+  OpenSwath::LightTransition transition;
+  transition.transition_name = "tr1";
+  transition.peptide_ref = "pep1";
+  transition.precursor_mz = 600.2;
+  transition.product_mz = 500.2;
+  transition.fragment_charge = 1;
+  transition.fragment_nr = 7;
+  transition.setFragmentType("y");
+  transition.setDetectingTransition(true);
+  light_exp.transitions.push_back(transition);
+
+  // lossy linear Numpress cannot hold a negative first or second value; such an RT array must
+  // come back unchanged instead of wrapped into a large positive number
+  MSChromatogram chrom;
+  chrom.setNativeID("tr1");
+  chrom.push_back(ChromatogramPeak(-100.0, 10.0));
+  chrom.push_back(ChromatogramPeak(-99.0, 20.0));
+  chrom.push_back(ChromatogramPeak(-98.0, 30.0));
+
+  std::string tmp;
+  NEW_TMP_FILE(tmp);
+  std::string out = tmp + ".xic";
+  {
+    MSChromatogramParquetConsumer consumer(out, 1, "test_source", light_exp);
+    consumer.consumeChromatogram(chrom);
+  }
+
+  XICParquetFile xic(out);
+  std::vector<XICChromatogram> chroms;
+  xic.load(chroms);
+  ABORT_IF(chroms.size() != 1 || chroms[0].rt.size() != 3)
+  TEST_REAL_SIMILAR(chroms[0].rt[0], -100.0)
+  TEST_REAL_SIMILAR(chroms[0].rt[1], -99.0)
+  TEST_REAL_SIMILAR(chroms[0].rt[2], -98.0)
+}
+END_SECTION
+
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 END_TEST

@@ -441,7 +441,14 @@ namespace OpenMS
       }
 
       const bool use_lossy_compression = true;
-      const int64_t rt_compression = use_lossy_compression ? 5 : 1;
+      // Linear Numpress stores the first two values as unsigned 32-bit integers after scaling
+      // them by a positive fixed point, so a negative one comes back as a large positive number.
+      // The writer skips the codec's accuracy check for speed, so such an array is stored with
+      // zlib only (RT_COMPRESSION 1), matching linearNumpressCanStore_() in MzMLSqliteHandler.cpp.
+      const bool rt_lossy = use_lossy_compression &&
+                            (rt_data.empty() || rt_data[0] >= 0.0) &&
+                            (rt_data.size() < 2 || rt_data[1] >= 0.0);
+      const int64_t rt_compression = rt_lossy ? 5 : 1;
       const int64_t intensity_compression = use_lossy_compression ? 6 : 1;
 
       std::string rt_encoded;
@@ -467,9 +474,19 @@ namespace OpenMS
         npconfig_int.numpressErrorTolerance = -1.0;
         npconfig_int.setCompression("slof");
 
-        std::string rt_uncompressed;
-        MSNumpressCoder().encodeNPRaw(rt_data, rt_uncompressed, npconfig_mz);
-        ZlibCompression::compressString(rt_uncompressed, rt_encoded);
+        if (rt_lossy)
+        {
+          std::string rt_uncompressed;
+          MSNumpressCoder().encodeNPRaw(rt_data, rt_uncompressed, npconfig_mz);
+          ZlibCompression::compressString(rt_uncompressed, rt_encoded);
+        }
+        else
+        {
+          // Raw doubles, zlib only - see rt_lossy above.
+          std::string rt_bytes(reinterpret_cast<const char*>(rt_data.data()),
+                               rt_data.size() * sizeof(double));
+          ZlibCompression::compressString(rt_bytes, rt_encoded);
+        }
 
         std::string int_uncompressed;
         MSNumpressCoder().encodeNPRaw(intensity_data, int_uncompressed, npconfig_int);
