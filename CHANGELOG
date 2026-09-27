@@ -2,10 +2,12 @@ Core SDK 4.0.0-ci.9 candidate (2026-09-27)
 -----------------------------------------
 - Completes the seven fixes that the 2026-09-19 re-check of the high-priority findings found only
   partly done. No reference output of the console-tool suite changes. A tool's output changes only
-  for input that hits a fixed defect: .xic chromatograms whose first or second RT is negative
-  (FileConverter sqMass->.xic, OpenSwathWorkflow -out_chrom .xic; CPP-220), and EMG fits with
-  PeakIntegrator:fit_EMG=true whose gradient overflowed (CPP-007). Each code fix has a class test
-  that fails on ci.8 and passes on the fix (CPP-096 is a documentation change).
+  for .xic chromatograms whose first or second RT is negative (FileConverter sqMass->.xic,
+  OpenSwathWorkflow -out_chrom .xic; CPP-220) and for EMG fits (CPP-007), which run only with
+  PeakIntegrator:fit_EMG=true (default false; console tools reach it through the PeakIntegrator:
+  parameters of MRMTransitionGroupPicker): results change where the old gradient overflowed, and
+  other fits can differ at rounding level. Each code fix has a class test that fails on ci.8 and
+  passes on the fix (CPP-096 is a documentation change).
 - CPP-006: the global-linear extrapolation of TransformationModelInterpolated's pair-taking
   constructor is fitted to the input points only. That branch resized the vector it then appends
   to, so the fit also saw one (0, 0) anchor per input point; it now reserves, as the
@@ -20,7 +22,8 @@ Core SDK 4.0.0-ci.9 candidate (2026-09-27)
   709 the exponential overflows; z is then above 26.6, where erfc(z) has underflowed, and the
   product is inf, or inf * 0 = NaN where erfc(z) is 0. On ci.8 the overflow was silent: the fit
   aborted or kept h pinned at the observed maximum. The fit is opt-in: inside Core only
-  PeakIntegrator uses it, and only with fit_EMG=true (default false). Results change where the old
+  PeakIntegrator uses it, and only with fit_EMG=true (default false), which console tools reach
+  through the PeakIntegrator: parameters of MRMTransitionGroupPicker. Results change where the old
   gradient overflowed during the descent. That depends on mu/tau and on (mu - x)/tau at the
   iterates, and tau can drop well below its final value, so late peaks with a final mu/tau of a few
   hundred can be affected. Other fits can differ at rounding level. The seven fits of the class test
@@ -44,13 +47,16 @@ Core SDK 4.0.0-ci.9 candidate (2026-09-27)
   settings and the meta-data of its records. ci.8 wrote an empty meta-data snapshot at addRun and
   skipped the one at finalize, so a reader silently fell back to the SQL columns. addRun still
   writes the RUN row at once; the snapshot is written at the next addRun or, for the last run, at
-  finalize(). The reader pairs the records with the snapshot by position, so the first run's
-  snapshot also covers the records consumed before the first addRun. A full_meta=false file, as
-  OpenSwath writes it, is unchanged. With full_meta and addRun, finalize runs one more SQLite
-  transaction, and the consumer releases the record meta-data it collected at each run boundary
-  after the first. With full_meta the snapshot is written once: consume every record before calling
-  finalize(), because records consumed after it are not in the snapshot and the file then cannot be
-  read with its full meta-data.
+  finalize(). The reader pairs the records with the snapshot by position, so while no run has been
+  written, the snapshot of the run addRun registers also covers the records consumed before it. A
+  full_meta=false file, as OpenSwath writes it, is unchanged. With full_meta and addRun, finalize
+  runs one more SQLite transaction, and every addRun after a run has been written (by addRun or
+  finalize()) releases the record meta-data the consumer collected, so the snapshot of each later
+  run describes only the records consumed after its addRun. With full_meta each run's snapshot is
+  written once: consume every record before calling finalize(). Records consumed after it are not
+  in the snapshot; if the snapshot describes at least one record, the file then cannot be read with
+  its full meta-data, and if it describes none, a file with one run is read from the SQL columns
+  without meta-data.
 - CPP-220: .xic chromatograms store an RT array whose first or second value is negative as
   zlib-compressed raw doubles (RT_COMPRESSION 1). ci.8 used linear Numpress, which read an RT of
   -100 back as about 4.29e8. XICParquetFile already reads RT_COMPRESSION 1. Arrays without a
@@ -66,8 +72,8 @@ Core SDK 4.0.0-ci.9 candidate (2026-09-27)
   snapshot, as one written without addRun already was, so X-06 now reaches it: if the native id of
   any spectrum lacks '=', the mzML writer renames every spectrum to spectrum=<index>, and reading
   the file with its full meta-data fails on the mismatched ids. The same read fails when records are
-  consumed after an explicit finalize() (see CPP-214). ci.8 read such addRun files from the SQL
-  columns, without their meta-data.
+  consumed after an explicit finalize() whose snapshot already describes a record (see CPP-214).
+  ci.8 read such addRun files from the SQL columns, without their meta-data.
 
 Core SDK 4.0.0-ci.8 candidate (2026-09-19)
 -----------------------------------------

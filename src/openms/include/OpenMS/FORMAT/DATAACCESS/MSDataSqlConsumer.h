@@ -83,14 +83,19 @@ namespace OpenMS
         @brief Flush all buffered data and write the run-level information
 
         Writes the RUN entry for the current run id (with the full meta-data
-        snapshot if requested), unless addRun() has already registered a run.
-        With @c full_meta, a run registered by addRun() gets its meta-data snapshot here.
-        Calling it again only flushes data consumed since.
+        snapshot if requested), unless a run has already been written by
+        addRun() or by an earlier call. With @c full_meta, it writes the
+        meta-data snapshot of the run registered by the last addRun(), unless
+        that snapshot is already written; the snapshot of an earlier run is
+        written by the next addRun(). Calling it again therefore only flushes
+        data consumed since, unless addRun() registered another run in between.
 
-        @note With @c full_meta the meta-data snapshot is written once. Records
-        consumed after it was written are not described by it, and reading the
-        file with its full meta-data then fails, so with @c full_meta consume
-        everything before calling finalize().
+        @note With @c full_meta the meta-data snapshot of a run is written
+        once. Records consumed after it was written are not described by it.
+        If it describes at least one record, reading the file with its full
+        meta-data then fails; if it describes none, a file with one run is read
+        from the SQL columns instead, without meta-data. So with @c full_meta
+        consume everything before calling finalize().
 
         @throws Exception::BaseException if writing to the database fails
       */
@@ -103,9 +108,10 @@ namespace OpenMS
         which they were consumed. The RUN entry is written immediately; with
         @c full_meta its meta-data snapshot can only be written once the records
         of the run are known, so it is written by the next addRun() or, for the
-        last run, by finalize() (and hence the destructor). The snapshot of the
-        first run also covers the records consumed before the first addRun().
-        Calling setRunId() with a different id after addRun() stores the
+        last run, by finalize() (and hence the destructor). If no run has been
+        written yet (by an earlier addRun() or by finalize()), the snapshot of
+        this run also covers the records consumed before this call; otherwise
+        it covers only the records consumed after it. Calling setRunId() with a different id after addRun() stores the
         snapshot under that id, which has no RUN entry; reading such a file
         falls back to the SQL columns with a warning.
 
