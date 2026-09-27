@@ -94,7 +94,8 @@ namespace OpenMS
         once. Records consumed after it was written are not described by it.
         If it describes at least one record, reading the file with its full
         meta-data then fails; if it describes none, a file with one run is read
-        from the SQL columns instead, without meta-data. So with @c full_meta
+        with the experimental settings stored in the snapshot and its records
+        from the SQL columns, without their meta-data. So with @c full_meta
         consume everything before calling finalize().
 
         @throws Exception::BaseException if writing to the database fails

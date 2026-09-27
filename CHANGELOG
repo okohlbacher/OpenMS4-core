@@ -55,8 +55,8 @@ Core SDK 4.0.0-ci.9 candidate (2026-09-27)
   run describes only the records consumed after its addRun. With full_meta each run's snapshot is
   written once: consume every record before calling finalize(). Records consumed after it are not
   in the snapshot; if the snapshot describes at least one record, the file then cannot be read with
-  its full meta-data, and if it describes none, a file with one run is read from the SQL columns
-  without meta-data.
+  its full meta-data, and if it describes none, a file with one run is read with the experimental
+  settings stored in the snapshot and its records from the SQL columns, without their meta-data.
 - CPP-220: .xic chromatograms store an RT array whose first or second value is negative as
   zlib-compressed raw doubles (RT_COMPRESSION 1). ci.8 used linear Numpress, which read an RT of
   -100 back as about 4.29e8. XICParquetFile already reads RT_COMPRESSION 1. Arrays without a
