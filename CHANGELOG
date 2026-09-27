@@ -1,3 +1,23 @@
+Core SDK 4.0.0-ci.8 candidate (2026-09-19)
+-----------------------------------------
+- Re-land CPP-043: the second isotopic peak of the cross-link generator's precursor peaks (intact,
+  water loss, ammonia loss) was placed at the charged mass plus the isotope spacing divided by the
+  charge, then written as an m/z. The mass is a charged mass, so the spacing belongs inside the
+  division: at charge 2 and above the companion landed far from its precursor, and only charge 1
+  was right. A new class test checks, for charges 1 to 3, that each precursor peak and its companion
+  differ by one isotope spacing of that charge.
+  This changes only the occupancy scores OpenPepXL writes (log_occupancy, log_occupancy_alpha,
+  log_occupancy_beta): no matched-ion count, hit, rank, score, sequence, protein or precursor mass
+  moves. TOPP_OpenPepXL_1 is the only affected test, and its references are updated in the same
+  cycle (OpenMS4-test-data b19f5b9). Upstream fixed the same defect independently in be85c260bf
+  (#10194) with character-identical code, and the occupancy values of its updated reference are
+  identical to ours.
+  The fix shipped in ci.3 and was reverted in ci.4 together with CPP-042; CPP-042 returned in ci.7,
+  and this completes the pair.
+- ClusterHierarchical::cluster casts the bin size to float where it builds each BinnedSpectrum.
+  MSVC reported that narrowing from inside <xutility> in every consumer that instantiates the
+  function; the cast retires the /wd4244 suppression FLASH carried for it.
+
 Core SDK 4.0.0-ci.7 candidate (2026-09-18)
 -----------------------------------------
 - Re-land CPP-042 on its own: both cross-link spectrum generators put the water and ammonia loss
