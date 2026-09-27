@@ -450,6 +450,47 @@ START_SECTION([EXTRA] reading spectra written by MSDataSqlConsumer)
 }
 END_SECTION
 
+START_SECTION([EXTRA] MSDataSqlConsumer keeps the full meta-data of records consumed before addRun())
+{
+  // The reader pairs the SQL records with the headers of the full meta-data snapshot by
+  // position, so the snapshot of the run registered by addRun() has to cover the records
+  // consumed before it as well; with only the later records, the file could not be read.
+  std::string filename;
+  NEW_TMP_FILE(filename);
+  {
+    MSSpectrum before;
+    before.setNativeID("scan=1"); // the snapshot is stored as mzML, whose writer renames ids without '='
+    before.setRT(3.0);
+    before.push_back(Peak1D(400.0, 10.0));
+    before.setMetaValue("consumed", "before addRun");
+
+    MSSpectrum after;
+    after.setNativeID("scan=2");
+    after.setRT(4.0);
+    after.push_back(Peak1D(410.0, 20.0));
+    after.push_back(Peak1D(411.0, 30.0));
+    after.setMetaValue("consumed", "after addRun");
+
+    MSDataSqlConsumer consumer(filename, 0, 500, true);
+    consumer.consumeSpectrum(before);
+    consumer.addRun("input_run.mzML", 5);
+    consumer.consumeSpectrum(after);
+  } // the destructor finalizes the file
+
+  MSExperiment exp;
+  OpenMS::Internal::MzMLSqliteHandler handler(filename, 5);
+  handler.readExperiment(exp);
+  TEST_EQUAL(exp.getNrSpectra(), 2)
+  ABORT_IF(exp.getNrSpectra() != 2)
+  TEST_EQUAL(exp[0].getNativeID(), "scan=1")
+  TEST_EQUAL(exp[0].getMetaValue("consumed").toString(), "before addRun")
+  TEST_EQUAL(exp[0].size(), 1)
+  TEST_EQUAL(exp[1].getNativeID(), "scan=2")
+  TEST_EQUAL(exp[1].getMetaValue("consumed").toString(), "after addRun")
+  TEST_EQUAL(exp[1].size(), 2)
+}
+END_SECTION
+
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 END_TEST

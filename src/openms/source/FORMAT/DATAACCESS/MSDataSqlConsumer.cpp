@@ -74,11 +74,13 @@ namespace OpenMS
   {
     // the buffers do not record their run, so write them under the id they were consumed with
     flush();
-    // the snapshot accumulated so far describes the run that ends here
+    // the snapshot accumulated so far describes the run that ends here (none before the first addRun())
+    const bool run_ended = snapshot_pending_;
     writeRunSnapshot_();
 
     // set handler's run id and write run level information. The snapshot of this run cannot be
-    // written yet -- its records are consumed after this call -- so finalize() adds it.
+    // written yet -- its records are consumed after this call -- so it is written by the next
+    // addRun() or, for the last run, by finalize() (and hence the destructor).
     handler_->setRunId(run_id);
     MSExperiment meta;
     meta.setLoadedFilePath(filename);
@@ -87,7 +89,12 @@ namespace OpenMS
 
     if (full_meta_)
     {
-      peak_meta_.clear(false); // the settings stay, the record headers start over with the run
+      // The reader pairs the SQL records with the snapshot's headers by position, so records
+      // consumed before the first addRun() keep their headers: this run's snapshot covers them.
+      if (run_ended)
+      {
+        peak_meta_.clear(false); // the settings stay, the record headers start over with the run
+      }
       peak_meta_.setLoadedFilePath(filename);
       snapshot_pending_ = true;
     }
