@@ -604,6 +604,29 @@ START_SECTION(void applyEstimatedParameters(
 }
 END_SECTION
 
+START_SECTION([EXTRA] UInt estimateEmgParameters(): the fit does not depend on where the peak elutes)
+{
+  EmgGradientDescent emg;
+  // The same saturated peak 2400 s later in the run. Both fits converge to the
+  // same optimum within 1e-3 relative; the descent path itself depends on the
+  // position, because the initial sigma is mu * 1e-2. mu/tau is now ~1080, past
+  // the point where E_wrt_h's exp(x/tau) factor overflows.
+  vector<double> late_pos(saturated_pos_sec);
+  for (double& p : late_pos) p += 2400.0;
+
+  double h, mu, sigma, tau;
+  emg.estimateEmgParameters(saturated_pos_sec, saturated_int, h, mu, sigma, tau);
+  double h_l, mu_l, sigma_l, tau_l;
+  emg.estimateEmgParameters(late_pos, saturated_int, h_l, mu_l, sigma_l, tau_l);
+
+  TOLERANCE_RELATIVE(1.0 + 1e-3)
+  TEST_REAL_SIMILAR(h_l, h)
+  TEST_REAL_SIMILAR(sigma_l, sigma)
+  TEST_REAL_SIMILAR(tau_l, tau)
+  TEST_REAL_SIMILAR(mu_l - 2400.0, mu)
+}
+END_SECTION
+
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 END_TEST
