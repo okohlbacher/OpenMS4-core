@@ -22,8 +22,9 @@ Core SDK 4.0.0-ci.10 candidate (2026-09-29)
   comparison reads, which the writer never produces.
 - The fix shipped in ci.3 and was reverted in ci.4 until the references could be reviewed.
 - Upstream OpenMS still writes order="0", so these references now differ from upstream's in this
-  attribute. This is the first such divergence: CPP-042 and CPP-043 were fixed upstream as well,
-  and their references agree with upstream's.
+  attribute. They join the dataProcessingList and indexList count references (CPP-019, CPP-050;
+  test-data 43b02b1, ci.4), which already differ from upstream's. CPP-042 and CPP-043 were fixed
+  upstream as well, and their references agree with upstream's.
 
 Core SDK 4.0.0-ci.9 candidate (2026-09-27)
 -----------------------------------------
