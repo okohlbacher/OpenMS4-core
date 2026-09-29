@@ -48,10 +48,10 @@ namespace OpenMS
         @note All reading functions open the file read-only: a missing file is
         reported as Exception::SqlOperationFailed and is not created.
 
-        @note Each of writeExperiment, writeSpectra, writeChromatograms and
-        writeRunLevelInformation writes in a single transaction: if it throws,
-        none of its rows are stored and the spectrum and chromatogram ids are
-        not advanced.
+        @note Each of writeExperiment, writeSpectra, writeChromatograms,
+        writeRunLevelInformation and writeRunMetaSnapshot writes in a single
+        transaction: if it throws, none of its rows are stored and the spectrum
+        and chromatogram ids are not advanced.
 
     */
     class OPENMS_DLLAPI MzMLSqliteHandler
@@ -227,14 +227,29 @@ public:
       */
       void writeRunLevelInformation(const MSExperiment& exp, bool write_full_meta);
 
+      /**
+          @brief Write only the full meta-data snapshot (RUN_EXTRA) of the current run id
+
+          For writers that register a run before its records are known: the RUN entry is written
+          by writeRunLevelInformation(exp, false) and the snapshot follows here, once the records
+          of the run have been consumed.
+
+          @note This is a low level function, do not call this function unless you know what you are doing!
+
+          @param[in] exp The experiment whose settings and record headers are stored
+      */
+      void writeRunMetaSnapshot(const MSExperiment& exp);
+
 protected:
 
       void createIndices_();
 
       // The writers on an open connection. They neither begin nor end a transaction, so that
-      // writeExperiment can combine all three in one; the public functions of the same name
-      // wrap each in a transaction of its own.
+      // writeExperiment can combine all three in one; the public functions wrap each in a
+      // transaction of its own (writeRunExtra_ is wrapped by writeRunMetaSnapshot).
       void writeRunLevelInformation_(SqliteConnector& conn, const MSExperiment& exp, bool write_full_meta);
+
+      void writeRunExtra_(SqliteConnector& conn, const MSExperiment& exp);
 
       void writeSpectra_(SqliteConnector& conn, const std::vector<MSSpectrum>& spectra);
 

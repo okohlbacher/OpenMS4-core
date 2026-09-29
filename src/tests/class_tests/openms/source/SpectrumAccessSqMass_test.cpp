@@ -17,6 +17,7 @@
 #include <OpenMS/FORMAT/DATAACCESS/MSDataSqlConsumer.h>
 #include <OpenMS/FORMAT/HANDLERS/MzMLSqliteHandler.h>
 #include <OpenMS/FORMAT/HANDLERS/MzMLSqliteSwathHandler.h>
+#include <OpenMS/FORMAT/SqliteConnector.h>
 
 using namespace OpenMS;
 using namespace std;
@@ -418,6 +419,165 @@ START_SECTION([EXTRA] reading spectra written by MSDataSqlConsumer)
   meta_handler.readExperiment(meta_exp);
   TEST_EQUAL(meta_exp.getNrSpectra(), 1)
   TEST_EQUAL(meta_exp.getSample().getName(), "MSDataSqlConsumer sample")
+
+  // a run registered with addRun() still stores the full meta-data of its records
+  std::string run_filename;
+  NEW_TMP_FILE(run_filename);
+  {
+    MSSpectrum spectrum;
+    spectrum.setNativeID("scan=1"); // the snapshot is stored as mzML, whose writer renames ids without '='
+    spectrum.setRT(7.0);
+    spectrum.push_back(Peak1D(300.0, 10.0));
+    spectrum.push_back(Peak1D(301.0, 20.0));
+    // MetaInfo is carried only by the snapshot, never by the SQL fallback
+    spectrum.setMetaValue("addRun_marker", "kept");
+
+    ExperimentalSettings settings;
+    settings.getSample().setName("addRun sample");
+
+    MSDataSqlConsumer consumer(run_filename, 0, 500, true);
+    consumer.setExperimentalSettings(settings);
+    consumer.addRun("input_run.mzML", 5);
+    consumer.consumeSpectrum(spectrum);
+  } // the destructor finalizes the file
+
+  MSExperiment run_exp;
+  OpenMS::Internal::MzMLSqliteHandler run_handler(run_filename, 5);
+  run_handler.readExperiment(run_exp);
+  TEST_EQUAL(run_exp.getNrSpectra(), 1)
+  TEST_EQUAL(run_exp.getSample().getName(), "addRun sample")
+  ABORT_IF(run_exp.getNrSpectra() != 1)
+  TEST_EQUAL(run_exp[0].getMetaValue("addRun_marker").toString(), "kept")
+}
+END_SECTION
+
+START_SECTION([EXTRA] MSDataSqlConsumer keeps the full meta-data of records consumed before addRun())
+{
+  // The reader pairs the SQL records with the headers of the full meta-data snapshot by
+  // position, so the snapshot of the run registered by addRun() has to cover the records
+  // consumed before it as well; with only the later records, the file could not be read.
+  std::string filename;
+  NEW_TMP_FILE(filename);
+  {
+    MSSpectrum before;
+    before.setNativeID("scan=1"); // the snapshot is stored as mzML, whose writer renames ids without '='
+    before.setRT(3.0);
+    before.push_back(Peak1D(400.0, 10.0));
+    before.setMetaValue("consumed", "before addRun");
+
+    MSSpectrum after;
+    after.setNativeID("scan=2");
+    after.setRT(4.0);
+    after.push_back(Peak1D(410.0, 20.0));
+    after.push_back(Peak1D(411.0, 30.0));
+    after.setMetaValue("consumed", "after addRun");
+
+    MSDataSqlConsumer consumer(filename, 0, 500, true);
+    consumer.consumeSpectrum(before);
+    consumer.addRun("input_run.mzML", 5);
+    consumer.consumeSpectrum(after);
+  } // the destructor finalizes the file
+
+  MSExperiment exp;
+  OpenMS::Internal::MzMLSqliteHandler handler(filename, 5);
+  handler.readExperiment(exp);
+  TEST_EQUAL(exp.getNrSpectra(), 2)
+  ABORT_IF(exp.getNrSpectra() != 2)
+  TEST_EQUAL(exp[0].getNativeID(), "scan=1")
+  TEST_EQUAL(exp[0].getMetaValue("consumed").toString(), "before addRun")
+  TEST_EQUAL(exp[0].size(), 1)
+  TEST_EQUAL(exp[1].getNativeID(), "scan=2")
+  TEST_EQUAL(exp[1].getMetaValue("consumed").toString(), "after addRun")
+  TEST_EQUAL(exp[1].size(), 2)
+}
+END_SECTION
+
+START_SECTION([EXTRA] MSDataSqlConsumer describes a run registered after a written run by its own records only)
+{
+  // With full_meta, the snapshot of a run registered by addRun() (its RUN_EXTRA entry) holds the
+  // headers of the records consumed for it. Once a run has been written, the next addRun() starts
+  // the headers over, also when no snapshot is pending then: after an explicit finalize(), or after
+  // an addRun() that wrote the pending snapshot and then failed on its RUN entry. Each case consumes
+  // 'scan=1' for an earlier run and 'scan=2' for run 6. readExperiment rejects a file with more
+  // than one run and pairs the data of all runs with one snapshot, so the RUN rows of the other runs
+  // are removed and only the meta-data is read, which is the snapshot of the kept run as stored.
+  auto describedBy = [](const std::string& filename, UInt64 run_id)
+  {
+    {
+      SqliteConnector conn(filename);
+      conn.executeStatement("DELETE FROM RUN WHERE ID <> " + std::to_string(run_id) + ";");
+    }
+    MSExperiment exp;
+    OpenMS::Internal::MzMLSqliteHandler handler(filename, run_id);
+    handler.readExperiment(exp, true);
+    // native id and the MetaValue that only the snapshot carries (the SQL fallback has none)
+    std::string described;
+    for (const MSSpectrum& s : exp.getSpectra())
+    {
+      described += (described.empty() ? "" : " ") + s.getNativeID() + ":" + s.getMetaValue("consumed", "").toString();
+    }
+    return described;
+  };
+  auto makeSpectrum = [](const std::string& native_id, const std::string& consumed)
+  {
+    MSSpectrum s;
+    s.setNativeID(native_id); // the snapshot is stored as mzML, whose writer renames ids without '='
+    s.setRT(5.0);
+    s.push_back(Peak1D(500.0, 10.0));
+    s.setMetaValue("consumed", consumed);
+    return s;
+  };
+
+  // addRun(5), 'scan=1', finalize() (writes the snapshot of run 5), addRun(6), 'scan=2'
+  auto writeFinalizedRun = [&makeSpectrum](const std::string& filename)
+  {
+    MSSpectrum first = makeSpectrum("scan=1", "first");
+    MSSpectrum second = makeSpectrum("scan=2", "second");
+    MSDataSqlConsumer consumer(filename, 0, 500, true);
+    consumer.addRun("first_run.mzML", 5);
+    consumer.consumeSpectrum(first);
+    consumer.finalize();
+    consumer.addRun("second_run.mzML", 6);
+    consumer.consumeSpectrum(second);
+  }; // the destructor writes the snapshot of run 6
+  std::string finalized_run6;
+  NEW_TMP_FILE(finalized_run6);
+  writeFinalizedRun(finalized_run6);
+  TEST_STRING_EQUAL(describedBy(finalized_run6, 6), "scan=2:second")
+  std::string finalized_run5;
+  NEW_TMP_FILE(finalized_run5);
+  writeFinalizedRun(finalized_run5);
+  TEST_STRING_EQUAL(describedBy(finalized_run5, 5), "scan=1:first")
+
+  // 'scan=1', finalize() (writes run 0 with its snapshot), addRun(6), 'scan=2'
+  std::string finalized_first;
+  NEW_TMP_FILE(finalized_first);
+  {
+    MSSpectrum first = makeSpectrum("scan=1", "first");
+    MSSpectrum second = makeSpectrum("scan=2", "second");
+    MSDataSqlConsumer consumer(finalized_first, 0, 500, true);
+    consumer.consumeSpectrum(first);
+    consumer.finalize();
+    consumer.addRun("second_run.mzML", 6);
+    consumer.consumeSpectrum(second);
+  } // the destructor writes the snapshot of run 6
+  TEST_STRING_EQUAL(describedBy(finalized_first, 6), "scan=2:second")
+
+  // addRun(5), 'scan=1', addRun(5) (writes the snapshot of run 5, then fails on the RUN entry that
+  // already exists), addRun(6), 'scan=2'
+  std::string failed_run;
+  NEW_TMP_FILE(failed_run);
+  {
+    MSSpectrum first = makeSpectrum("scan=1", "first");
+    MSSpectrum second = makeSpectrum("scan=2", "second");
+    MSDataSqlConsumer consumer(failed_run, 0, 500, true);
+    consumer.addRun("first_run.mzML", 5);
+    consumer.consumeSpectrum(first);
+    TEST_EXCEPTION(Exception::IllegalArgument, consumer.addRun("first_run.mzML", 5))
+    consumer.addRun("second_run.mzML", 6);
+    consumer.consumeSpectrum(second);
+  } // the destructor writes the snapshot of run 6
+  TEST_STRING_EQUAL(describedBy(failed_run, 6), "scan=2:second")
 }
 END_SECTION
 

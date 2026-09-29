@@ -52,6 +52,20 @@ namespace OpenMS
     return (1.0 / std::sqrt(2.0)) * (sigma / tau - (x - mu) / sigma);
   }
 
+  namespace
+  {
+    /// exp(z*z) * erfc(z) for z >= 0 -- the scaled complementary error function.
+    /// Forming the two factors separately overflows and underflows past z = 26.6, where
+    /// binary64 turns a very small but finite EMG tail into inf * 0 = NaN. For large z the
+    /// asymptotic series 1/(z*sqrt(pi)) * (1 - 1/(2z^2) + 3/(4z^4) - 15/(8z^6)) is used.
+    double erfcx_(const double z)
+    {
+      if (z < 25.0) return std::exp(z * z) * std::erfc(z);
+      const double w = 1.0 / (z * z);
+      return (1.0 - 0.5 * w * (1.0 - 1.5 * w * (1.0 - 2.5 * w))) / (z * std::sqrt(Constants::PI));
+    }
+  }
+
   double EmgGradientDescent::E_wrt_h(
     const std::vector<double>& xs,
     const std::vector<double>& ys,
@@ -72,11 +86,12 @@ namespace OpenMS
       const double z = compute_z(x, mu, sigma, tau);
       if (z < 0)
       {
-        diffs[i] = ((s * std::exp((std::pow(s,2.0) + 2.0 * t * u - 4.0 * t * x)/(2.0 * std::pow(t,2.0))) * std::erfc((std::pow(s,2.0) + t * (u - x))/(std::sqrt(2.0) * s * t)) * (PI * h * s * std::exp((std::pow(s,2.0) + 2 * t * u)/(2 * std::pow(t,2.0))) * std::erfc((std::pow(s,2.0) + t * (u - x))/(std::sqrt(2.0) * s * t)) - std::sqrt(2.0 * PI) * t * y * std::exp(x/t)))/std::pow(t,2.0)) / static_cast<double>(xs.size());
+        diffs[i] = (2.0 * ((std::sqrt(PI/2.0) * s * std::exp(std::pow(s,2.0)/(2.0 * std::pow(t,2.0)) - (x - u)/t) * std::erfc((s/t - (x - u)/s)/std::sqrt(2.0)))/t) * ((std::sqrt(PI/2.0) * h * s * std::exp(std::pow(s,2.0)/(2.0 * std::pow(t,2.0)) - (x - u)/t) * std::erfc((s/t - (x - u)/s)/std::sqrt(2.0)))/t - y)) / static_cast<double>(xs.size());
       }
       else if (z <= 6.71e7)
       {
-        diffs[i] = ((std::sqrt(2.0 * PI) * s * std::exp(1.0/2.0 * std::pow((s/t - (x - u)/s),2.0) - std::pow((x - u),2.0)/(2.0 * std::pow(s,2.0))) * std::erfc((s/t - (x - u)/s)/std::sqrt(2.0)) * ((std::sqrt(PI/2.0) * h * s * std::exp(1.0/2.0 * std::pow((s/t - (x - u)/s), 2.0) - std::pow((x - u),2.0)/(2 * std::pow(s,2.0))) * std::erfc((s/t - (x - u)/s)/std::sqrt(2.0)))/t - y))/t) / static_cast<double>(xs.size());
+        const double gz = std::exp(-std::pow(x - u, 2.0)/(2.0 * std::pow(s,2.0))) * erfcx_(z);
+        diffs[i] = ((std::sqrt(2.0 * PI) * s * gz * ((std::sqrt(PI/2.0) * h * s * gz)/t - y))/t) / static_cast<double>(xs.size());
       }
       else
       {
@@ -121,7 +136,8 @@ namespace OpenMS
       }
       else if (z <= 6.71e7)
       {
-        diffs[i] = (2 * ((std::sqrt(PI/2.0) * h * s * std::exp(1.0/2.0 * std::pow((s/t - (x - u)/s),2.0) - std::pow((x - u),2.0)/(2.0 * std::pow(s,2.0))) * ((x - u)/std::pow(s,2.0) + (s/t - (x - u)/s)/s) * std::erfc((s/t - (x - u)/s)/std::sqrt(2.0)))/t - (h * std::exp(-std::pow((x - u),2.0)/(2.0 * std::pow(s,2.0))))/t) * ((std::sqrt(PI/2.0) * h * s * std::exp(1.0/2.0 * std::pow((s/t - (x - u)/s),2.0) - std::pow((x - u),2.0)/(2.0 * std::pow(s,2.0))) * std::erfc((s/t - (x - u)/s)/std::sqrt(2.0)))/t - y)) / static_cast<double>(xs.size());
+        const double gz = std::exp(-std::pow(x - u, 2.0)/(2.0 * std::pow(s,2.0))) * erfcx_(z);
+        diffs[i] = (2 * ((std::sqrt(PI/2.0) * h * s * gz * ((x - u)/std::pow(s,2.0) + (s/t - (x - u)/s)/s))/t - (h * std::exp(-std::pow((x - u),2.0)/(2.0 * std::pow(s,2.0))))/t) * ((std::sqrt(PI/2.0) * h * s * gz)/t - y)) / static_cast<double>(xs.size());
       }
       else
       {
@@ -166,7 +182,8 @@ namespace OpenMS
       }
       else if (z <= 6.71e7)
       {
-        diffs[i] = (2.0 * ((std::sqrt(PI/2.0) * h * std::exp(1.0/2.0 * std::pow((s/t - (x - u)/s),2.0) - std::pow((x - u),2.0)/(2.0 * std::pow(s,2.0))) * std::erfc((s/t - (x - u)/s)/std::sqrt(2.0)))/t + (std::sqrt(PI/2.0) * h * s * std::exp(1.0/2.0 * std::pow((s/t - (x - u)/s),2.0) - std::pow((x - u),2.0)/(2.0 * std::pow(s,2.0))) * (std::pow((x - u),2.0)/std::pow(s,3.0) + ((x - u)/std::pow(s,2.0) + 1.0/t) * (s/t - (x - u)/s)) * std::erfc((s/t - (x - u)/s)/std::sqrt(2.0)))/t - (h * s * std::exp(-std::pow((x - u),2.0)/(2.0 * std::pow(s,2.0))) * ((x - u)/std::pow(s,2.0) + 1.0/t))/t) * ((std::sqrt(PI/2.0) * h * s * std::exp(1.0/2.0 * std::pow((s/t - (x - u)/s),2.0) - std::pow((x - u),2.0)/(2.0 * std::pow(s,2.0))) * std::erfc((s/t - (x - u)/s)/std::sqrt(2.0)))/t - y)) / static_cast<double>(xs.size());
+        const double gz = std::exp(-std::pow(x - u, 2.0)/(2.0 * std::pow(s,2.0))) * erfcx_(z);
+        diffs[i] = (2.0 * ((std::sqrt(PI/2.0) * h * gz)/t + (std::sqrt(PI/2.0) * h * s * gz * (std::pow((x - u),2.0)/std::pow(s,3.0) + ((x - u)/std::pow(s,2.0) + 1.0/t) * (s/t - (x - u)/s)))/t - (h * s * std::exp(-std::pow((x - u),2.0)/(2.0 * std::pow(s,2.0))) * ((x - u)/std::pow(s,2.0) + 1.0/t))/t) * ((std::sqrt(PI/2.0) * h * s * gz)/t - y)) / static_cast<double>(xs.size());
       }
       else
       {
@@ -212,7 +229,8 @@ namespace OpenMS
       }
       else if (z <= 6.71e7)
       {
-        diffs[i] = (2 * (-(std::sqrt(PI/2.0) * h * std::pow(s,2.0) * std::exp(1.0/2.0 * std::pow((s/t - (x - u)/s),2.0) - std::pow(x-u,2.0)/(2.0 * std::pow(s,2.0))) * (s/t - (x - u)/s) * std::erfc((s/t - (x - u)/s)/std::sqrt(2.0)))/std::pow(t,3.0) - (std::sqrt(PI/2.0) * h * s * std::exp(1.0/2.0 * std::pow((s/t - (x - u)/s),2.0) - std::pow(x-u,2.0)/(2.0 * std::pow(s,2.0))) * std::erfc((s/t - (x - u)/s)/std::sqrt(2.0)))/std::pow(t,2.0) + (h * std::pow(s,2.0) * std::exp(-std::pow(x-u,2.0)/(2 * std::pow(s,2.0))))/std::pow(t,3.0)) * ((std::sqrt(PI/2.0) * h * s * std::exp(1.0/2.0 * std::pow((s/t - (x - u)/s),2.0) - std::pow(x-u,2.0)/(2 * std::pow(s,2.0))) * std::erfc((s/t - (x - u)/s)/std::sqrt(2.0)))/t - y)) / static_cast<double>(xs.size());
+        const double gz = std::exp(-std::pow(x - u, 2.0)/(2.0 * std::pow(s,2.0))) * erfcx_(z);
+        diffs[i] = (2 * (-(std::sqrt(PI/2.0) * h * std::pow(s,2.0) * gz * (s/t - (x - u)/s))/std::pow(t,3.0) - (std::sqrt(PI/2.0) * h * s * gz)/std::pow(t,2.0) + (h * std::pow(s,2.0) * std::exp(-std::pow(x-u,2.0)/(2 * std::pow(s,2.0))))/std::pow(t,3.0)) * ((std::sqrt(PI/2.0) * h * s * gz)/t - y)) / static_cast<double>(xs.size());
       }
       else
       {
@@ -413,20 +431,6 @@ namespace OpenMS
         param_update = - param_lr;
       }
       param += param_update;
-    }
-  }
-
-  namespace
-  {
-    /// exp(z*z) * erfc(z) for z >= 0 -- the scaled complementary error function.
-    /// Forming the two factors separately overflows and underflows past z = 26.6, where
-    /// binary64 turns a very small but finite EMG tail into inf * 0 = NaN. For large z the
-    /// asymptotic series 1/(z*sqrt(pi)) * (1 - 1/(2z^2) + 3/(4z^4) - 15/(8z^6)) is used.
-    double erfcx_(const double z)
-    {
-      if (z < 25.0) return std::exp(z * z) * std::erfc(z);
-      const double w = 1.0 / (z * z);
-      return (1.0 - 0.5 * w * (1.0 - 1.5 * w * (1.0 - 2.5 * w))) / (z * std::sqrt(Constants::PI));
     }
   }
 

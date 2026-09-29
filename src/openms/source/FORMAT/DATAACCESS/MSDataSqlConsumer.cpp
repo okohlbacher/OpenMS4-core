@@ -66,19 +66,50 @@ namespace OpenMS
       handler_->writeRunLevelInformation(peak_meta_, full_meta_);
       wrote_any_run_ = true;
     }
+    // a run registered by addRun() left its meta-data snapshot to us
+    writeRunSnapshot_();
   }
 
   void MSDataSqlConsumer::addRun(const std::string& filename, const UInt64 run_id)
   {
+    // no run written yet (by an earlier addRun() or by finalize()): this call starts the file's first run
+    const bool first_run = !wrote_any_run_;
     // the buffers do not record their run, so write them under the id they were consumed with
     flush();
+    // a pending snapshot describes the run that ends here (none is pending before the first
+    // addRun(), or once it has been written, e.g. by finalize())
+    writeRunSnapshot_();
 
-    // set handler's run id and write run level information
+    // set handler's run id and write run level information. The snapshot of this run cannot be
+    // written yet -- its records are consumed after this call -- so it is written by the next
+    // addRun() or, for the last run, by finalize() (and hence the destructor).
     handler_->setRunId(run_id);
     MSExperiment meta;
     meta.setLoadedFilePath(filename);
-    handler_->writeRunLevelInformation(meta, full_meta_);
+    handler_->writeRunLevelInformation(meta, false);
     wrote_any_run_ = true;
+
+    if (full_meta_)
+    {
+      // The reader pairs the SQL records with the snapshot's headers by position, so records
+      // consumed before the file's first run keep their headers: this run's snapshot covers them.
+      // Every later run starts over, whether or not a snapshot was pending above.
+      if (!first_run)
+      {
+        peak_meta_.clear(false); // the settings stay, the record headers start over with the run
+      }
+      peak_meta_.setLoadedFilePath(filename);
+      snapshot_pending_ = true;
+    }
+  }
+
+  void MSDataSqlConsumer::writeRunSnapshot_()
+  {
+    if (snapshot_pending_)
+    {
+      handler_->writeRunMetaSnapshot(peak_meta_);
+      snapshot_pending_ = false; // after the write, so a failed write is retried by the destructor
+    }
   }
 
   void MSDataSqlConsumer::setRunId(const UInt64 run_id)

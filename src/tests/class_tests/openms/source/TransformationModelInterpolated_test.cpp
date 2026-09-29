@@ -42,6 +42,34 @@ START_SECTION((TransformationModelInterpolated(const DataPoints &data, const Par
 }
 END_SECTION
 
+START_SECTION((TransformationModelInterpolated(const std::vector<std::pair<double, double> >& data, const Param& params, bool preprocess)))
+{
+  // distinct x values, so preprocessing is a no-op: both paths yield x_ = [0, 0.5, 1], y_ = [1, 4, 3]
+  std::vector<std::pair<double, double> > pair_data;
+  pair_data.push_back(make_pair(0.0, 1.0));
+  pair_data.push_back(make_pair(0.5, 4.0));
+  pair_data.push_back(make_pair(1.0, 3.0));
+
+  Param p;
+  TransformationModelInterpolated::getDefaultParameters(p);
+  p.setValue("extrapolation_type", "global-linear");
+
+  // The global-linear model is fitted to those three points only: slope 2, intercept 5/3.
+  // Padding the fit with default-constructed (0, 0) anchors gives slope 24/7 and intercept
+  // 10/21 instead, i.e. -1.238095 at -0.5 and 5.619048 at 1.5.
+  {
+    TransformationModelInterpolated tr(pair_data, p, true);
+    TEST_REAL_SIMILAR(tr.evaluate(-0.5), 0.66666666667)
+    TEST_REAL_SIMILAR(tr.evaluate(1.5), 4.66666666667)
+  }
+  {
+    TransformationModelInterpolated tr(pair_data, p, false);
+    TEST_REAL_SIMILAR(tr.evaluate(-0.5), 0.66666666667)
+    TEST_REAL_SIMILAR(tr.evaluate(1.5), 4.66666666667)
+  }
+}
+END_SECTION
+
 START_SECTION((~TransformationModelInterpolated()))
 {
   delete ptr;

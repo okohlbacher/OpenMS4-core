@@ -97,8 +97,10 @@ public:
       @note the bounding box of the feature can be accessed through the returned convex hull
 
       @note the hull is computed on first access and cached, so this method writes to the cache
-      members although it is const. It is therefore not safe to call it concurrently on the same
-      feature (e.g. from an OpenMP loop) - call it once up front to fill the cache.
+      members although it is const. The returned ConvexHull2D caches its outer points the same way
+      on the first getHullPoints() call. Neither is safe to call concurrently on the same feature
+      (e.g. from an OpenMP loop) - warm both caches once up front with
+      `f.getConvexHull().getHullPoints();` before entering the parallel region.
     */
     const ConvexHull2D& getConvexHull() const;
 
