@@ -1,3 +1,30 @@
+Core SDK 4.0.0-ci.10 candidate (2026-09-29)
+-----------------------------------------
+- Re-land CPP-026 on its own; it is the only change of this release. The mzML writer numbers the
+  processingMethod elements of each dataProcessing element 0, 1, 2, ... in the order the steps
+  were applied, instead of writing order="0" for every step. The schema defines order as a
+  required nonnegative integer that puts consecutive steps in sequence; ProteoWizard and
+  ThermoRawFileParser number their steps the same way. The placeholder written for a record
+  without processing history keeps order 0. A new MzMLFile_test section checks the numbering and
+  that a load/store round trip keeps it.
+- The reader is unchanged: it ignores order and takes the steps in document order, so a file whose
+  declared orders disagree with its document order is renumbered in document order when it is
+  written again. Five references show this. The inputs of FileConverter_23, FileConverter_28 and
+  FileFilter_12 list an Xcalibur step (order 2) before a pwiz step (order 1) in one dataProcessing
+  element, and their outputs number the Xcalibur step 0 and the pwiz step 1. FileMerger_6 and
+  FileMerger_10 read FileMerger_6_input2.mzML, whose dataProcessingList puts a pwiz step (order 2)
+  before an Xcalibur step (order 1), and their outputs number the pwiz step 0, followed by
+  FileMerger's own step.
+- Every mzML a tool writes with a multi-step processing history changes. The TOPP references are
+  updated in the same cycle, order attributes only: 90 reference files, read by 102 comparisons of
+  the installed console suite, with 249 changed processingMethod lines. The ci.4 note estimated
+  that 211 files would change; that count also included tool inputs and fixtures that no
+  comparison reads, which the writer never produces.
+- The fix shipped in ci.3 and was reverted in ci.4 until the references could be reviewed.
+- Upstream OpenMS still writes order="0", so these references now differ from upstream's in this
+  attribute. This is the first such divergence: CPP-042 and CPP-043 were fixed upstream as well,
+  and their references agree with upstream's.
+
 Core SDK 4.0.0-ci.9 candidate (2026-09-27)
 -----------------------------------------
 - Completes the seven fixes that the 2026-09-19 re-check of the high-priority findings found only
