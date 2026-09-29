@@ -22,7 +22,10 @@
 
 #include <fstream>
 #include <regex>
+#include <string>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 using namespace OpenMS;
 using namespace std;
@@ -66,6 +69,25 @@ std::string loadWithListCount(const std::string& original, const std::string& li
     return input + ": the load threw " + TEST::describeCaughtException();
   }
   return "";
+}
+
+/// the order attribute of every processingMethod in @p mzml, per dataProcessing id, in document order
+std::vector<std::pair<std::string, std::vector<std::string>>> processingMethodOrders(const std::string& mzml)
+{
+  std::vector<std::pair<std::string, std::vector<std::string>>> result;
+  const std::string dp_tag = "<dataProcessing id=\"", pm_tag = "<processingMethod order=\"";
+  for (std::string::size_type dp = mzml.find(dp_tag); dp != std::string::npos; dp = mzml.find(dp_tag, dp + 1))
+  {
+    const std::string::size_type id = dp + dp_tag.size();
+    const std::string::size_type end = mzml.find("</dataProcessing>", dp);
+    result.emplace_back(mzml.substr(id, mzml.find('"', id) - id), std::vector<std::string>());
+    for (std::string::size_type pm = mzml.find(pm_tag, dp); pm < end; pm = mzml.find(pm_tag, pm + 1))
+    {
+      const std::string::size_type value = pm + pm_tag.size();
+      result.back().second.push_back(mzml.substr(value, mzml.find('"', value) - value));
+    }
+  }
+  return result;
 }
 
 ///////////////////////////
@@ -1774,6 +1796,33 @@ START_SECTION(([EXTRA] numpress data arrays are bounded by their decoded length)
       TEST_EQUAL(decoded_chrom.getFloatDataArrays()[0].capacity() <= 16, true)
     }
   }
+}
+END_SECTION
+
+START_SECTION(([EXTRA] processingMethod order numbers the steps of each dataProcessing element))
+{
+  // spectrum 0 of MzMLFile_1.mzML has two processing steps; every step used to be written with order 0 (CPP-026)
+  const std::string buffer = mzMLFile1WithoutIndex();
+  Size multi_step = 0;
+  for (const auto& [id, orders] : processingMethodOrders(buffer))
+  {
+    STATUS(id)
+    for (Size i = 0; i < orders.size(); ++i)
+    {
+      TEST_STRING_EQUAL(orders[i], std::to_string(i))
+    }
+    multi_step += orders.size() > 1 ? 1 : 0;
+  }
+  TEST_NOT_EQUAL(multi_step, 0) // the fixture has a multi-step history, so the loop tested something
+
+  // the reader takes the steps in document order, so storing what was loaded writes the same numbers
+  MzMLFile file;
+  file.getOptions().setWriteIndex(false);
+  PeakMap reloaded;
+  file.loadBuffer(buffer, reloaded);
+  std::string again;
+  file.storeBuffer(again, reloaded);
+  TEST_EQUAL(processingMethodOrders(again) == processingMethodOrders(buffer), true)
 }
 END_SECTION
 
